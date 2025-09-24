@@ -1,8 +1,6 @@
 ---
 
-# yaml-language-server: $schema=./agentenv.schema.json
-
-version: "1.0"
+version: 1.0
 
 project:
   name: go42x
@@ -48,8 +46,6 @@ providers:
       - workflows/40-debugging.tpl.md
       - workflows/50-investigation.tpl.md
       - workflows/60-code-review.tpl.md
-    agents:
-      - claude/agents/dummy.tpl.md
     tools:
       - Edit
       - Glob
@@ -201,7 +197,7 @@ mcp:
       - mcp__go42_kwb__list_files
 
   github:
-    enabled: true
+    enabled: false
     type: stdio
     name: github
     command: docker
@@ -303,7 +299,7 @@ mcp:
       - mcp__github__get_team_members
 
   gitlab:
-    enabled: true
+    enabled: false
     type: stdio
     name: gitlab
     command: docker
@@ -330,7 +326,7 @@ mcp:
       USE_PIPELINE: true
 
   jira:
-    enabled: true
+    enabled: false
     type: sse
     name: jira
     url: https://mcp.atlassian.com/v1/sse
@@ -350,7 +346,7 @@ mcp:
       - mcp__jira__assign_copilot_to_issue
 
   eleven-labs:
-    enabled: true
+    enabled: false
     type: stdio
     name: eleven-labs
     command: uvx
