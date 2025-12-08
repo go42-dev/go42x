@@ -65,7 +65,7 @@ RUN readelf -h go42x && du -h go42x && sha256sum go42x && go tool buildid go42x
 # For packaging stage, we use minimal(slim) image.
 # This reduces resulting image size and potential security risks.
 # @warn dependabot will update image version automatically, but it will not update package versions.
-FROM alpine:3.22
+FROM alpine:3.23
 
 # Install dependencies.
 #   * ca-certificates - required for https requests
