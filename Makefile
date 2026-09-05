@@ -8,8 +8,11 @@ help: Makefile
 
 ## setup | install dependencies
 setup:
-	@go mod tidy -e && go mod download
+	@go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+	@go install github.com/daixiang0/gci@latest
+	@go install github.com/segmentio/golines@latest
 	@go install go.uber.org/mock/mockgen@latest
+	@go mod tidy -e && go mod download
 
 ## setup-release | install tools for release process
 setup-release:
@@ -40,6 +43,10 @@ generate:
 ## clean | clean build artifacts
 clean:
 	@rm -rf ./build ./dist
+
+## lint | run all validation tools
+lint:
+	@golangci-lint run --config .golangci.yml || true
 
 # ╭────────────────────----------------──────────╮
 # │                   Release                    │

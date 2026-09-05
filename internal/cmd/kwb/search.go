@@ -27,13 +27,13 @@ func newSearchCommand(f *cmdutil.Factory, settings *kwb.Settings) *cobra.Command
 	cmd.Flags().IntVar(
 		&settings.SearchLimit, "limit", 10, "maximum number of results")
 	cmd.Flags().BoolVar(
-			&settings.SearchShowScore, "show_score", false, "show relevance scores")
+		&settings.SearchShowScore, "show-score", false, "show relevance scores")
 	cmd.Flags().DurationVar(
-			&settings.SearchTimeout, "timeout", 5*time.Second, "search timeout duration")
+		&settings.SearchTimeout, "timeout", 5*time.Second, "search timeout duration")
 	cmd.Flags().IntVar(
 		&settings.SearchFuzziness, "fuzzy", 0, "fuzzy search distance (0=exact, 1-2=fuzzy)")
 	cmd.Flags().StringVar(
-			&settings.HighlightStyle, "highlight", "ansi", "highlight style: ansi or html")
+		&settings.HighlightStyle, "highlight", "ansi", "highlight style: ansi or html")
 
 	return cmd
 }
@@ -70,7 +70,7 @@ func runSearchCommand(f *cmdutil.Factory, settings *kwb.Settings, query string) 
 			slog.String("path", result.Path),
 			slog.String("type", result.Type),
 			slog.Float64("score", result.Score),
-			slog.Bool("showScore", settings.SearchShowScore),
+			slog.Bool("show_score", settings.SearchShowScore),
 		)
 		if result.Preview != "" {
 			// Clean up the preview
