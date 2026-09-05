@@ -1,6 +1,6 @@
 module github.com/go42-dev/go42x
 
-go 1.25.1
+go 1.27
 
 require (
 	github.com/blevesearch/bleve/v2 v2.5.3
