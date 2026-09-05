@@ -21,7 +21,7 @@ Download native macOS/Linux binaries and Linux packages from
 [GitHub Releases](https://github.com/go42-dev/go42x/releases), or install with Go:
 
 ```bash
-go install github.com/hasansino/go42x@v0.18.0
+go install github.com/go42-dev/go42x@latest
 ```
 
 Container image distribution is discontinued. Native releases retain checksums,
