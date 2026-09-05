@@ -3,7 +3,7 @@ package generator
 import (
 	"context"
 
-	"github.com/hasansino/go42x/pkg/agentenv/config"
+	"github.com/go42-dev/go42x/pkg/agentenv/config"
 )
 
 //go:generate mockgen -source $GOFILE -package mocks -destination mocks/mocks.go

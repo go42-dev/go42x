@@ -1,4 +1,4 @@
-module github.com/hasansino/go42x
+module github.com/go42-dev/go42x
 
 go 1.25.1
 

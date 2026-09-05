@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://github.com/hasansino/go42x/agentenv/schema/v1.0",
+  "$id": "https://github.com/go42-dev/go42x/agentenv/schema/v1.0",
   "title": "AgentEnv Configuration Schema",
   "description": "Schema for .agentenv configuration file",
   "type": "object",

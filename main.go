@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/hasansino/go42x/internal/cmd"
+	"github.com/go42-dev/go42x/internal/cmd"
 )
 
 func main() {

@@ -7,8 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/hasansino/go42x/internal/cmdutil"
-	"github.com/hasansino/go42x/pkg/agentenv"
+	"github.com/go42-dev/go42x/internal/cmdutil"
+	"github.com/go42-dev/go42x/pkg/agentenv"
 )
 
 func newAnalyseCommand(f *cmdutil.Factory, settings *agentenv.Settings) *cobra.Command {

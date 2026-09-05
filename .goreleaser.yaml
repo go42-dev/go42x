@@ -28,7 +28,7 @@ builds:
       - -buildvcs=false
     ldflags:
       - -s -w
-      - -X github.com/hasansino/go42x/internal/version.xBuildVersion={{ .Version }}
+      - -X github.com/go42-dev/go42x/internal/version.xBuildVersion={{ .Version }}
 
 archives:
   - id: go42x
@@ -48,8 +48,8 @@ archives:
 nfpms:
   - id: go42x-packages
     package_name: go42x
-    vendor: hasansino
-    homepage: https://github.com/hasansino/go42x
+    vendor: go42-dev
+    homepage: https://github.com/go42-dev/go42x
     maintainer: hasansino <hasansino@users.noreply.github.com>
     description: Helper tool for go42 project
     license: MIT
@@ -106,7 +106,7 @@ changelog:
 
 release:
   github:
-    owner: hasansino
+    owner: go42-dev
     name: go42x
   prerelease: auto
   make_latest: true

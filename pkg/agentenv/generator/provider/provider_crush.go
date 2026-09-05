@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"path/filepath"
 
-	"github.com/hasansino/go42x/pkg/agentenv/config"
+	"github.com/go42-dev/go42x/pkg/agentenv/config"
 )
 
 const Crush = "crush"

@@ -11,9 +11,9 @@ import (
 	"github.com/lmittmann/tint"
 	"github.com/spf13/cobra"
 
-	"github.com/hasansino/go42x/internal/cmd/agentenv"
-	"github.com/hasansino/go42x/internal/cmd/kwb"
-	"github.com/hasansino/go42x/internal/cmdutil"
+	"github.com/go42-dev/go42x/internal/cmd/agentenv"
+	"github.com/go42-dev/go42x/internal/cmd/kwb"
+	"github.com/go42-dev/go42x/internal/cmdutil"
 )
 
 const (

@@ -8,8 +8,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/hasansino/go42x/pkg/agentenv/config"
-	"github.com/hasansino/go42x/pkg/agentenv/generator"
+	"github.com/go42-dev/go42x/pkg/agentenv/config"
+	"github.com/go42-dev/go42x/pkg/agentenv/generator"
 )
 
 const (

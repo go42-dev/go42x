@@ -13,7 +13,7 @@ import (
 	context "context"
 	reflect "reflect"
 
-	config "github.com/hasansino/go42x/pkg/agentenv/config"
+	config "github.com/go42-dev/go42x/pkg/agentenv/config"
 	gomock "go.uber.org/mock/gomock"
 )
 

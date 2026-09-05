@@ -6,9 +6,9 @@ import (
 	"log/slog"
 	"sort"
 
-	"github.com/hasansino/go42x/pkg/agentenv/config"
-	"github.com/hasansino/go42x/pkg/agentenv/generator/collector"
-	"github.com/hasansino/go42x/pkg/agentenv/generator/provider"
+	"github.com/go42-dev/go42x/pkg/agentenv/config"
+	"github.com/go42-dev/go42x/pkg/agentenv/generator/collector"
+	"github.com/go42-dev/go42x/pkg/agentenv/generator/provider"
 )
 
 type Generator struct {

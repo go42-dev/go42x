@@ -19,11 +19,3 @@ updates:
     pull-request-branch-name:
       separator: "-"
     open-pull-requests-limit: 10
-
-  - package-ecosystem: "docker"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    pull-request-branch-name:
-      separator: "-"
-    open-pull-requests-limit: 10
