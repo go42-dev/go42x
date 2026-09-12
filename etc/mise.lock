@@ -65,6 +65,11 @@ version = "0.5.2"
 backend = "go:github.com/caarlos0/jsonfmt"
 specifiers = ["0.5.2"]
 
+[[tools."go:github.com/daixiang0/gci"]]
+version = "0.14.0"
+backend = "go:github.com/daixiang0/gci"
+specifiers = ["0.14.0"]
+
 [[tools."go:github.com/google/yamlfmt/cmd/yamlfmt"]]
 version = "0.21.0"
 backend = "go:github.com/google/yamlfmt/cmd/yamlfmt"
@@ -103,6 +108,31 @@ checksum = "sha256:8a13aaf9cbbb1dee52824e862cf0d0720e5bb97c1f4260d1e51623a09492b
 url = "https://github.com/golangci/golangci-lint/releases/download/v2.13.2/golangci-lint-2.13.2-darwin-amd64.tar.gz"
 url_api = "https://api.github.com/repos/golangci/golangci-lint/releases/assets/532995222"
 provenance = "github-attestations"
+
+[[tools.golines]]
+version = "0.13.0"
+backend = "aqua:segmentio/golines"
+specifiers = ["0.13.0"]
+
+[tools.golines."platforms.linux-arm64"]
+checksum = "sha256:97c92dd8c94bcffda79422d4260d41d067b164debefbd1fae0f8551ba04bec94"
+url = "https://github.com/segmentio/golines/releases/download/v0.13.0/golines_0.13.0_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/segmentio/golines/releases/assets/284914863"
+
+[tools.golines."platforms.linux-x64"]
+checksum = "sha256:8b29855348124097036b8d3f90dc27e9d5ed6f6b6d1c5bb4fdc6557ce01f02e9"
+url = "https://github.com/segmentio/golines/releases/download/v0.13.0/golines_0.13.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/segmentio/golines/releases/assets/284914860"
+
+[tools.golines."platforms.macos-arm64"]
+checksum = "sha256:82fb27c00940beade79a6bce44dcb7b60fee7fe8a9c0f933876dad74196ea6ba"
+url = "https://github.com/segmentio/golines/releases/download/v0.13.0/golines_0.13.0_darwin_all.tar.gz"
+url_api = "https://api.github.com/repos/segmentio/golines/releases/assets/284914861"
+
+[tools.golines."platforms.macos-x64"]
+checksum = "sha256:82fb27c00940beade79a6bce44dcb7b60fee7fe8a9c0f933876dad74196ea6ba"
+url = "https://github.com/segmentio/golines/releases/download/v0.13.0/golines_0.13.0_darwin_all.tar.gz"
+url_api = "https://api.github.com/repos/segmentio/golines/releases/assets/284914861"
 
 [[tools.goreleaser]]
 version = "2.18.1"

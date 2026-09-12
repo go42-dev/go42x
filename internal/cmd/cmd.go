@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -53,7 +54,14 @@ func NewGo42Command(ctx context.Context, f *cmdutil.Factory) *cobra.Command {
 	cmd.SetOut(os.Stdout)
 	cmd.SetErr(os.Stderr)
 
+	viper.SetEnvPrefix(envPrefix)
+	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
+	viper.AutomaticEnv()
+
 	f.BindFlags(cmd.PersistentFlags())
+
+	flags := cmd.Flags()
+	flags.Bool("dummy", false, "Dummy.")
 
 	cmd.AddCommand(NewVersionCommand())
 	cmd.AddCommand(agentenv.NewAgentEnvCommand(f))
