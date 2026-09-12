@@ -93,7 +93,8 @@ snapshot:
 
 changelog:
   sort: asc
-  use: github
+  # The release tag stays local until publication; generate notes from Git history.
+  use: git
   filters:
     exclude:
       - '^docs:'
