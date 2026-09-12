@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"sort"
 
 	"github.com/go42-dev/go42x/pkg/agentenv/config"
 )
@@ -146,9 +147,11 @@ func (p *CrushProvider) extractMCPServers(allTools *[]string) map[string]CrushMC
 	for name, server := range p.config.MCP {
 		// crush has built-in support for gopls, adding it again as mcp server causes issues
 		if server.Enabled && server.Command != "gopls" {
-			*allTools = append(*allTools, server.Tools...)
+			for _, tool := range server.Tools {
+				*allTools = append(*allTools, MCPToolName(Crush, name, tool))
+			}
 			mcpServers[name] = CrushMCPConfig{
-				Type:    server.Type,
+				Type:    server.Transport(),
 				Command: server.Command,
 				Args:    server.Args,
 				Env:     server.Env,
@@ -158,6 +161,7 @@ func (p *CrushProvider) extractMCPServers(allTools *[]string) map[string]CrushMC
 		}
 	}
 
+	sort.Strings(*allTools)
 	return mcpServers
 }
 

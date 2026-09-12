@@ -1,0 +1,438 @@
+---
+
+# yaml-language-server: $schema=go42x.schema.json
+
+version: "1.0"
+
+project:
+  name: go42x
+  language: go
+  description: 'Helper tool for go42 project.'
+  tags:
+    - go42
+    - golang
+    - cli
+  metadata:
+    repository: github.com/go42-dev/go42
+
+env:
+  - PATH
+
+providers:
+  # -------------------------
+  #          Claude
+  # -------------------------
+  claude:
+    template: claude.tpl.md
+    output: CLAUDE.md
+    chunks:
+      - chunks/10-personality.tpl.md
+      - chunks/20-operation.tpl.md
+      - chunks/80-search.tpl.md
+      - chunks/90-search-go.tpl.md
+    modes:
+      - modes/10-default.tpl.md
+      - modes/20-noop.tpl.md
+      - modes/30-sbs.tpl.md
+      - modes/40-cicd.tpl.md
+    workflows:
+      - workflows/10-brainstorm.tpl.md
+      - workflows/20-planning.tpl.md
+      - workflows/30-implementation.tpl.md
+      - workflows/40-debugging.tpl.md
+      - workflows/50-investigation.tpl.md
+      - workflows/60-code-review.tpl.md
+    tools:
+      - Agent
+      - AskUserQuestion
+      - Bash
+      - Edit
+      - Glob
+      - Grep
+      - NotebookEdit
+      - Read
+      - Skill
+      - TaskCreate
+      - TaskGet
+      - TaskList
+      - TaskUpdate
+      - TaskStop
+      - WebFetch
+      - WebSearch
+      - Write
+
+  # -------------------------
+  #          Gemini
+  # -------------------------
+  gemini:
+    template: gemini.tpl.md
+    output: GEMINI.md
+    chunks:
+      - chunks/10-personality.tpl.md
+      - chunks/20-operation.tpl.md
+      - chunks/80-search.tpl.md
+      - chunks/90-search-go.tpl.md
+    modes:
+      - modes/10-default.tpl.md
+      - modes/20-noop.tpl.md
+      - modes/30-sbs.tpl.md
+      - modes/40-cicd.tpl.md
+    workflows:
+      - workflows/10-brainstorm.tpl.md
+      - workflows/20-planning.tpl.md
+      - workflows/30-implementation.tpl.md
+      - workflows/40-debugging.tpl.md
+      - workflows/50-investigation.tpl.md
+      - workflows/60-code-review.tpl.md
+    tools:
+      - list_directory
+      - read_file
+      - write_file
+      - grep_search
+      - glob
+      - replace
+      - run_shell_command
+      - web_fetch
+      - google_web_search
+      - ask_user
+      - write_todos
+      - activate_skill
+      - list_mcp_resources
+      - read_mcp_resource
+
+  # -------------------------
+  #           Crush
+  # -------------------------
+  crush:
+    template: crush.tpl.md
+    output: CRUSH.md
+    chunks:
+      - chunks/10-personality.tpl.md
+      - chunks/20-operation.tpl.md
+      - chunks/80-search.tpl.md
+      - chunks/90-search-go.tpl.md
+    modes:
+      - modes/10-default.tpl.md
+      - modes/20-noop.tpl.md
+      - modes/30-sbs.tpl.md
+      - modes/40-cicd.tpl.md
+    workflows:
+      - workflows/10-brainstorm.tpl.md
+      - workflows/20-planning.tpl.md
+      - workflows/30-implementation.tpl.md
+      - workflows/40-debugging.tpl.md
+      - workflows/50-investigation.tpl.md
+      - workflows/60-code-review.tpl.md
+    tools:
+      - view
+      - ls
+      - grep
+      - glob
+      - edit
+      - write
+      - multiedit
+      - bash
+
+  # -------------------------
+  #      Github Copilot
+  # -------------------------
+  copilot:
+    template: copilot.tpl.md
+    output: .github/copilot-instructions.md
+    chunks:
+      - chunks/10-personality.tpl.md
+      - chunks/20-operation.tpl.md
+      - chunks/80-search.tpl.md
+      - chunks/90-search-go.tpl.md
+    modes:
+      - modes/10-default.tpl.md
+      - modes/20-noop.tpl.md
+      - modes/30-sbs.tpl.md
+      - modes/40-cicd.tpl.md
+    workflows:
+      - workflows/10-brainstorm.tpl.md
+      - workflows/20-planning.tpl.md
+      - workflows/30-implementation.tpl.md
+      - workflows/40-debugging.tpl.md
+      - workflows/50-investigation.tpl.md
+      - workflows/60-code-review.tpl.md
+
+mcp:
+  # Store raw server tool names; generation applies each client's naming format.
+  gopls:
+    enabled: true
+    type: stdio
+    name: gopls
+    command: gopls
+    args:
+      - mcp
+    tools:
+      - go_diagnostics
+      - go_file_context
+      - go_package_api
+      - go_rename_symbol
+      - go_search
+      - go_symbol_references
+      - go_vulncheck
+      - go_workspace
+
+  go42x:
+    enabled: true
+    type: stdio
+    name: go42x
+    command: go42x
+    args:
+      - mcp
+    tools:
+      - kwb_get_file
+      - kwb_list_files
+      - kwb_search
+      - kwb_stats
+
+  github:
+    enabled: false
+    type: stdio
+    name: github
+    command: docker
+    args:
+      - run
+      - -i
+      - --rm
+      - -e
+      - GITHUB_PERSONAL_ACCESS_TOKEN
+      - -e
+      - GITHUB_TOOLSETS=all
+      - ghcr.io/github/github-mcp-server
+    env:
+      GITHUB_PERSONAL_ACCESS_TOKEN: "${GH_MCP_KEY}"
+    tools:
+      - actions_get
+      - actions_list
+      - actions_run_trigger
+      - add_comment_to_pending_review
+      - add_issue_comment
+      - add_reply_to_pull_request_comment
+      - assign_copilot_to_issue
+      - assign_copilot_to_issue_with_intent
+      - create_branch
+      - create_gist
+      - create_or_update_file
+      - create_pull_request
+      - create_repository
+      - create_repository_ruleset
+      - custom_properties_read
+      - custom_properties_write
+      - delete_file
+      - discussion_comment_write
+      - dismiss_notification
+      - fork_repository
+      - get_code_quality_finding
+      - get_code_scanning_alert
+      - get_commit
+      - get_dependabot_alert
+      - get_discussion
+      - get_discussion_comments
+      - get_file_contents
+      - get_gist
+      - get_global_security_advisory
+      - get_job_logs
+      - get_label
+      - get_latest_release
+      - get_me
+      - get_notification_details
+      - get_release_by_tag
+      - get_repository_tree
+      - get_secret_scanning_alert
+      - get_tag
+      - get_team_members
+      - get_teams
+      - issue_read
+      - issue_write
+      - label_write
+      - list_branches
+      - list_code_scanning_alerts
+      - list_commits
+      - list_dependabot_alerts
+      - list_discussion_categories
+      - list_discussions
+      - list_gists
+      - list_global_security_advisories
+      - list_issue_fields
+      - list_issue_types
+      - list_issues
+      - list_label
+      - list_notifications
+      - list_org_repository_security_advisories
+      - list_pull_requests
+      - list_releases
+      - list_repository_collaborators
+      - list_repository_security_advisories
+      - list_secret_scanning_alerts
+      - list_starred_repositories
+      - list_tags
+      - manage_notification_subscription
+      - manage_repository_notification_subscription
+      - mark_all_notifications_read
+      - merge_pull_request
+      - projects_get
+      - projects_list
+      - projects_write
+      - pull_request_read
+      - pull_request_review_write
+      - push_files
+      - repository_ruleset_read
+      - request_copilot_review
+      - search_code
+      - search_commits
+      - search_issues
+      - search_orgs
+      - search_pull_requests
+      - search_repositories
+      - search_users
+      - star_repository
+      - sub_issue_write
+      - unstar_repository
+      - update_gist
+      - update_pull_request
+      - update_pull_request_branch
+
+  gitlab:
+    enabled: false
+    type: stdio
+    name: gitlab
+    command: docker
+    args:
+      - run
+      - -i
+      - --rm
+      - -e
+      - GITLAB_PERSONAL_ACCESS_TOKEN
+      - -e
+      - GITLAB_API_URL
+      - -e
+      - GITLAB_READ_ONLY_MODE
+      - -e
+      - USE_GITLAB_WIKI
+      - -e
+      - USE_MILESTONE
+      - -e
+      - USE_PIPELINE
+      - iwakitakuma/gitlab-mcp
+    env:
+      GITLAB_PERSONAL_ACCESS_TOKEN: "${GITLAB_PERSONAL_ACCESS_TOKEN}"
+      GITLAB_API_URL: https://gitlab.com/api/v4
+      GITLAB_READ_ONLY_MODE: "false"
+      USE_GITLAB_WIKI: "false"
+      USE_MILESTONE: "false"
+      USE_PIPELINE: "true"
+    tools:
+      - bulk_publish_draft_notes
+      - cancel_pipeline
+      - cancel_pipeline_job
+      - create_branch
+      - create_draft_note
+      - create_issue
+      - create_issue_link
+      - create_issue_note
+      - create_label
+      - create_merge_request
+      - create_merge_request_discussion_note
+      - create_merge_request_note
+      - create_merge_request_thread
+      - create_note
+      - create_or_update_file
+      - create_pipeline
+      - create_release
+      - create_release_evidence
+      - create_repository
+      - delete_draft_note
+      - delete_issue
+      - delete_issue_link
+      - delete_label
+      - delete_merge_request_discussion_note
+      - delete_merge_request_note
+      - delete_release
+      - download_attachment
+      - download_release_asset
+      - execute_graphql
+      - fork_repository
+      - get_branch_diffs
+      - get_commit
+      - get_commit_diff
+      - get_draft_note
+      - get_file_contents
+      - get_issue
+      - get_issue_link
+      - get_label
+      - get_merge_request
+      - get_merge_request_diffs
+      - get_merge_request_note
+      - get_merge_request_notes
+      - get_namespace
+      - get_pipeline
+      - get_pipeline_job
+      - get_pipeline_job_output
+      - get_project
+      - get_project_events
+      - get_release
+      - get_repository_tree
+      - get_users
+      - list_commits
+      - list_draft_notes
+      - list_events
+      - list_group_iterations
+      - list_group_projects
+      - list_issue_discussions
+      - list_issue_links
+      - list_issues
+      - list_labels
+      - list_merge_request_diffs
+      - list_merge_requests
+      - list_namespaces
+      - list_pipeline_jobs
+      - list_pipeline_trigger_jobs
+      - list_pipelines
+      - list_project_members
+      - list_projects
+      - list_releases
+      - merge_merge_request
+      - mr_discussions
+      - my_issues
+      - play_pipeline_job
+      - publish_draft_note
+      - push_files
+      - resolve_merge_request_thread
+      - retry_pipeline
+      - retry_pipeline_job
+      - search_repositories
+      - update_draft_note
+      - update_issue
+      - update_issue_note
+      - update_label
+      - update_merge_request
+      - update_merge_request_discussion_note
+      - update_merge_request_note
+      - update_release
+      - upload_markdown
+      - verify_namespace
+
+  # Primary Jira tools plus discovery/execution for the deferred catalog.
+  # Available tools depend on the authenticated Atlassian account and scopes.
+  jira:
+    enabled: false
+    type: http
+    name: jira
+    url: https://mcp.atlassian.com/v2/mcp
+    tools:
+      - atlassianUserInfo
+      - getAccessibleAtlassianResources
+      - discover
+      - executeRead
+      - executeWrite
+      - executeDestructive
+      - getJiraIssue
+      - createJiraIssue
+      - editJiraIssue
+      - transitionJiraIssue
+      - addOrEditJiraIssueComment
+      - searchJiraIssuesUsingJql

@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	agentEnvDir = ".agentenv"
-	configFile  = "agentenv.yaml"
+	agentEnvDir = ".go42x"
+	configFile  = "go42x.yaml"
 )
 
 type Service struct {
@@ -46,9 +46,11 @@ func (s *Service) Init(_ context.Context) error {
 	s.logger.Info("Initializing agentenv")
 
 	targetDir := filepath.Join(s.settings.OutputPath, agentEnvDir)
-	if _, err := os.Stat(targetDir); err == nil {
+	if _, err := os.Stat(filepath.Join(targetDir, configFile)); err == nil {
 		s.logger.Info("Configuration already exists")
 		return nil
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("failed to check configuration: %w", err)
 	}
 
 	s.logger.Info("Creating default configuration")
@@ -62,26 +64,6 @@ func (s *Service) Init(_ context.Context) error {
 	}
 
 	s.logger.Info("agentenv initialized successfully")
-
-	return nil
-}
-
-func (s *Service) Analyse(ctx context.Context) error {
-	if s.settings.AnalysisProvider == "" {
-		return fmt.Errorf("analysis provider is not set")
-	}
-
-	targetDir := filepath.Join(s.settings.OutputPath, agentEnvDir)
-	analyser := newAnalyser(s.logger, targetDir)
-
-	runCtx, cancel := context.WithTimeout(ctx, s.settings.AnalysisTimeout)
-	defer cancel()
-
-	if err := analyser.Run(runCtx, s.settings.AnalysisProvider, s.settings.AnalysisModel); err != nil {
-		return fmt.Errorf("analysis failed: %w", err)
-	}
-
-	s.logger.Info("Analysis completed")
 
 	return nil
 }
@@ -102,9 +84,12 @@ func (s *Service) Generate(ctx context.Context) error {
 
 	templateDir := filepath.Join(s.settings.OutputPath, agentEnvDir)
 	if s.settings.GenerateClean {
-		s.logger.Info("Cleaning output directory", "dir", s.settings.OutputPath)
-		if err := os.RemoveAll(templateDir); err != nil {
-			return fmt.Errorf("failed to clean output directory: %w", err)
+		s.logger.Info("Cleaning generated instructions", "dir", s.settings.OutputPath)
+		for _, provider := range cfg.Providers {
+			outputPath := filepath.Join(s.settings.OutputPath, provider.Output)
+			if err := os.Remove(outputPath); err != nil && !os.IsNotExist(err) {
+				return fmt.Errorf("failed to remove generated file %s: %w", outputPath, err)
+			}
 		}
 	}
 
@@ -128,7 +113,7 @@ const (
 )
 
 var ignoreFiles = []string{
-	".agentenv/kwb/",
+	".go42x/kwb/",
 	".claude/",
 	".mcp.json",
 	"CLAUDE.md",

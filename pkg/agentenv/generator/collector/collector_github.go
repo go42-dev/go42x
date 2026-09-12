@@ -238,10 +238,11 @@ func (c *GitHubActionsCollector) collectRunnerInfo(result map[string]interface{}
 }
 
 func (c *GitHubActionsCollector) derivatives(result map[string]interface{}) {
-	result["build_url"] = fmt.Sprintf(
-		"%s/%s/actions/runs/%s",
-		result["server_url"],
-		result["repository"],
-		result["run_id"],
-	)
+	serverURL, _ := result["server_url"].(string)
+	repository, _ := result["repository"].(map[string]interface{})
+	fullName, _ := repository["full_name"].(string)
+	runID, _ := result["run_id"].(string)
+	if serverURL != "" && fullName != "" && runID != "" {
+		result["build_url"] = fmt.Sprintf("%s/%s/actions/runs/%s", serverURL, fullName, runID)
+	}
 }

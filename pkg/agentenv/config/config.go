@@ -2,10 +2,15 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
+	"regexp"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
+
+var mcpToolNamePattern = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,128}$`)
 
 const (
 	MCPServerTypeStdio = "stdio"
@@ -53,6 +58,13 @@ type MCPServer struct {
 	CWD     string            `yaml:"cwd"`
 }
 
+func (s MCPServer) Transport() string {
+	if s.Type == "" {
+		return MCPServerTypeStdio
+	}
+	return s.Type
+}
+
 func LoadConfig(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -89,6 +101,11 @@ func (c *Config) Validate() error {
 	}
 
 	for name, provider := range c.Providers {
+		switch name {
+		case "claude", "gemini", "crush", "copilot":
+		default:
+			return fmt.Errorf("unknown provider %q", name)
+		}
 		if provider.Template == "" {
 			return fmt.Errorf("provider %s: template is required", name)
 		}
@@ -101,14 +118,38 @@ func (c *Config) Validate() error {
 		if server.Name == "" {
 			return fmt.Errorf("MCP server %s: name is required", name)
 		}
-		if server.Type != "" {
-			switch server.Type {
-			case MCPServerTypeStdio, MCPServerTypeHTTP, MCPServerTypeSSE:
-			default:
-				return fmt.Errorf("MCP server %s: invalid type %s", name, server.Type)
-			}
+		if err := server.validate(); err != nil {
+			return fmt.Errorf("MCP server %s: %w", name, err)
 		}
 	}
 
+	return nil
+}
+
+func (s MCPServer) validate() error {
+	switch s.Transport() {
+	case MCPServerTypeStdio:
+		if strings.TrimSpace(s.Command) == "" {
+			return fmt.Errorf("command is required for stdio transport")
+		}
+	case MCPServerTypeHTTP, MCPServerTypeSSE:
+		u, err := url.Parse(s.URL)
+		if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+			return fmt.Errorf("a valid HTTP(S) URL is required for %s transport", s.Type)
+		}
+	default:
+		return fmt.Errorf("invalid type %s", s.Type)
+	}
+
+	seen := make(map[string]bool, len(s.Tools))
+	for _, tool := range s.Tools {
+		if strings.HasPrefix(tool, "mcp__") || !mcpToolNamePattern.MatchString(tool) {
+			return fmt.Errorf("invalid tool %q: use the raw MCP tool name without a client prefix", tool)
+		}
+		if seen[tool] {
+			return fmt.Errorf("duplicate tool %q", tool)
+		}
+		seen[tool] = true
+	}
 	return nil
 }

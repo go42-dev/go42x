@@ -2,6 +2,7 @@ package generator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -61,19 +62,22 @@ func (g *Generator) Generate(ctx context.Context) error {
 		return fmt.Errorf("failed to build context: %w", err)
 	}
 
+	var generationErrors []error
 	for name, providerConfig := range g.config.Providers {
 		p, exists := g.providers[name]
 		if !exists {
-			g.logger.Warn("Unknown provider", "provider", name)
+			generationErrors = append(generationErrors, fmt.Errorf("unknown provider %q", name))
 			continue
 		}
-		if err := p.Generate(tplCtx.ToMap(), providerConfig); err != nil {
+		ctxData := tplCtx.ToMap()
+		ctxData["provider"] = name
+		if err := p.Generate(ctxData, providerConfig); err != nil {
 			g.logger.Error("Provider generation failed", "provider", name, "error", err)
-			continue
+			generationErrors = append(generationErrors, fmt.Errorf("provider %s: %w", name, err))
 		}
 	}
 
-	return nil
+	return errors.Join(generationErrors...)
 }
 
 func (g *Generator) buildTemplateContext(ctx context.Context) (*Context, error) {
@@ -86,8 +90,6 @@ func (g *Generator) buildTemplateContext(ctx context.Context) (*Context, error) 
 		collector.NewProjectCollector(g.config),
 		collector.NewEnvironmentCollector(g.config.EnvVars),
 		collector.NewGitHubActionsCollector(),
-		collector.NewAnalysisCollector(g.templateDir),
-		collector.NewConventionsCollector(g.outputDir),
 	}
 
 	sort.Slice(collectors, func(i, j int) bool {

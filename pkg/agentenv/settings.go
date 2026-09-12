@@ -1,16 +1,9 @@
 package agentenv
 
-import (
-	"fmt"
-	"time"
-)
+import "fmt"
 
 type Settings struct {
 	OutputPath string
-
-	AnalysisProvider string
-	AnalysisModel    string
-	AnalysisTimeout  time.Duration
 
 	GenerateClean bool
 }

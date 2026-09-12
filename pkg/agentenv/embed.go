@@ -2,6 +2,7 @@ package agentenv
 
 import (
 	"embed"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -37,7 +38,15 @@ func extractTemplate(targetDir string) error {
 			return fmt.Errorf("failed to create directory for %s: %w", targetPath, err)
 		}
 
-		if err := os.WriteFile(targetPath, data, 0644); err != nil {
+		file, err := os.OpenFile(targetPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
+		if os.IsExist(err) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("failed to create file %s: %w", targetPath, err)
+		}
+		_, writeErr := file.Write(data)
+		if err := errors.Join(writeErr, file.Close()); err != nil {
 			return fmt.Errorf("failed to write file %s: %w", targetPath, err)
 		}
 

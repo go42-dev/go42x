@@ -3,64 +3,57 @@ package kwb
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 )
 
 type Settings struct {
-	RootPath  string // Directory to index
-	IndexPath string // Path to store the index
-
-	// Indexing options
+	RootPath        string
+	IndexPath       string
 	ExtraExtensions []string
 	ExcludeDirs     []string
 	MaxFileSize     int
-	BatchSize       int    // Number of documents to index in a batch
-	IndexType       string // Index type: "scorch" (default) or "upsidedown"
-
-	// Search options
+	BatchSize       int
+	IndexType       string
+	Rebuild         bool
 	SearchTimeout   time.Duration
 	SearchLimit     int
-	SearchShowScore bool
-	SearchFuzziness int    // Fuzzy search distance (0 = exact match, 1-2 = fuzzy)
-	HighlightStyle  string // Highlight style: "html" or "ansi"
+}
+
+func NewSettings() *Settings {
+	return &Settings{
+		RootPath: ".", IndexPath: ".go42x/kwb/index",
+		MaxFileSize: 5 * 1024 * 1024, BatchSize: 1000, IndexType: "scorch",
+		SearchTimeout: 5 * time.Second, SearchLimit: 10,
+	}
 }
 
 func (s *Settings) Validate() error {
 	if s == nil {
 		return fmt.Errorf("settings cannot be nil")
 	}
-
-	// Apply defaults
+	if s.RootPath == "" || s.IndexPath == "" {
+		return fmt.Errorf("root and index paths are required")
+	}
 	if s.BatchSize <= 0 {
 		return fmt.Errorf("batch size must be greater than 0")
-	}
-	if s.IndexType == "" {
-		return fmt.Errorf("index type cannot be empty")
 	}
 	if s.MaxFileSize <= 0 {
 		return fmt.Errorf("max file size must be greater than 0")
 	}
-	if s.SearchLimit <= 0 {
-		return fmt.Errorf("search limit must be greater than 0")
+	if s.SearchLimit <= 0 || s.SearchLimit > MaxSearchLimit {
+		return fmt.Errorf("search limit must be between 1 and %d", MaxSearchLimit)
 	}
-	if s.HighlightStyle == "" {
-		return fmt.Errorf("highlight style cannot be empty")
-	}
-
-	// Validate values
-	if s.SearchFuzziness < 0 || s.SearchFuzziness > 2 {
-		return fmt.Errorf("search fuzziness must be between 0 and 2")
+	if s.SearchTimeout <= 0 {
+		return fmt.Errorf("search timeout must be greater than 0")
 	}
 	if s.IndexType != "scorch" && s.IndexType != "upsidedown" {
 		return fmt.Errorf("invalid index type: %s (must be 'scorch' or 'upsidedown')", s.IndexType)
 	}
-
 	return nil
 }
 
 func (s *Settings) IndexExists() bool {
-	if _, err := os.Stat(s.IndexPath); os.IsNotExist(err) {
-		return false
-	}
-	return true
+	_, err := os.Stat(filepath.Join(s.IndexPath, "CURRENT"))
+	return err == nil
 }

@@ -2,14 +2,14 @@
 
 <context>
   <language>{{ .project.language }}</language>
-  {{ if gt (len .project.tags) 0 -}}
+  {{ if .project.tags -}}
   <tags>
     {{- range .project.tags }}
     - {{ . }}
     {{- end }}
   </tags>
   {{- end }}
-  {{ if gt (len .project.metadata) 0 -}}
+  {{ if .project.metadata -}}
   <metadata>
     {{- range $key, $value := .project.metadata }}
     <{{ $key }}>{{ $value }}</{{ $key }}>
@@ -39,7 +39,3 @@ User can specify the workflow by saying "Use [workflow name] workflow".
 You are allowed to execute only one of the following workflows at any given time:
 
 {{ .workflows }}
-
-{{ if gt (len .analysis) 0 -}}
-{{ .analysis.content }}
-{{ end -}}

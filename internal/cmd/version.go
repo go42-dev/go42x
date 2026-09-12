@@ -14,11 +14,17 @@ func NewVersionCommand() *cobra.Command {
 		Use:   "version",
 		Short: "Version information",
 		Long:  `Version information`,
-		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Printf("Version: %s\n", version.GetVersion())
-			fmt.Printf("Go:      %s\n", runtime.Version())
-			fmt.Printf("OS/Arch: %s/%s\n", runtime.GOOS, runtime.GOARCH)
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runVersionCommand(cmd)
 		},
 	}
 	return cmd
+}
+
+func runVersionCommand(_ *cobra.Command) error {
+	fmt.Printf("Version: %s\n", version.GetVersion())
+	fmt.Printf("Go:      %s\n", runtime.Version())
+	fmt.Printf("OS/Arch: %s/%s\n", runtime.GOOS, runtime.GOARCH)
+	return nil
 }

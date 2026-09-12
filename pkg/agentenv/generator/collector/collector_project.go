@@ -56,7 +56,7 @@ func (c *ProjectCollector) Collect(_ context.Context) (map[string]interface{}, e
 		if server.Enabled {
 			mcpServers = append(mcpServers, map[string]interface{}{
 				"name":    name,
-				"type":    server.Type,
+				"type":    server.Transport(),
 				"command": server.Command,
 			})
 		}

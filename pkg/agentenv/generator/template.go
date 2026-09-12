@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"text/template"
+
+	"github.com/go42-dev/go42x/pkg/agentenv/generator/provider"
 )
 
 const (
@@ -27,10 +29,11 @@ func newTemplateEngine(baseDir string) *templateEngine {
 
 func defaultFuncs() template.FuncMap {
 	return template.FuncMap{
-		"lower": strings.ToLower,
-		"upper": strings.ToUpper,
-		"trim":  strings.TrimSpace,
-		"join":  strings.Join,
+		"mcpTool": provider.MCPToolName,
+		"lower":   strings.ToLower,
+		"upper":   strings.ToUpper,
+		"trim":    strings.TrimSpace,
+		"join":    strings.Join,
 	}
 }
 

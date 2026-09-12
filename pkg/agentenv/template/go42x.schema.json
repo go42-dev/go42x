@@ -2,11 +2,12 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/go42-dev/go42x/agentenv/schema/v1.0",
   "title": "AgentEnv Configuration Schema",
-  "description": "Schema for .agentenv configuration file",
+  "description": "Schema for .go42x/go42x.yaml configuration file",
   "type": "object",
   "required": [
     "version",
-    "project"
+    "project",
+    "providers"
   ],
   "properties": {
     "version": {
@@ -129,6 +130,14 @@
             }
           }
         }
+      },
+      "propertyNames": {
+        "enum": [
+          "claude",
+          "gemini",
+          "crush",
+          "copilot"
+        ]
       }
     },
     "mcp": {
@@ -143,7 +152,7 @@
           "enabled": {
             "type": "boolean",
             "description": "Whether this MCP server is enabled",
-            "default": true
+            "default": false
           },
           "type": {
             "type": "string",
@@ -167,7 +176,8 @@
           },
           "command": {
             "type": "string",
-            "description": "Command to execute (for stdio type)"
+            "description": "Command to execute (for stdio type)",
+            "minLength": 1
           },
           "args": {
             "type": "array",
@@ -185,11 +195,13 @@
           },
           "tools": {
             "type": "array",
-            "description": "Available tools from this server",
+            "description": "Raw MCP tool names, without a client or server prefix",
             "items": {
               "type": "string",
-              "pattern": "^mcp__[a-z0-9_]+__[a-z0-9_]+$"
-            }
+              "pattern": "^(?!mcp__)[A-Za-z0-9_.-]+$",
+              "maxLength": 128
+            },
+            "uniqueItems": true
           },
           "headers": {
             "type": "object",
@@ -227,7 +239,10 @@
                     "sse"
                   ]
                 }
-              }
+              },
+              "required": [
+                "type"
+              ]
             },
             "then": {
               "required": [

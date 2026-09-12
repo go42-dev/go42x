@@ -6,7 +6,7 @@ This guide explains how to effectively search and navigate codebases using avail
 
 **Specialized MCP Servers** - Language-specific or domain-specific tools that provide semantic understanding:
 - Language servers (gopls for Go, typescript-language-server, rust-analyzer, etc.)
-- Knowledge base servers (go42x-kwb or similar indexed search tools)
+- Knowledge base servers (go42x or similar indexed search tools)
 - Documentation servers and API explorers
 
 **Native Search Tools** - Built-in utilities for text and pattern matching:
@@ -20,13 +20,13 @@ This guide explains how to effectively search and navigate codebases using avail
 **Start with specialized tools if available**, then fall back to native tools when needed.
 
 **For initial exploration:**
-- Try knowledge base tools (like go42x-kwb) for indexed searches
+- Try knowledge base tools (like go42x) for indexed searches
 - Use Glob to discover file structure and patterns
 - Use Grep for broad keyword searches
 - Example: Finding all configuration files → Try KB tool's list_files, fallback to Glob with "**/*.{json,yaml,toml}"
 
 **For text and pattern searches:**
-- Try knowledge base search functions first (faster for indexed content)
+- Use knowledge-base search for ranked documentation sections and code snippets
 - Fall back to Grep for complex regex patterns
 - Use Task for multi-round iterative searches
 - Example: Finding error messages → KB search, then Grep with pattern "error|Error|ERROR"
@@ -41,7 +41,7 @@ This guide explains how to effectively search and navigate codebases using avail
 - Use specialized getters if they provide additional context
 - Fall back to Read tool for direct access
 - Combine with language servers for semantic context
-- Example: Reading a config file → KB get_file for metadata, or Read for raw content
+- Example: Reading a config file → KB get_file for a bounded line range, or Read for direct access
 
 #### Search Strategy Decision Tree
 
@@ -98,12 +98,12 @@ What do you need to find?
 #### Performance Tips
 
 **Fast operations:**
-- Indexed KB searches (milliseconds)
+- Indexed KB searches return ranked snippets; latency depends on query and corpus size
 - Glob for file discovery (fast for patterns)
 - Read for known file paths (instant)
 
 **Moderate operations:**
-- Grep on small-medium codebases (seconds)
+- Grep performance depends on repository size, filesystem cache, and the pattern
 - Language server queries (depends on project size)
 
 **Slower operations:**

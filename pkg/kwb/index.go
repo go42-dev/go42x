@@ -1,303 +1,229 @@
 package kwb
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
+	"time"
 
 	"github.com/blevesearch/bleve/v2"
+	"github.com/blevesearch/bleve/v2/analysis/analyzer/custom"
+	"github.com/blevesearch/bleve/v2/analysis/token/lowercase"
+	"github.com/blevesearch/bleve/v2/analysis/tokenizer/unicode"
 	"github.com/blevesearch/bleve/v2/mapping"
+	"github.com/gofrs/flock"
 )
 
-var defaultExcludedDirs = []string{
-	".git",
-	"vendor",
-	"node_modules",
-	".idea",
-	".vscode",
-	"dist",
-	"build",
-	"bin",
-	".go42x",
+const schemaVersion = 2
+
+type fileRecord struct {
+	Hash     string `json:"hash"`
+	Size     int64  `json:"size"`
+	Chunks   int    `json:"chunks"`
+	Lines    int    `json:"lines"`
+	Kind     string `json:"kind"`
+	Language string `json:"language"`
 }
 
-var defaultExtensions = map[string]bool{
-	".go":    true,
-	".md":    true,
-	".yaml":  true,
-	".yml":   true,
-	".mod":   true,
-	".sum":   true,
-	".proto": true,
-	".sql":   true,
-	".json":  true,
-	".toml":  true,
-	".env":   true,
-	".sh":    true,
+type manifest struct {
+	Version   int                   `json:"version"`
+	Root      string                `json:"root"`
+	IndexType string                `json:"index_type"`
+	BuiltAt   time.Time             `json:"built_at"`
+	Files     map[string]fileRecord `json:"files"`
 }
 
-var allowedExtensions = []string{
-	"Makefile",
-	"Dockerfile",
-	".gitignore",
+type snapshot struct {
+	generation string
+	index      bleve.Index
+	manifest   *manifest
+	lease      *flock.Flock
 }
+
+func (s *snapshot) close() error { return errors.Join(s.index.Close(), s.lease.Unlock()) }
 
 type indexManager struct {
 	logger   *slog.Logger
 	settings *Settings
-	index    bleve.Index
+	mu       sync.RWMutex
+	current  *snapshot
 }
 
 func newIndexManager(settings *Settings, logger *slog.Logger) *indexManager {
-	return &indexManager{
-		logger:   logger,
-		settings: settings,
-	}
+	return &indexManager{settings: settings, logger: logger}
 }
 
-func (m *indexManager) BuildIndex(rootPath string) error {
-	// Remove old index if exists
-	err := os.RemoveAll(m.settings.IndexPath)
-	if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("removing old index: %w", err)
+func acquireLock(ctx context.Context, lock *flock.Flock, shared bool) error {
+	var ok bool
+	var err error
+	if shared {
+		ok, err = lock.TryRLockContext(ctx, 10*time.Millisecond)
+	} else {
+		ok, err = lock.TryLockContext(ctx, 10*time.Millisecond)
 	}
-
-	// Create directory for index
-	indexDir := filepath.Dir(m.settings.IndexPath)
-	if err := os.MkdirAll(indexDir, 0755); err != nil {
-		return fmt.Errorf("creating index directory: %w", err)
-	}
-
-	// Create optimized index mapping
-	mapping := m.createOptimizedMapping()
-
-	// Use configured index type (scorch is faster and more memory efficient)
-	indexType := m.settings.IndexType
-	if indexType == "" {
-		indexType = "scorch"
-	}
-
-	index, err := bleve.NewUsing(m.settings.IndexPath, mapping, indexType, indexType, nil)
 	if err != nil {
-		return fmt.Errorf("creating index: %w", err)
+		return err
 	}
-	defer index.Close() // nolint:errcheck
-
-	// Walk and index files with batch processing
-	fileCount := 0
-	batch := index.NewBatch()
-	batchSize := 0
-	maxBatchSize := m.settings.BatchSize
-	if maxBatchSize <= 0 {
-		maxBatchSize = 100
+	if !ok {
+		return ctx.Err()
 	}
-
-	err = filepath.Walk(rootPath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			m.logger.Error("error accessing path", "err", err, "path", path)
-			return nil
-		}
-
-		// Skip directories
-		if info.IsDir() {
-			// Check if directory should be excluded
-			dirName := filepath.Base(path)
-			for _, excl := range defaultExcludedDirs {
-				if dirName == excl {
-					m.logger.Info("skipping excluded directory", slog.String("path", path))
-					return filepath.SkipDir
-				}
-			}
-			for _, excl := range m.settings.ExcludeDirs {
-				if dirName == excl {
-					m.logger.Info("skipping user-excluded directory", slog.String("path", path))
-					return filepath.SkipDir
-				}
-			}
-			return nil
-		}
-
-		// Check if file should be indexed
-		ext := filepath.Ext(path)
-		if !m.shouldIndexFile(m.settings.ExtraExtensions, info.Name(), ext) {
-			return nil
-		}
-
-		// Skip very large files
-		if info.Size() > int64(m.settings.MaxFileSize) {
-			m.logger.Warn("skipping large file",
-				slog.String("path", path),
-				slog.Int64("size", info.Size()))
-			return nil
-		}
-
-		// Read and index file
-		content, err := os.ReadFile(path)
-		if err != nil {
-			m.logger.Warn("failed to read file",
-				slog.String("path", path),
-				slog.String("error", err.Error()))
-			return nil
-		}
-
-		doc := document{
-			ID:      path,
-			Path:    path,
-			Content: string(content),
-			Type:    getFileType(path),
-		}
-
-		// Add to batch
-		err = batch.Index(doc.ID, doc)
-		if err != nil {
-			m.logger.Error("failed to add document to batch",
-				slog.String("path", path),
-				slog.String("error", err.Error()))
-			return nil
-		}
-		batchSize++
-
-		// Process batch when it reaches max size
-		if batchSize >= maxBatchSize {
-			if err := index.Batch(batch); err != nil {
-				m.logger.Error("failed to process batch",
-					slog.String("error", err.Error()))
-				return fmt.Errorf("batch indexing failed: %w", err)
-			}
-			m.logger.Info("processed batch", slog.Int("size", batchSize))
-			batch = index.NewBatch()
-			batchSize = 0
-		}
-
-		fileCount++
-		m.logger.Debug("queued file for indexing", slog.String("path", path))
-		return nil
-	})
-
-	// Process remaining documents in batch
-	if batchSize > 0 {
-		if err := index.Batch(batch); err != nil {
-			return fmt.Errorf("final batch indexing failed: %w", err)
-		}
-		m.logger.Info("processed final batch", slog.Int("size", batchSize))
-	}
-
-	if err != nil {
-		return fmt.Errorf("walking directory: %w", err)
-	}
-
-	count, _ := index.DocCount()
-	m.logger.Info("indexing complete",
-		slog.Uint64("documents", count),
-		slog.Int("files_processed", fileCount))
-
 	return nil
 }
 
-func (m *indexManager) OpenIndex() error {
-	if m.index != nil {
-		return nil // Already open
+func (m *indexManager) generation() (string, error) {
+	data, err := os.ReadFile(filepath.Join(m.settings.IndexPath, "CURRENT"))
+	if os.IsNotExist(err) {
+		return "", fmt.Errorf(
+			"index not found or requires rebuilding at %s; run 'go42x kwb --index %q' first: %w",
+			m.settings.IndexPath,
+			m.settings.IndexPath,
+			err,
+		)
 	}
-
-	index, err := bleve.Open(m.settings.IndexPath)
 	if err != nil {
+		return "", err
+	}
+	name := strings.TrimSpace(string(data))
+	if !strings.HasPrefix(name, "gen-") || filepath.Base(name) != name {
+		return "", fmt.Errorf("invalid index generation %q", name)
+	}
+	return name, nil
+}
+
+func readManifest(path string) (*manifest, error) {
+	data, err := os.ReadFile(filepath.Join(path, "manifest.json"))
+	if err != nil {
+		return nil, err
+	}
+	var result manifest
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, err
+	}
+	if result.Files == nil || result.Root == "" {
+		return nil, fmt.Errorf("invalid index manifest")
+	}
+	return &result, nil
+}
+
+// withSnapshot holds a shared in-process lease for the whole operation. Opening,
+// replacing and closing an index are exclusive; searches on it run concurrently.
+func (m *indexManager) withSnapshot(ctx context.Context, fn func(*snapshot) error) error {
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		generation, err := m.generation()
+		if err != nil {
+			return err
+		}
+		m.mu.RLock()
+		if m.current != nil && m.current.generation == generation {
+			err := ctx.Err()
+			if err == nil {
+				err = fn(m.current)
+			}
+			m.mu.RUnlock()
+			return err
+		}
+		m.mu.RUnlock()
+		if err := m.refresh(ctx); err != nil {
+			return err
+		}
+	}
+}
+
+func (m *indexManager) refresh(ctx context.Context) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	catalog := flock.New(filepath.Join(m.settings.IndexPath, "catalog.lock"))
+	if err := acquireLock(ctx, catalog, true); err != nil {
+		return err
+	}
+	defer catalog.Unlock() //nolint:errcheck
+	generation, err := m.generation()
+	if err != nil {
+		return err
+	}
+	if m.current != nil && m.current.generation == generation {
+		return nil
+	}
+	directory := filepath.Join(m.settings.IndexPath, generation)
+	lease := flock.New(filepath.Join(directory, "LEASE"))
+	if err := acquireLock(ctx, lease, true); err != nil {
+		return err
+	}
+	meta, err := readManifest(directory)
+	if err != nil {
+		_ = lease.Unlock()
+		return err
+	}
+	if meta.Version != schemaVersion {
+		_ = lease.Unlock()
+		return fmt.Errorf("index format changed; run 'go42x kwb --rebuild' first")
+	}
+	index, err := bleve.OpenUsing(
+		filepath.Join(directory, "data"),
+		map[string]interface{}{"read_only": true, "bolt_timeout": "1s"},
+	)
+	if err != nil {
+		_ = lease.Unlock()
 		return fmt.Errorf("opening index: %w", err)
 	}
-
-	m.index = index
+	old := m.current
+	m.current = &snapshot{generation, index, meta, lease}
+	if old != nil {
+		if err := old.close(); err != nil {
+			m.logger.Warn("closing previous index", "error", err)
+		}
+	}
 	return nil
 }
 
 func (m *indexManager) CloseIndex() error {
-	if m.index != nil {
-		err := m.index.Close()
-		m.index = nil
-		return err
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.current == nil {
+		return nil
 	}
-	return nil
+	err := m.current.close()
+	m.current = nil
+	return err
 }
 
-func (m *indexManager) GetIndex() (bleve.Index, error) {
-	if m.index == nil {
-		if err := m.OpenIndex(); err != nil {
-			return nil, err
-		}
-	}
-	return m.index, nil
-}
-
-func (m *indexManager) GetStats() (map[string]interface{}, error) {
-	index, err := m.GetIndex()
-	if err != nil {
+func createMapping() (mapping.IndexMapping, error) {
+	result := bleve.NewIndexMapping()
+	if err := result.AddCustomAnalyzer("identifier", map[string]interface{}{
+		"type": custom.Name, "tokenizer": unicode.Name, "token_filters": []string{lowercase.Name},
+	}); err != nil {
 		return nil, err
 	}
-
-	count, err := index.DocCount()
-	if err != nil {
-		return nil, fmt.Errorf("getting doc count: %w", err)
+	result.IndexDynamic, result.StoreDynamic = false, false
+	doc := bleve.NewDocumentMapping()
+	doc.Dynamic = false
+	for _, name := range []string{"path", "kind", "language", "symbols"} {
+		field := bleve.NewKeywordFieldMapping()
+		field.Store, field.IncludeInAll, field.IncludeTermVectors = true, false, false
+		doc.AddFieldMappingsAt(name, field)
 	}
-
-	stats := map[string]interface{}{
-		"document_count": count,
-		"index_path":     m.settings.IndexPath,
+	for name, analyzer := range map[string]string{"title": "standard", "names": "identifier", "filename": "identifier", "code": "identifier", "prose": "standard"} {
+		field := bleve.NewTextFieldMapping()
+		field.Analyzer, field.Store, field.IncludeInAll, field.IncludeTermVectors = analyzer, name == "title", false, false
+		doc.AddFieldMappingsAt(name, field)
 	}
-
-	return stats, nil
-}
-
-func (m *indexManager) createOptimizedMapping() mapping.IndexMapping {
-	mapping := bleve.NewIndexMapping()
-
-	// Configure default analyzer for better code search
-	mapping.DefaultAnalyzer = "standard"
-
-	// Create document mapping
-	docMapping := bleve.NewDocumentMapping()
-
-	// Path field - keyword for exact matches
-	pathField := bleve.NewKeywordFieldMapping()
-	pathField.Store = true
-	pathField.IncludeInAll = true
-	docMapping.AddFieldMappingsAt("path", pathField)
-
-	// Type field - keyword for filtering
-	typeField := bleve.NewKeywordFieldMapping()
-	typeField.Store = true
-	typeField.IncludeInAll = false
-	docMapping.AddFieldMappingsAt("type", typeField)
-
-	// Content field - text with custom analyzer
-	contentField := bleve.NewTextFieldMapping()
-	contentField.Store = true // Store content for retrieval
-	contentField.IncludeInAll = true
-	contentField.IncludeTermVectors = true // For highlighting
-	contentField.Analyzer = "standard"
-	docMapping.AddFieldMappingsAt("content", contentField)
-
-	// Set as default mapping
-	mapping.DefaultMapping = docMapping
-
-	// Configure to not index dynamic fields
-	mapping.IndexDynamic = false
-	mapping.StoreDynamic = false
-
-	return mapping
-}
-
-func (m *indexManager) shouldIndexFile(extra []string, name string, ext string) bool {
-	if ext == "" {
-		for _, sf := range allowedExtensions {
-			if name == sf {
-				return true
-			}
-		}
-		for _, sf := range extra {
-			if name == sf {
-				return true
-			}
-		}
-		return false
+	content := bleve.NewTextFieldMapping()
+	content.Index, content.Store, content.IncludeInAll, content.IncludeTermVectors = false, true, false, false
+	doc.AddFieldMappingsAt("content", content)
+	for _, name := range []string{"start_line", "end_line"} {
+		field := bleve.NewNumericFieldMapping()
+		field.Store, field.IncludeInAll = true, false
+		doc.AddFieldMappingsAt(name, field)
 	}
-	return defaultExtensions[ext]
+	result.DefaultMapping = doc
+	return result, nil
 }

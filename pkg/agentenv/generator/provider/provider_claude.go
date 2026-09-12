@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/go42-dev/go42x/pkg/agentenv/config"
@@ -163,17 +164,21 @@ func (p *ClaudeProvider) extractMCPServers(allTools *[]string) ([]string, map[st
 	for name, server := range p.config.MCP {
 		if server.Enabled {
 			enabledServers = append(enabledServers, name)
-			*allTools = append(*allTools, server.Tools...)
+			for _, tool := range server.Tools {
+				*allTools = append(*allTools, MCPToolName(Claude, name, tool))
+			}
 			mcpServers[name] = ClaudeMCPServer{
 				Command: server.Command,
 				Args:    server.Args,
 				Env:     server.Env,
-				Type:    server.Type,
+				Type:    server.Transport(),
 				URL:     server.URL,
 				Headers: server.Headers,
 			}
 		}
 	}
+	sort.Strings(enabledServers)
+	sort.Strings(*allTools)
 	return enabledServers, mcpServers
 }
 

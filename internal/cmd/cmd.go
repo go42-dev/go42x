@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"context"
-	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -15,9 +15,7 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/go42-dev/go42x/internal/cmd/agentenv"
-	"github.com/go42-dev/go42x/internal/cmd/kwb"
 	"github.com/go42-dev/go42x/internal/cmdutil"
-	"github.com/go42-dev/go42x/pkg/go42x"
 )
 
 const envPrefix = "GO42X"
@@ -32,18 +30,26 @@ func NewGo42Command(ctx context.Context, f *cmdutil.Factory) *cobra.Command {
 		Use:   "go42x",
 		Short: "Helper tool for go42 project",
 		Long:  `Helper tool for go42 project`,
-		PreRunE: func(cmd *cobra.Command, args []string) error {
-			return viper.BindPFlags(cmd.Flags())
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runVersionCommand(cmd)
 		},
-		RunE: func(cmd *cobra.Command, args []string) error {
-			settings := &go42x.Settings{
-				Dummy: viper.GetBool("dummy"),
+		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			// Cobra has parsed and merged the selected command's local and
+			// inherited flags by this point. Bind only that command's flags.
+			if err := viper.BindPFlags(cmd.Flags()); err != nil {
+				return err
 			}
-			initLogging(f.Options().LogLevel)
-			return runCommand(f, settings)
-		},
-		PersistentPreRun: func(cmd *cobra.Command, args []string) {
-			initLogging(f.Options().LogLevel)
+			options := f.Options()
+			*options = cmdutil.Options{
+				LogLevel: viper.GetString("log-level"),
+			}
+			output := cmd.OutOrStdout()
+			if cmd.Annotations["mcp-stdio"] == "true" {
+				output = cmd.ErrOrStderr()
+			}
+			initLogging(options.LogLevel, output)
+			return nil
 		},
 		SilenceUsage:  true,
 		SilenceErrors: false,
@@ -60,12 +66,10 @@ func NewGo42Command(ctx context.Context, f *cmdutil.Factory) *cobra.Command {
 
 	f.BindFlags(cmd.PersistentFlags())
 
-	flags := cmd.Flags()
-	flags.Bool("dummy", false, "Dummy.")
-
 	cmd.AddCommand(NewVersionCommand())
+	cmd.AddCommand(NewMCPCommand())
+	cmd.AddCommand(NewKnowledgeBaseCommand(f))
 	cmd.AddCommand(agentenv.NewAgentEnvCommand(f))
-	cmd.AddCommand(kwb.NewKnowledgeBaseCommand(f))
 
 	return cmd
 }
@@ -90,7 +94,7 @@ func Execute() int {
 	return exitOK
 }
 
-func initLogging(level string) {
+func initLogging(level string, output io.Writer) {
 	var slogLevel slog.Level
 	switch level {
 	case "debug":
@@ -111,7 +115,7 @@ func initLogging(level string) {
 		TimeFormat: time.TimeOnly,
 	}
 
-	logger := slog.New(tint.NewHandler(os.Stdout, loggerOpts))
+	logger := slog.New(tint.NewHandler(output, loggerOpts))
 
 	// Any call to log.* will be redirected to slog.Error.
 	// Because of that, we need to agree to use `log` package only for errors.
@@ -119,15 +123,4 @@ func initLogging(level string) {
 
 	// for both 'log' and 'slog'
 	slog.SetDefault(logger)
-}
-
-func runCommand(f *cmdutil.Factory, settings *go42x.Settings) error {
-	service, err := go42x.NewCommitService(
-		settings,
-		go42x.WithLogger(slog.Default()),
-	)
-	if err != nil {
-		return fmt.Errorf("failed to initialize commit service: %w", err)
-	}
-	return service.Execute(f.Context())
 }

@@ -5,24 +5,29 @@ import (
 	"log/slog"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 
 	"github.com/go42-dev/go42x/internal/cmdutil"
 	"github.com/go42-dev/go42x/pkg/agentenv"
 )
 
-func newGenerateCommand(f *cmdutil.Factory, settings *agentenv.Settings) *cobra.Command {
+func newGenerateCommand(f *cmdutil.Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "generate",
 		Short: "Generate ai agent configuration",
 		Long:  `Generate ai agent configuration`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			settings := &agentenv.Settings{
+				OutputPath:    viper.GetString("output"),
+				GenerateClean: viper.GetBool("clean"),
+			}
 			return runGenerateCommand(f, settings)
 		},
 	}
 
-	cmd.Flags().BoolVar(
-		&settings.GenerateClean, "clean", false,
-		"delete existing configuration files before generating new ones",
+	cmd.Flags().Bool(
+		"clean", false,
+		"remove generated instruction files before regenerating them",
 	)
 
 	return cmd

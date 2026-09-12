@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"sort"
 
 	"github.com/go42-dev/go42x/pkg/agentenv/config"
 )
@@ -17,23 +18,30 @@ const (
 	mcpDefaultTimeout      = 30000 // in milliseconds
 	mcpDefaultTrust        = true
 	maxSessionsTurns       = 10
-	maxSessionDuration     = 600 // in seconds
 	checkpointingEnabled   = true
-	autoAcceptEnabled      = true
 	usageStatisticsEnabled = false
 )
 
 // GeminiSettings represents .gemini/settings.json structure
 type GeminiSettings struct {
-	CoreTools              []string                         `json:"coreTools"`
-	ExcludeTools           []string                         `json:"excludeTools"`
-	MaxSessionTurns        int                              `json:"maxSessionTurns"`
-	MaxSessionDuration     int                              `json:"maxSessionDuration"`
-	Checkpointing          GeminiCheckpointing              `json:"checkpointing"`
-	AutoAccept             bool                             `json:"autoAccept"`
-	MCPServers             map[string]GeminiMCPServerConfig `json:"mcpServers"`
-	AllowMCPServers        []string                         `json:"allowMCPServers"`
-	UsageStatisticsEnabled bool                             `json:"usageStatisticsEnabled"`
+	Tools struct {
+		Core    []string `json:"core,omitempty"`
+		Allowed []string `json:"allowed,omitempty"`
+	} `json:"tools"`
+	General struct {
+		Checkpointing       GeminiCheckpointing `json:"checkpointing"`
+		DefaultApprovalMode string              `json:"defaultApprovalMode"`
+	} `json:"general"`
+	Model struct {
+		MaxSessionTurns int `json:"maxSessionTurns"`
+	} `json:"model"`
+	MCP struct {
+		Allowed []string `json:"allowed"`
+	} `json:"mcp"`
+	Privacy struct {
+		UsageStatisticsEnabled bool `json:"usageStatisticsEnabled"`
+	} `json:"privacy"`
+	MCPServers map[string]GeminiMCPServerConfig `json:"mcpServers"`
 }
 
 type GeminiCheckpointing struct {
@@ -42,15 +50,16 @@ type GeminiCheckpointing struct {
 
 // @see https://github.com/google-gemini/gemini-cli/blob/main/docs/tools/mcp-server.md
 type GeminiMCPServerConfig struct {
-	URL     string            `json:"url,omitempty"`     // for sse
-	HttpUrl string            `json:"httpUrl,omitempty"` // http streaming endpoint url
-	Command string            `json:"command,omitempty"` //
-	Args    []string          `json:"args,omitempty"`    //
-	Env     map[string]string `json:"env,omitempty"`     // $VAR_NAME or ${VAR_NAME} syntax
-	CWD     string            `json:"cwd,omitempty"`     // current working directory
-	Timeout int               `json:"timeout,omitempty"` //
-	Trust   bool              `json:"trust,omitempty"`   //
-	Headers map[string]string `json:"headers,omitempty"` // when using url or httpUrl
+	URL          string            `json:"url,omitempty"`     // for sse
+	HttpUrl      string            `json:"httpUrl,omitempty"` // http streaming endpoint url
+	Command      string            `json:"command,omitempty"` //
+	Args         []string          `json:"args,omitempty"`    //
+	Env          map[string]string `json:"env,omitempty"`     // $VAR_NAME or ${VAR_NAME} syntax
+	CWD          string            `json:"cwd,omitempty"`     // current working directory
+	Timeout      int               `json:"timeout,omitempty"` //
+	Trust        bool              `json:"trust,omitempty"`   //
+	Headers      map[string]string `json:"headers,omitempty"` // when using url or httpUrl
+	IncludeTools []string          `json:"includeTools,omitempty"`
 }
 
 type GeminiProvider struct {
@@ -124,21 +133,19 @@ func (p *GeminiProvider) Generate(ctxData map[string]interface{}, providerConfig
 }
 
 func (p *GeminiProvider) generateConfigFiles(providerConfig config.Provider) error {
-	allTools := p.collectAllTools(providerConfig)
-	enabledServers, mcpServers := p.extractMCPServers(&allTools)
+	enabledServers, mcpServers := p.extractMCPServers()
 
 	// Generate .gemini/settings.json
 	geminiSettings := GeminiSettings{
-		CoreTools:              allTools,
-		ExcludeTools:           []string{},
-		MaxSessionTurns:        maxSessionsTurns,
-		MaxSessionDuration:     maxSessionDuration,
-		Checkpointing:          GeminiCheckpointing{Enabled: checkpointingEnabled},
-		AutoAccept:             autoAcceptEnabled,
-		MCPServers:             mcpServers,
-		AllowMCPServers:        enabledServers,
-		UsageStatisticsEnabled: usageStatisticsEnabled,
+		MCPServers: mcpServers,
 	}
+	geminiSettings.Tools.Core = providerConfig.Tools
+	geminiSettings.Tools.Allowed = providerConfig.Tools
+	geminiSettings.General.Checkpointing.Enabled = checkpointingEnabled
+	geminiSettings.General.DefaultApprovalMode = "auto_edit"
+	geminiSettings.Model.MaxSessionTurns = maxSessionsTurns
+	geminiSettings.MCP.Allowed = enabledServers
+	geminiSettings.Privacy.UsageStatisticsEnabled = usageStatisticsEnabled
 
 	geminiDir := filepath.Join(p.outputDir, geminiSettingsDir)
 	settingsPath := filepath.Join(geminiDir, geminiSettingsFile)
@@ -151,33 +158,33 @@ func (p *GeminiProvider) generateConfigFiles(providerConfig config.Provider) err
 	return nil
 }
 
-func (p *GeminiProvider) collectAllTools(providerConfig config.Provider) []string {
-	allTools := make([]string, 0, len(providerConfig.Tools))
-	allTools = append(allTools, providerConfig.Tools...)
-	return allTools
-}
-
-func (p *GeminiProvider) extractMCPServers(allTools *[]string) ([]string, map[string]GeminiMCPServerConfig) {
+func (p *GeminiProvider) extractMCPServers() ([]string, map[string]GeminiMCPServerConfig) {
 	enabledServers := []string{}
 	mcpServers := make(map[string]GeminiMCPServerConfig)
 
 	for name, server := range p.config.MCP {
 		if server.Enabled {
 			enabledServers = append(enabledServers, name)
-			*allTools = append(*allTools, server.Tools...)
-			mcpServers[name] = GeminiMCPServerConfig{
-				Command: server.Command,
-				Args:    server.Args,
-				Env:     server.Env,
-				Timeout: mcpDefaultTimeout,
-				Trust:   mcpDefaultTrust,
-				URL:     server.URL,
-				Headers: server.Headers,
-				CWD:     server.CWD,
+			mcpServer := GeminiMCPServerConfig{
+				Command:      server.Command,
+				Args:         server.Args,
+				Env:          server.Env,
+				Timeout:      mcpDefaultTimeout,
+				Trust:        mcpDefaultTrust,
+				Headers:      server.Headers,
+				CWD:          server.CWD,
+				IncludeTools: server.Tools,
 			}
+			if server.Transport() == config.MCPServerTypeHTTP {
+				mcpServer.HttpUrl = server.URL
+			} else if server.Transport() == config.MCPServerTypeSSE {
+				mcpServer.URL = server.URL
+			}
+			mcpServers[name] = mcpServer
 		}
 	}
 
+	sort.Strings(enabledServers)
 	return enabledServers, mcpServers
 }
 

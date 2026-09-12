@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"regexp"
+	"strings"
 
 	"github.com/go42-dev/go42x/pkg/agentenv/config"
 )
@@ -16,7 +18,7 @@ const (
 	copilotMcpConfigFile = ".copilot.mcp.json"
 )
 
-// ClaudeMCPConfig represents .mcp.json structure
+// CopilotMCPConfig represents the configuration to import into Copilot cloud agent settings.
 type CopilotMCPConfig struct {
 	MCPServers map[string]CopilotMCPServer `json:"mcpServers"`
 }
@@ -29,7 +31,7 @@ type CopilotMCPServer struct {
 	Args    []string          `json:"args,omitempty"`    //
 	Env     map[string]string `json:"env,omitempty"`     // gh secret `COPILOT_MCP_`
 	Headers map[string]string `json:"headers,omitempty"` // for sse and http, gh secret `$COPILOT_MCP_`
-	Tools   []string          `json:"tools,omitempty"`   // list of allowed tools, required for local type
+	Tools   []string          `json:"tools"`             // raw tool names, required for all transports
 }
 
 type CopilotProvider struct {
@@ -95,16 +97,15 @@ func (p *CopilotProvider) Generate(ctxData map[string]interface{}, providerConfi
 
 	p.logger.Info("Generated output", "file", outputPath)
 
-	if err := p.generateConfigFiles(providerConfig); err != nil {
+	if err := p.generateConfigFiles(); err != nil {
 		return fmt.Errorf("failed to generate config files: %w", err)
 	}
 
 	return nil
 }
 
-func (p *CopilotProvider) generateConfigFiles(providerConfig config.Provider) error {
-	allTools := p.collectAllTools(providerConfig)
-	mcpConfig := p.extractMCPServers(&allTools)
+func (p *CopilotProvider) generateConfigFiles() error {
+	mcpConfig := p.extractMCPServers()
 
 	// Generate .copilot.mcp.json
 	cfg := CopilotMCPConfig{
@@ -121,29 +122,54 @@ func (p *CopilotProvider) generateConfigFiles(providerConfig config.Provider) er
 	return nil
 }
 
-func (p *CopilotProvider) collectAllTools(providerConfig config.Provider) []string {
-	allTools := make([]string, 0, len(providerConfig.Tools))
-	allTools = append(allTools, providerConfig.Tools...)
-	return allTools
-}
-
-func (p *CopilotProvider) extractMCPServers(allTools *[]string) map[string]CopilotMCPServer {
+func (p *CopilotProvider) extractMCPServers() map[string]CopilotMCPServer {
 	mcpServers := make(map[string]CopilotMCPServer)
 	for name, server := range p.config.MCP {
 		if server.Enabled {
-			*allTools = append(*allTools, server.Tools...)
+			args := make([]string, len(server.Args))
+			for i, arg := range server.Args {
+				args[i] = copilotSecretReferences(arg)
+			}
 			mcpServers[name] = CopilotMCPServer{
-				Type:    server.Type,
-				URL:     server.URL,
-				Tools:   server.Tools,
-				Headers: server.Headers,
-				Command: server.Command,
-				Args:    server.Args,
-				Env:     server.Env,
+				Type:    server.Transport(),
+				URL:     copilotSecretReferences(server.URL),
+				Tools:   append([]string{}, server.Tools...),
+				Headers: copilotSecretMap(server.Headers),
+				Command: copilotSecretReferences(server.Command),
+				Args:    args,
+				Env:     copilotSecretMap(server.Env),
 			}
 		}
 	}
 	return mcpServers
+}
+
+var envReferencePattern = regexp.MustCompile(`\$\{?[A-Za-z_][A-Za-z0-9_]*`)
+
+// Keep secret references in the generated file; never resolve local credentials.
+func copilotSecretReferences(value string) string {
+	return envReferencePattern.ReplaceAllStringFunc(value, func(reference string) string {
+		prefix := "$"
+		if strings.HasPrefix(reference, "${") {
+			prefix = "${"
+		}
+		name := strings.TrimPrefix(reference, prefix)
+		if strings.HasPrefix(name, "COPILOT_MCP_") {
+			return reference
+		}
+		return prefix + "COPILOT_MCP_" + name
+	})
+}
+
+func copilotSecretMap(values map[string]string) map[string]string {
+	if values == nil {
+		return nil
+	}
+	result := make(map[string]string, len(values))
+	for key, value := range values {
+		result[key] = copilotSecretReferences(value)
+	}
+	return result
 }
 
 func (p *CopilotProvider) writeJSONFile(path string, data interface{}) error {
