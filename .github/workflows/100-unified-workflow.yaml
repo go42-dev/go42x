@@ -14,45 +14,137 @@ on:
     branches:
       - master
 
-permissions:
-  contents: read
+permissions: {}
+
+concurrency:
+  group: >-
+    ${{ github.event_name == 'pull_request' && format('unified-pr-{0}', github.event.pull_request.number) || format('unified-run-{0}-{1}',
+    github.run_id, github.run_attempt) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
 
-  golangci-lint:
-    uses: ./.github/workflows/110-golangci-lint.yaml
+  gate-start:
+    name: gate-start
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Start full CI
+        run: echo "Full CI started."
+
+  # stage 1: linting
+
+  lint:
+    uses: ./.github/workflows/110-lint.yaml
+    permissions:
+      contents: read
+    needs:
+      - gate-start
     with:
       runs_on: ubuntu-latest
       continue_on_error: false
+      timeout_minutes: 10
+
+  # stage 2: unit tests
 
   unit-tests:
     uses: ./.github/workflows/120-unit-tests.yaml
+    permissions:
+      contents: read
     needs:
-        - golangci-lint
+      - lint
     with:
       runs_on: ubuntu-latest
       continue_on_error: false
+      timeout_minutes: 10
+
+  # stage 3: build
 
   build:
     name: build (${{ matrix.goos }}/${{ matrix.goarch }})
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
     needs:
-        - unit-tests
+      - unit-tests
     strategy:
       fail-fast: false
       matrix:
-        goos: [linux, darwin]
-        goarch: [amd64, arm64]
+        goos:
+          - linux
+          - darwin
+        goarch:
+          - amd64
+          - arm64
     env:
       CGO_ENABLED: '0'
       GOOS: ${{ matrix.goos }}
       GOARCH: ${{ matrix.goarch }}
+      MISE_DEFAULT_CONFIG_FILENAME: etc/mise.toml
+      MISE_DATA_DIR: ${{ github.workspace }}/.tools
+      MISE_CACHE_DIR: ${{ github.workspace }}/.tools/cache
+      MISE_STATE_DIR: ${{ github.workspace }}/.tools/state
     steps:
       - name: 'Checkout repository'
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: 'Setup Go'
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: 'go.mod'
+      - name: 'Install pinned Task'
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: '2026.9.1'
+          install_args: --locked task
       - name: 'Build CLI'
-        run: go build -mod=readonly -trimpath -buildvcs=false -o build/go42x .
+        run: task build
+
+  # stage 4: coverage report
+
+  coverage:
+    uses: ./.github/workflows/160-coverage-report.yaml
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: write
+    needs:
+      - unit-tests
+    with:
+      runs_on: ubuntu-latest
+      continue_on_error: true
+      timeout_minutes: 10
+
+  # stage 5: required finish gate
+
+  gate-finish:
+    name: gate-finish
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs:
+      - gate-start
+      - lint
+      - unit-tests
+      - build
+    steps:
+      - name: 'Require all blocking jobs to succeed'
+        env:
+          GATE_START_RESULT: ${{ needs.gate-start.result }}
+          LINT_RESULT: ${{ needs.lint.result }}
+          UNIT_TESTS_RESULT: ${{ needs.unit-tests.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+        run: |-
+          echo "gate-start: $GATE_START_RESULT"
+          echo "lint: $LINT_RESULT"
+          echo "unit-tests: $UNIT_TESTS_RESULT"
+          echo "build: $BUILD_RESULT"
+          if [ "$GATE_START_RESULT" != 'success' ] || \
+            [ "$LINT_RESULT" != 'success' ] || \
+            [ "$UNIT_TESTS_RESULT" != 'success' ] || \
+            [ "$BUILD_RESULT" != 'success' ]; then
+            echo '::error::One or more blocking CI jobs did not succeed.'
+            exit 1
+          fi

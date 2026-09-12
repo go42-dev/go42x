@@ -4,18 +4,25 @@
   "title": "AgentEnv Configuration Schema",
   "description": "Schema for .agentenv configuration file",
   "type": "object",
-  "required": ["version", "project"],
+  "required": [
+    "version",
+    "project"
+  ],
   "properties": {
     "version": {
       "type": "string",
       "description": "Configuration version",
       "pattern": "^\\d+\\.\\d+$",
-      "examples": ["1.0"]
+      "examples": [
+        "1.0"
+      ]
     },
     "project": {
       "type": "object",
       "description": "Project metadata",
-      "required": ["name"],
+      "required": [
+        "name"
+      ],
       "properties": {
         "name": {
           "type": "string",
@@ -25,7 +32,13 @@
         "language": {
           "type": "string",
           "description": "Primary programming language",
-          "examples": ["go", "python", "javascript", "typescript", "rust"]
+          "examples": [
+            "go",
+            "python",
+            "javascript",
+            "typescript",
+            "rust"
+          ]
         },
         "description": {
           "type": "string",
@@ -60,7 +73,10 @@
       "minProperties": 1,
       "additionalProperties": {
         "type": "object",
-        "required": ["template", "output"],
+        "required": [
+          "template",
+          "output"
+        ],
         "properties": {
           "template": {
             "type": "string",
@@ -120,7 +136,9 @@
       "description": "MCP (Model Context Protocol) server configurations",
       "additionalProperties": {
         "type": "object",
-        "required": ["name"],
+        "required": [
+          "name"
+        ],
         "properties": {
           "enabled": {
             "type": "boolean",
@@ -130,7 +148,11 @@
           "type": {
             "type": "string",
             "description": "Server connection type",
-            "enum": ["stdio", "http", "sse"],
+            "enum": [
+              "stdio",
+              "http",
+              "sse"
+            ],
             "default": "stdio"
           },
           "name": {
@@ -191,19 +213,26 @@
               }
             },
             "then": {
-              "required": ["command"]
+              "required": [
+                "command"
+              ]
             }
           },
           {
             "if": {
               "properties": {
                 "type": {
-                  "enum": ["http", "sse"]
+                  "enum": [
+                    "http",
+                    "sse"
+                  ]
                 }
               }
             },
             "then": {
-              "required": ["url"]
+              "required": [
+                "url"
+              ]
             }
           }
         ]

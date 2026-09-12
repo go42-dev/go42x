@@ -1,0 +1,315 @@
+---
+
+# Reference:
+#   https://taskfile.dev/docs/reference/schema
+# JSON schema:
+#   https://taskfile.dev/schema.json
+
+# ╭────────────────────----------------──────────╮
+# │                     go42x                    │
+# ╰─────────────────────----------------─────────╯
+#
+# Before running any commands, ensure you have the following tools are installed:
+# - go @see https://go.dev/
+# - mise @see https://mise.jdx.dev/
+# - task @see https://taskfile.dev/
+#
+# This file can be executed manually, from CI, by IDE and invoked by AI.
+
+version: '3'
+
+set:
+  - errexit
+  - pipefail
+
+vars:
+  # Task's env cannot override an inherited PATH; resolve pinned tools explicitly.
+  TOOLS_BIN: '{{.ROOT_DIR}}/.tools/shims'
+
+env:
+  GOTOOLCHAIN: local
+  MISE_DEFAULT_CONFIG_FILENAME: etc/mise.toml
+  MISE_DATA_DIR: '{{.ROOT_DIR}}/.tools'
+  MISE_CACHE_DIR: '{{.ROOT_DIR}}/.tools/cache'
+  MISE_STATE_DIR: '{{.ROOT_DIR}}/.tools/state'
+  MISE_EXEC_AUTO_INSTALL: 'false'
+  TASK_TEMP_DIR: '{{.ROOT_DIR}}/.tools/task'
+
+tasks:
+
+  # ╭────────────────────----------------──────────╮
+  # │                    Setup                     │
+  # ╰─────────────────────----------------─────────╯
+
+  help:
+    desc: "List available tasks in Taskfile order"
+    aliases:
+      - default
+    cmds:
+      - "task --list --sort none"
+
+  setup:
+    desc: "install dependencies"
+    cmds:
+      - "mise install --locked"
+      - "go mod download"
+
+  setup-release:
+    desc: "install release dependencies"
+    cmds:
+      - "mise install --locked task goreleaser syft cosign"
+      - "go mod download"
+
+  # ╭────────────────────----------------──────────╮
+  # │                   Testing                    │
+  # ╰─────────────────────----------------─────────╯
+
+  # @note -count=1 is needed to prevent caching of test results.
+  test-unit:
+    desc: "run unit tests with coverage, or selected packages with race detection"
+    aliases:
+      - test
+    summary: "Usage: task test-unit [-- PACKAGE ...]. Defaults to the full unit suite with coverage."
+    preconditions:
+      - &package_paths
+        sh: |
+          set -- {{.CLI_ARGS}}
+          for package do
+            case "$package" in
+              ./*) [ ! -d "${package%/...}" ] || continue ;;
+            esac
+            printf 'Expected a local Go package or subtree: %s\n' "$package" >&2
+            exit 2
+          done
+        msg: "Pass local Go packages after --."
+    cmds:
+      - |
+        set -eo pipefail
+        set -- {{.CLI_ARGS}}
+        if [ "$#" -gt 0 ]; then
+          exec go test -count=1 -race -skip '^Fuzz' "$@"
+        fi
+        mkdir -p .build
+        unit_packages=$(go list ./...)
+        unit_exclude_pattern=$(printf '%s\n' mocks tests | paste -sd '|' -)
+        unit_packages=$(printf '%s\n' "$unit_packages" | grep -vE "/($unit_exclude_pattern)(/|$)")
+        # go list returns separate package names; preserve word splitting here.
+        # shellcheck disable=SC2086
+        go test -count=1 -v -race -skip '^Fuzz' -covermode=atomic \
+          -coverpkg="$(printf '%s\n' "$unit_packages" | paste -sd, -)" \
+          -coverprofile=.build/coverage.out $unit_packages \
+          | sed -E 's/(coverage: [0-9.]+% of statements) in .*/\1/'
+        go tool cover -html=.build/coverage.out -o=.build/coverage.html
+        go tool cover -func=.build/coverage.out | grep '^total:'
+
+  # ╭────────────────────----------------──────────╮
+  # │               General workflow               │
+  # ╰─────────────────────----------------─────────╯
+
+  build:
+    desc: "build the binary for the current platform or GOOS/GOARCH"
+    cmds:
+      - "mkdir -p .build"
+      - "go build -mod=readonly -trimpath -buildvcs=false -o .build/go42x ."
+
+  generate:
+    desc: "generate code for all modules"
+    cmds:
+      - "go mod tidy"
+      - |
+        export PATH="{{.TOOLS_BIN}}:$PATH"
+        go generate ./...
+
+  # ╭────────────────────----------------──────────╮
+  # │                  Formatters                  │
+  # ╰─────────────────────----------------─────────╯
+
+  fmt:go:
+    desc: "Format explicit Go source files (writes)"
+    summary: "Usage: task fmt:go -- FILE.go [FILE.go ...]"
+    preconditions: &files
+      - sh: |
+          set -- {{.CLI_ARGS}}
+          [ "$#" -gt 0 ]
+        msg: "Pass explicit file paths after --."
+      - &file_paths
+        sh: |
+          set -- {{.CLI_ARGS}}
+          for file do
+            case "$file" in
+              -*|!*|*\**|*\?*|*\[*|*\]*|*\{*|*\}*) printf 'Expected a literal file path: %s\n' "$file" >&2; exit 2 ;;
+            esac
+            [ -f "$file" ] || { printf 'Expected an existing file: %s\n' "$file" >&2; exit 2; }
+          done
+        msg: "Pass explicit existing file paths after --."
+    cmds:
+      - |
+        set -- {{.CLI_ARGS}}
+        "{{.TOOLS_BIN}}/golangci-lint" fmt --config etc/.golangci.yml "$@"
+
+  fmt:yaml:
+    desc: "Format explicit plain YAML files (writes)"
+    summary: "Usage: task fmt:yaml -- FILE.yaml [FILE.yaml ...]."
+    preconditions: *files
+    cmds:
+      - |
+        set -- {{.CLI_ARGS}}
+        "{{.TOOLS_BIN}}/yamlfmt" -conf etc/.yamlfmt.yaml "$@"
+
+  fmt:json:
+    desc: "Format explicit JSON files (writes)"
+    summary: "Usage: task fmt:json -- FILE.json [FILE.json ...]"
+    preconditions: *files
+    cmds:
+      - |
+        set -- {{.CLI_ARGS}}
+        "{{.TOOLS_BIN}}/jsonfmt" -w "$@"
+
+  fmt:toml:
+    desc: "Format explicit TOML files (writes)"
+    summary: "Usage: task fmt:toml -- FILE.toml [FILE.toml ...]"
+    preconditions: *files
+    cmds:
+      - |
+        set -- {{.CLI_ARGS}}
+        for file do
+          case "$file" in
+            /*) ;;
+            *) file="$PWD/$file" ;;
+          esac
+          # Tombi discovers etc/tombi.toml from its working directory.
+          (cd etc && "{{.TOOLS_BIN}}/tombi" format --offline "$file")
+        done
+
+  # ╭────────────────────----------------──────────╮
+  # │                   Linters                    │
+  # ╰─────────────────────----------------─────────╯
+
+  lint:
+    desc: "run Go and configuration linters"
+    cmds:
+      - task: lint:go
+      - task: lint:json
+      - task: lint:yaml
+      - task: lint:toml
+      - task: lint:actions
+
+  lint:go:
+    desc: "Lint all Go packages, or explicit local packages and subtrees (read only)"
+    summary: "Usage: task lint:go [-- ./internal/cmd ./pkg/kwb/...]"
+    preconditions:
+      - *package_paths
+    cmds:
+      - |
+        set -- {{.CLI_ARGS}}
+        "{{.TOOLS_BIN}}/golangci-lint" config verify --config etc/.golangci.yml
+        "{{.TOOLS_BIN}}/golangci-lint" run --config etc/.golangci.yml "$@"
+
+  lint:actions:
+    desc: "check GitHub Actions workflows"
+    preconditions:
+      - *file_paths
+    cmds:
+      - '"{{.TOOLS_BIN}}/actionlint" -oneline {{.CLI_ARGS}}'
+
+  lint:yaml:
+    desc: "Check plain YAML source formatting, or explicit files (read only)"
+    summary: "Usage: task lint:yaml [-- FILE.yaml ...]."
+    vars:
+      SOURCE_FILES:
+        sh: |
+          {{if not .CLI_ARGS}}
+          git ls-files --cached --others --exclude-standard -z -- '*.yaml' '*.yml'
+          {{end}}
+    preconditions:
+      - *file_paths
+    cmds:
+      - |
+        set -- {{if .CLI_ARGS}}{{.CLI_ARGS}}{{else}}{{range splitList "\x00" .SOURCE_FILES}}{{if .}}{{. | shellQuote}} {{end}}{{end}}{{end}}
+        for file do
+          if [ -f "$file" ]; then
+            "{{.TOOLS_BIN}}/yamlfmt" -conf etc/.yamlfmt.yaml -lint "$file"
+          fi
+        done
+
+  lint:json:
+    desc: "Check JSON source formatting, or explicit files (read only)"
+    summary: "Usage: task lint:json [-- FILE.json ...]; defaults exclude package-lock.json."
+    vars:
+      SOURCE_FILES:
+        sh: |
+          {{if not .CLI_ARGS}}
+          git ls-files --cached --others --exclude-standard -z -- '*.json' ':!:**/package-lock.json'
+          {{end}}
+    preconditions:
+      - *file_paths
+    cmds:
+      - |
+        set -- {{if .CLI_ARGS}}{{.CLI_ARGS}}{{else}}{{range splitList "\x00" .SOURCE_FILES}}{{if .}}{{. | shellQuote}} {{end}}{{end}}{{end}}
+        for file do
+          if [ -f "$file" ]; then
+            "{{.TOOLS_BIN}}/jsonfmt" "$file"
+          fi
+        done
+
+  lint:toml:
+    desc: "Check TOML source formatting and lint rules, or explicit files (read only)"
+    summary: "Usage: task lint:toml [-- FILE.toml ...]; defaults to Git source files ending in .toml."
+    vars:
+      SOURCE_FILES:
+        sh: |
+          {{if not .CLI_ARGS}}
+          git ls-files --cached --others --exclude-standard -z -- '*.toml'
+          {{end}}
+    preconditions:
+      - *file_paths
+    cmds:
+      - |
+        set -- {{if .CLI_ARGS}}{{.CLI_ARGS}}{{else}}{{range splitList "\x00" .SOURCE_FILES}}{{if .}}{{. | shellQuote}} {{end}}{{end}}{{end}}
+        for file do
+          if [ -f "$file" ]; then
+            case "$file" in
+              /*) ;;
+              *) file="$PWD/$file" ;;
+            esac
+            # Tombi discovers etc/tombi.toml from its working directory.
+            (
+              cd etc
+              "{{.TOOLS_BIN}}/tombi" format --offline --check "$file"
+              "{{.TOOLS_BIN}}/tombi" lint --offline --error-on-warnings "$file"
+            )
+          fi
+        done
+
+  # ╭────────────────────----------------──────────╮
+  # │                   Release                    │
+  # ╰─────────────────────----------------─────────╯
+
+  release-check:
+    desc: "validate GoReleaser configuration"
+    cmds:
+      - '"{{.TOOLS_BIN}}/goreleaser" check --config etc/.goreleaser.yaml'
+
+  release-snapshot:
+    desc: "build release artifacts without publishing or signing"
+    cmds:
+      - |
+        export PATH="{{.TOOLS_BIN}}:$PATH"
+        goreleaser release --config etc/.goreleaser.yaml --snapshot --clean --skip=publish,sign
+
+  release-local:
+    desc: "build and sign a tagged release without publishing"
+    cmds:
+      - |
+        export PATH="{{.TOOLS_BIN}}:$PATH"
+        goreleaser release --config etc/.goreleaser.yaml --clean --skip=publish
+
+  release:
+    desc: "build, sign, and publish the validated release (CI only)"
+    preconditions:
+      - sh: '[ "$GITHUB_ACTIONS" = "true" ]'
+        msg: "Dispatch the release workflow from master to publish a release."
+    cmds:
+      - |-
+        export PATH="{{.TOOLS_BIN}}:$PATH"
+        goreleaser release --config etc/.goreleaser.yaml --clean

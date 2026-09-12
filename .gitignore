@@ -5,8 +5,10 @@
 .idea/
 .vscode
 
-# goreleaser
-dist/
-
 # artifacts
 build/
+
+# Task, mise, and coverage artifacts
+.build/
+.tools/
+.task/

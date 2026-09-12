@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -10,11 +11,15 @@ import (
 
 	"github.com/lmittmann/tint"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 
 	"github.com/go42-dev/go42x/internal/cmd/agentenv"
 	"github.com/go42-dev/go42x/internal/cmd/kwb"
 	"github.com/go42-dev/go42x/internal/cmdutil"
+	"github.com/go42-dev/go42x/pkg/go42x"
 )
+
+const envPrefix = "GO42X"
 
 const (
 	exitOK    = 0
@@ -26,8 +31,15 @@ func NewGo42Command(ctx context.Context, f *cmdutil.Factory) *cobra.Command {
 		Use:   "go42x",
 		Short: "Helper tool for go42 project",
 		Long:  `Helper tool for go42 project`,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return cmd.Help()
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			return viper.BindPFlags(cmd.Flags())
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			settings := &go42x.Settings{
+				Dummy: viper.GetBool("dummy"),
+			}
+			initLogging(f.Options().LogLevel)
+			return runCommand(f, settings)
 		},
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			initLogging(f.Options().LogLevel)
@@ -99,4 +111,15 @@ func initLogging(level string) {
 
 	// for both 'log' and 'slog'
 	slog.SetDefault(logger)
+}
+
+func runCommand(f *cmdutil.Factory, settings *go42x.Settings) error {
+	service, err := go42x.NewCommitService(
+		settings,
+		go42x.WithLogger(slog.Default()),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to initialize commit service: %w", err)
+	}
+	return service.Execute(f.Context())
 }

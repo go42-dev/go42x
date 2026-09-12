@@ -4,9 +4,11 @@ version: 2
 
 project_name: go42x
 
+dist: .build/dist
+
 before:
   hooks:
-    - make setup
+    - go mod download
 
 builds:
   - id: go42x
@@ -108,8 +110,9 @@ release:
   github:
     owner: go42-dev
     name: go42x
+  target_commitish: "{{ .Commit }}"
   prerelease: auto
-  make_latest: true
+  make_latest: '{{ if .Prerelease }}false{{ else }}true{{ end }}'
   name_template: "{{.ProjectName}} v{{.Version}}"
 
 # generate SBOMs for archives
@@ -119,11 +122,10 @@ sboms:
 # sign checksums.txt
 signs:
   - cmd: cosign
-    certificate: ""
+    signature: "${artifact}.sigstore.json"
     args:
       - "sign-blob"
-      - "--output-signature=${signature}"
-      - "--output-certificate=${certificate}"
+      - "--bundle=${signature}"
       - "${artifact}"
       - "--yes"
     artifacts: checksum

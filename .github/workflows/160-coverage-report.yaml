@@ -1,0 +1,137 @@
+---
+
+name: report
+
+# Publishes unit-test coverage summaries, downloadable reports, and pull request comparisons.
+
+on:
+  workflow_call:
+    inputs:
+      runs_on:
+        required: true
+        type: string
+      continue_on_error:
+        required: true
+        type: boolean
+      timeout_minutes:
+        required: false
+        type: number
+        default: 10
+
+permissions: {}
+
+jobs:
+  report:
+    name: report
+    runs-on: ${{ inputs.runs_on }}
+    continue-on-error: ${{ inputs.continue_on_error }}
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: write
+    steps:
+      - name: 'Checkout repository'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: 'Download coverage reports'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: code-coverage
+          path: .build
+      - name: 'Publish coverage summary and annotation'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |-
+            const fs = require('fs');
+            const path = require('path');
+            const lines = fs.readFileSync('.build/coverage.out', 'utf8').trim().split(/\r?\n/);
+            const packages = new Map();
+            const total = { covered: 0, statements: 0 };
+            const modulePrefix = 'github.com/go42-dev/go42x/';
+
+            if (lines.shift() !== 'mode: atomic') {
+              throw new Error('Expected an atomic coverage profile');
+            }
+
+            // Count statements in coverage blocks, so repeated hits count only once.
+            // Include package-level function literals, which go tool cover -func omits from its total.
+            for (const line of lines) {
+              const match = line.match(/^(.+):\d+\.\d+,\d+\.\d+\s+(\d+)\s+(\d+)$/);
+              if (!match) throw new Error(`Invalid coverage profile line: ${line}`);
+              const [, file, statements, hits] = match;
+              const name = path.posix.dirname(file);
+              const coverage = packages.get(name) || { covered: 0, statements: 0 };
+              const covered = Number(hits) > 0 ? Number(statements) : 0;
+              coverage.statements += Number(statements);
+              coverage.covered += covered;
+              total.statements += Number(statements);
+              total.covered += covered;
+              packages.set(name, coverage);
+            }
+
+            const ratio = coverage => coverage.statements ? coverage.covered / coverage.statements : 0;
+            const percent = coverage => coverage.statements ? `${(100 * ratio(coverage)).toFixed(1)}%` : 'N/A';
+            const bar = coverage => {
+              const filled = Math.round(10 * ratio(coverage));
+              return `\`${'█'.repeat(filled)}${'░'.repeat(10 - filled)}\``;
+            };
+            const rows = [...packages].sort((a, b) => ratio(a[1]) - ratio(b[1]) || a[0].localeCompare(b[0]));
+            let summary = '## Test coverage\n\n';
+            summary += `**Total: ${percent(total)}** — ${total.covered} / ${total.statements} statements covered.\n\n`;
+            summary += 'Unit tests.\n';
+            summary += 'Mocks and test packages are excluded by the unit-test task.\n\n';
+            summary += '### Coverage by package\n\n';
+            summary += 'Packages with the lowest coverage appear first. Total coverage is weighted by statement count.\n\n';
+            summary += '| Package | Coverage | Covered / Total statements |\n';
+            summary += '| --- | --- | ---: |\n';
+            for (const [name, coverage] of rows) {
+              const label = name.startsWith(modulePrefix) ? name.slice(modulePrefix.length) : name;
+              summary += `| \`${label}\` | ${bar(coverage)} ${percent(coverage)} | `;
+              summary += `${coverage.covered} / ${coverage.statements} |\n`;
+            }
+            fs.writeFileSync('.build/coverage-summary.md', summary);
+            await core.summary.addRaw(summary).write();
+            core.notice(
+              `Total coverage: ${percent(total)} (${total.covered}/${total.statements} statements, ${packages.size} packages). ` +
+              'See the job summary for coverage by package and the coverage-report artifact for source line details.',
+              { title: 'Test coverage' }
+            );
+      - name: 'Upload coverage report'
+        id: coverage_artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-report
+          path: |-
+            .build/coverage.out
+            .build/coverage.html
+            .build/coverage-summary.md
+          include-hidden-files: true
+          if-no-files-found: error
+      - name: 'Link full coverage report in job summary'
+        env:
+          COVERAGE_ARTIFACT_URL: ${{ steps.coverage_artifact.outputs.artifact-url }}
+        run: |-
+          printf '\n[Download the full coverage report](%s) and open coverage.html for source line coverage.\n' \
+            "$COVERAGE_ARTIFACT_URL" >> "$GITHUB_STEP_SUMMARY"
+      - name: 'Generate pull request coverage comparison'
+        if: github.event_name == 'pull_request'
+        id: coverage_report
+        uses: fgrosse/go-coverage-report@e432de98ee94a276e8f666d25bfd76347665f75b # v1.3.1
+        with:
+          version: v1.3.1
+          sha256sum: bce196efd0d22bbdcfa2ab45dc38ad40e96acc5802356b48be358a43958674a0
+          coverage-artifact-name: coverage-report
+          coverage-file-name: coverage.out
+          root-package: github.com/go42-dev/go42x
+          trim: github.com/go42-dev/go42x
+          exclude: '(^|/)(mocks|tests)/'
+          github-baseline-workflow-ref: 100-unified-workflow.yaml
+          skip-comment: >-
+            ${{ github.event.pull_request.head.repo.full_name != github.repository || github.actor == 'dependabot[bot]' }}
+      - name: 'Add pull request coverage comparison to job summary'
+        if: steps.coverage_report.outputs.coverage_report != ''
+        run: printf '%s\n' "$COVERAGE_REPORT" >> "$GITHUB_STEP_SUMMARY"
+        env:
+          COVERAGE_REPORT: ${{ steps.coverage_report.outputs.coverage_report }}

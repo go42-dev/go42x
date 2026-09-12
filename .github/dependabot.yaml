@@ -1,21 +1,28 @@
 ---
-
 version: 2
 
-updates:
-
-  - package-ecosystem: "gomod"
-    directory: "/"
+multi-ecosystem-groups:
+  all-dependencies:
     schedule:
       interval: "weekly"
     pull-request-branch-name:
       separator: "-"
     open-pull-requests-limit: 10
+
+updates:
+  - package-ecosystem: "gomod"
+    directory: "/"
+    cooldown:
+      default-days: 7
+    patterns:
+      - "*"
+    multi-ecosystem-group: "all-dependencies"
 
   - package-ecosystem: "github-actions"
     directory: "/"
-    schedule:
-      interval: "weekly"
-    pull-request-branch-name:
-      separator: "-"
-    open-pull-requests-limit: 10
+    cooldown:
+      default-days: 7
+    patterns:
+      - "*"
+    multi-ecosystem-group: "all-dependencies"
+

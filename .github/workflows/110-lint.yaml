@@ -1,0 +1,127 @@
+---
+
+name: lint
+
+# Lint source code, project files, and GitHub Actions.
+
+on:
+  workflow_call:
+    inputs:
+      runs_on:
+        required: true
+        type: string
+      continue_on_error:
+        required: true
+        type: boolean
+      timeout_minutes:
+        required: false
+        type: number
+        default: 10
+
+permissions: {}
+
+jobs:
+
+  # Golang linter.
+  # @see https://golangci-lint.run/
+  golangci-lint:
+    name: golangci-lint
+    runs-on: ${{ inputs.runs_on }}
+    continue-on-error: ${{ inputs.continue_on_error }}
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    permissions:
+      contents: read
+    env:
+      MISE_DEFAULT_CONFIG_FILENAME: etc/mise.toml
+      MISE_DATA_DIR: ${{ github.workspace }}/.tools
+      MISE_CACHE_DIR: ${{ github.workspace }}/.tools/cache
+      MISE_STATE_DIR: ${{ github.workspace }}/.tools/state
+      GOLANGCI_LINT_CACHE: ${{ github.workspace }}/.build/golangci-lint-cache
+    # ----
+    steps:
+      - name: 'Checkout repository'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: 'Setup Go'
+        id: setup-go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: 'go.mod'
+          # Save lint's build outputs in the dedicated cache below.
+          cache: false
+      - name: 'Install pinned golangci-lint'
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: '2026.9.1'
+          install_args: --locked golangci-lint
+      - name: 'Get lint cache metadata'
+        id: lint-cache
+        shell: bash
+        run: |-
+          {
+            echo "go-build=$(go env GOCACHE)"
+            echo "go-mod=$(go env GOMODCACHE)"
+            echo "lint-version=$(golangci-lint version --short)"
+          } >> "$GITHUB_OUTPUT"
+      - name: 'Restore and save Go and golangci-lint caches'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        env:
+          LINT_CACHE_PREFIX: golangci-lint-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.setup-go.outputs.go-version }}-${{
+            steps.lint-cache.outputs.lint-version }}
+        with:
+          # Analysis also needs compiled Go packages, not just linter results.
+          path: |-
+            ${{ steps.lint-cache.outputs.go-build }}
+            ${{ steps.lint-cache.outputs.go-mod }}
+            ${{ env.GOLANGCI_LINT_CACHE }}
+          # Refresh per commit; reuse compatible entries after dependency/config changes.
+          key: ${{ env.LINT_CACHE_PREFIX }}-${{ hashFiles('etc/.golangci.yml', 'go.mod', 'go.sum') }}-${{ github.sha }}
+          restore-keys: |-
+            ${{ env.LINT_CACHE_PREFIX }}-${{ hashFiles('etc/.golangci.yml', 'go.mod', 'go.sum') }}-
+            ${{ env.LINT_CACHE_PREFIX }}-
+      - name: 'Validate golangci-lint configuration'
+        run: golangci-lint config verify --config etc/.golangci.yml
+      - name: 'Run golangci-lint'
+        run: golangci-lint run --config etc/.golangci.yml --verbose
+
+  # JSON, YAML, and TOML formatting and lint rules.
+  # @see https://github.com/caarlos0/jsonfmt
+  # @see https://github.com/google/yamlfmt
+  # @see https://github.com/pelletier/go-toml
+  config-lint:
+    name: config-lint
+    runs-on: ${{ inputs.runs_on }}
+    continue-on-error: ${{ inputs.continue_on_error }}
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    permissions:
+      contents: read
+    env:
+      MISE_DEFAULT_CONFIG_FILENAME: etc/mise.toml
+      MISE_DATA_DIR: ${{ github.workspace }}/.tools
+      MISE_CACHE_DIR: ${{ github.workspace }}/.tools/cache
+      MISE_STATE_DIR: ${{ github.workspace }}/.tools/state
+    steps:
+      - name: 'Checkout repository'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: 'Setup Go'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: 'go.mod'
+          cache: false
+      - name: 'Install pinned configuration linters'
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: '2026.9.1'
+          install_args: >-
+            --locked task actionlint go:github.com/caarlos0/jsonfmt go:github.com/google/yamlfmt/cmd/yamlfmt tombi
+      - name: 'Check JSON formatting'
+        run: task --exit-code lint:json
+      - name: 'Check YAML formatting'
+        run: task --exit-code lint:yaml
+      - name: 'Check TOML formatting and lint rules'
+        run: task --exit-code lint:toml
+      - name: 'Check GitHub Actions workflows'
+        run: task --exit-code lint:actions

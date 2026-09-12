@@ -1,38 +1,217 @@
 ---
 
 name: release
+run-name: 'release ${{ inputs.version }}'
+
+# Validate a tested master commit, rerun unit tests, and publish signed CLI artifacts.
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "v-prefixed SemVer without +metadata (for example, v1.2.3-build.7)"
+        required: true
+        type: string
 
-permissions:
-  contents: write
-  id-token: write
+permissions: {}
+
+concurrency:
+  group: release-${{ inputs.version }}
+  cancel-in-progress: false
 
 jobs:
-  goreleaser:
-    name: goreleaser
+  validate-release:
+    name: validate-release
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      ci_url: ${{ steps.validate.outputs.ci_url }}
+      is_prerelease: ${{ steps.validate.outputs.is_prerelease }}
+      release_version: ${{ steps.validate.outputs.release_version }}
+      source_sha: ${{ steps.validate.outputs.source_sha }}
     steps:
-      - name: 'Checkout'
-        uses: actions/checkout@v4
+      - name: 'Validate release request'
+        id: validate
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
         with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const version = process.env.RELEASE_VERSION;
+            const sourceSha = context.sha;
+            const repository = `${context.repo.owner}/${context.repo.repo}`;
+            const expectedWorkflowRef =
+              `${repository}/.github/workflows/300-release.yaml@refs/heads/master`;
+            const semver =
+              /^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?$/;
+
+            if (!semver.test(version) || version.length > 128) {
+              throw new Error(`Version must be v-prefixed SemVer without build metadata: ${version}`);
+            }
+            if (context.ref !== 'refs/heads/master') {
+              throw new Error(`Release must be dispatched from master, not ${context.ref}`);
+            }
+            if (process.env.WORKFLOW_REF !== expectedWorkflowRef ||
+                process.env.WORKFLOW_SHA !== sourceSha) {
+              throw new Error('Release workflow is not bound to the selected master commit');
+            }
+
+            const branch = await github.rest.repos.getBranch({
+              ...context.repo,
+              branch: 'master',
+            });
+            if (branch.data.commit.sha !== sourceSha) {
+              throw new Error('Master advanced after this release was dispatched; run it again');
+            }
+
+            try {
+              await github.rest.git.getRef({
+                ...context.repo,
+                ref: `tags/${version}`,
+              });
+              throw new Error(`Git tag already exists: ${version}`);
+            } catch (error) {
+              if (error.status !== 404) {
+                throw error;
+              }
+            }
+
+            try {
+              await github.rest.repos.getReleaseByTag({
+                ...context.repo,
+                tag: version,
+              });
+              throw new Error(`GitHub release already exists: ${version}`);
+            } catch (error) {
+              if (error.status !== 404) {
+                throw error;
+              }
+            }
+
+            const runs = await github.paginate(
+              github.rest.actions.listWorkflowRuns,
+              {
+                ...context.repo,
+                workflow_id: '100-unified-workflow.yaml',
+                branch: 'master',
+                event: 'push',
+                head_sha: sourceSha,
+                status: 'completed',
+                per_page: 100,
+              },
+            );
+            const ciRun = runs.find((run) =>
+              run.event === 'push' &&
+              run.head_branch === 'master' &&
+              run.head_sha === sourceSha &&
+              run.head_repository?.full_name === repository &&
+              run.status === 'completed' &&
+              run.conclusion === 'success'
+            );
+            if (!ciRun) {
+              throw new Error(`No successful Unified CI run exists for ${sourceSha}`);
+            }
+
+            core.setOutput('ci_url', ciRun.html_url);
+            core.setOutput('is_prerelease', version.includes('-'));
+            core.setOutput('release_version', version);
+            core.setOutput('source_sha', sourceSha);
+            await core.summary
+              .addHeading(`Release ${version}`)
+              .addRaw(`Source: \`${sourceSha}\`\n\n`)
+              .addLink('Successful Unified CI', ciRun.html_url)
+              .write();
+
+  unit-tests:
+    needs:
+      - validate-release
+    permissions:
+      contents: read
+    uses: ./.github/workflows/120-unit-tests.yaml
+    with:
+      runs_on: ubuntu-latest
+      continue_on_error: false
+      source_sha: ${{ needs.validate-release.outputs.source_sha }}
+      timeout_minutes: 10
+
+  publish-release:
+    name: publish-release
+    needs:
+      - validate-release
+      - unit-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      MISE_DEFAULT_CONFIG_FILENAME: etc/mise.toml
+      MISE_DATA_DIR: ${{ github.workspace }}/.tools
+      MISE_CACHE_DIR: ${{ github.workspace }}/.tools/cache
+      MISE_STATE_DIR: ${{ github.workspace }}/.tools/state
+    steps:
+      - name: 'Checkout validated release commit'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.validate-release.outputs.source_sha }}
           fetch-depth: 0
+          persist-credentials: false
       - name: 'Setup Go'
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: 'go.mod'
-      - name: 'Install Cosign'
-        uses: sigstore/cosign-installer@v3
-      - name: 'Install Syft'
-        uses: anchore/sbom-action/download-syft@v0
-      - name: 'Run GoReleaser'
-        uses: goreleaser/goreleaser-action@v6
+      - name: 'Install pinned release tools'
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
-          version: '~> v2'
-          args: release --clean --config .goreleaser.yaml
+          version: '2026.9.1'
+          install_args: --locked task goreleaser syft cosign
+      - name: 'Validate GoReleaser configuration'
+        run: task release-check
+      - name: 'Prepare local release tag'
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          COSIGN_EXPERIMENTAL: 1
+          RELEASE_VERSION: ${{ needs.validate-release.outputs.release_version }}
+          SOURCE_SHA: ${{ needs.validate-release.outputs.source_sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          # GoReleaser creates the remote tag on this commit when publishing.
+          git tag "$RELEASE_VERSION" "$SOURCE_SHA"
+      - name: 'Generate repository-scoped release App token'
+        id: release-app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+      - name: 'Verify release App identity'
+        env:
+          ACTUAL_APP_SLUG: ${{ steps.release-app.outputs.app-slug }}
+          EXPECTED_APP_SLUG: ${{ vars.RELEASE_APP_NAME }}
+        run: |
+          if [ -z "$EXPECTED_APP_SLUG" ] || [ "$ACTUAL_APP_SLUG" != "$EXPECTED_APP_SLUG" ]; then
+            echo '::error::Release App slug does not match RELEASE_APP_NAME.'
+            exit 1
+          fi
+      - name: 'Build, sign, and publish release'
+        run: task release
+        env:
+          GITHUB_TOKEN: ${{ steps.release-app.outputs.token }}
+      - name: 'Summarize release'
+        env:
+          RELEASE_VERSION: ${{ needs.validate-release.outputs.release_version }}
+          SOURCE_SHA: ${{ needs.validate-release.outputs.source_sha }}
+          CI_URL: ${{ needs.validate-release.outputs.ci_url }}
+        run: |-
+          {
+            echo "## Published $RELEASE_VERSION"
+            echo "Source commit: $SOURCE_SHA"
+            echo "[Successful Unified CI]($CI_URL)"
+            echo "[GitHub release]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$RELEASE_VERSION)"
+          } >> "$GITHUB_STEP_SUMMARY"
