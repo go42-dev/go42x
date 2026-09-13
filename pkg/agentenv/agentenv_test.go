@@ -168,16 +168,27 @@ func TestGenerateAndCleanPreserveSources(t *testing.T) {
 		t.Fatal(err)
 	}
 	configPath := filepath.Join(dir, ".go42x/go42x.yaml")
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Exercise generation and cleanup for every provider regardless of template defaults.
+	enabled := true
+	for name, p := range cfg.Providers {
+		p.Enabled = &enabled
+		cfg.Providers[name] = p
+	}
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, configPath, string(data))
 	before := readFile(t, configPath)
 	custom := filepath.Join(dir, ".go42x/custom.md")
 	writeFile(t, custom, "preserve this")
 	asset := filepath.Join(dir, ".claude/agents/custom.md")
 	writeFile(t, asset, "preserve agent")
 	if err := s.Generate(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := config.LoadConfig(configPath)
-	if err != nil {
 		t.Fatal(err)
 	}
 	for _, path := range []string{"AGENTS.md", "CLAUDE.md", "GEMINI.md"} {
@@ -205,7 +216,7 @@ func TestGenerateAndCleanPreserveSources(t *testing.T) {
 	}
 	// Optional project metadata must also work with the shipped templates.
 	cfg.Project = config.Project{Name: "minimal"}
-	data, err := yaml.Marshal(cfg)
+	data, err = yaml.Marshal(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

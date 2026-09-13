@@ -125,6 +125,11 @@ func TestGenerateMCPConfigurations(t *testing.T) {
 	}
 	// This fixture exercises the JSON clients, including legacy SSE transport.
 	delete(cfg.Providers, provider.Codex)
+	enabled := true
+	for name, p := range cfg.Providers {
+		p.Enabled = &enabled
+		cfg.Providers[name] = p
+	}
 	for name, s := range cfg.MCP {
 		s.Enabled = true
 		cfg.MCP[name] = s
