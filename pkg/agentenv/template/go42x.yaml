@@ -122,8 +122,9 @@ mcp:
     name: gopls
     command: task
     args:
-      - gopls
+      - tool
       - --
+      - gopls
       - mcp
     tools:
       - go_diagnostics
@@ -141,8 +142,9 @@ mcp:
     name: go42x
     command: task
     args:
-      - x
+      - tool
       - --
+      - go42x
       - mcp
     tools:
       - project_context
