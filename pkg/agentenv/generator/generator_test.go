@@ -295,7 +295,7 @@ func TestGenerateMCPConfigurations(t *testing.T) {
 	if copilot.MCPServers["sse"].Headers["Authorization"] != "Bearer ${API_KEY}" {
 		t.Error("Copilot header reference changed")
 	}
-	if copilot.MCPServers["github"].Env["GITHUB_PERSONAL_ACCESS_TOKEN"] != "${GH_MCP_KEY}" {
+	if copilot.MCPServers["github"].Headers["Authorization"] != "Bearer ${GITHUB_PERSONAL_ACCESS_TOKEN}" {
 		t.Error("Copilot GitHub secret reference changed")
 	}
 	local := copilot.MCPServers["local"]

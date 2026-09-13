@@ -120,8 +120,10 @@ mcp:
     enabled: true
     type: stdio
     name: gopls
-    command: gopls
+    command: task
     args:
+      - gopls
+      - --
       - mcp
     tools:
       - go_diagnostics
@@ -164,20 +166,12 @@ mcp:
 
   github:
     enabled: false
-    type: stdio
+    type: http
     name: github
-    command: docker
-    args:
-      - run
-      - -i
-      - --rm
-      - -e
-      - GITHUB_PERSONAL_ACCESS_TOKEN
-      - -e
-      - GITHUB_TOOLSETS=all
-      - ghcr.io/github/github-mcp-server
-    env:
-      GITHUB_PERSONAL_ACCESS_TOKEN: "${GH_MCP_KEY}"
+    url: https://api.githubcopilot.com/mcp/
+    headers:
+      Authorization: "Bearer ${GITHUB_PERSONAL_ACCESS_TOKEN}"
+      X-MCP-Toolsets: all
     tools:
       - actions_get
       - actions_list
