@@ -26,6 +26,8 @@ Read the current branch, commit, and working-tree status with Git when needed.
 ## Environment
 
 Platform: {{ .os }}/{{ .arch }}
+CI: {{ .is_ci }}
+CI environment value: {{ printf "%q" .ci_mode }}
 {{ with .working_dir }}
 Working directory: {{ . }}
 {{ end }}
@@ -46,10 +48,14 @@ Configured environment variables:
 
 {{ with .repository }}{{ with .full_name }}Repository: {{ . }}
 {{ end }}{{ end -}}
+{{ with .actor }}{{ with .login }}Actor: {{ . }}
+{{ end }}{{ end -}}
 {{ with .event }}{{ with .name }}Event: {{ . }}
 {{ end }}{{ with .action }}Action: {{ . }}
 {{ end }}{{ end -}}
-{{ with .ref }}Checkout ref: {{ . }}
+{{ with or .ref .ref_name }}Checkout ref: {{ . }}
+{{ end -}}
+{{ with .sha }}Commit: {{ . }}
 {{ end -}}
 {{ with .build_url }}Run: {{ . }}
 {{ end }}

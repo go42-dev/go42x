@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 )
 
@@ -66,12 +65,18 @@ func (c *GitHubActionsCollector) Collect(_ context.Context) (map[string]interfac
 	c.collectWorkflowContext(result)
 
 	payload := readGitHubEvent()
-	repository := cmp.Or(os.Getenv("REPOSITORY"), os.Getenv("GITHUB_REPOSITORY"), payload.Repository.FullName)
+	repository := cmp.Or(os.Getenv("GITHUB_REPOSITORY"), payload.Repository.FullName)
 	repo := make(map[string]interface{})
 	if repository != "" {
 		repo["full_name"] = repository
 	}
-	if owner := os.Getenv("GITHUB_REPOSITORY_OWNER"); owner != "" {
+	owner := os.Getenv("GITHUB_REPOSITORY_OWNER")
+	if owner == "" {
+		if name, _, ok := strings.Cut(repository, "/"); ok {
+			owner = name
+		}
+	}
+	if owner != "" {
 		repo["owner"] = owner
 	}
 	if len(repo) > 0 {
@@ -79,7 +84,7 @@ func (c *GitHubActionsCollector) Collect(_ context.Context) (map[string]interfac
 	}
 	event := make(map[string]interface{})
 	for key, value := range map[string]string{
-		"name":   cmp.Or(os.Getenv("EVENT_NAME"), os.Getenv("GITHUB_EVENT_NAME")),
+		"name":   os.Getenv("GITHUB_EVENT_NAME"),
 		"action": payload.Action,
 	} {
 		if value != "" {
@@ -89,7 +94,7 @@ func (c *GitHubActionsCollector) Collect(_ context.Context) (map[string]interfac
 	if len(event) > 0 {
 		result["event"] = event
 	}
-	if request := cmp.Or(os.Getenv("USER_REQUEST"), payload.Comment.Body, payload.Review.Body); request != "" {
+	if request := cmp.Or(payload.Comment.Body, payload.Review.Body); request != "" {
 		result["user_request"] = request
 	}
 
@@ -97,17 +102,6 @@ func (c *GitHubActionsCollector) Collect(_ context.Context) (map[string]interfac
 	if subject == nil && payload.Issue != nil {
 		subject = payload.Issue
 		isPR = subject.PullRequest != nil
-	}
-	// Existing workflows can still provide explicit context when no event subject exists.
-	if subject == nil {
-		if number, err := strconv.Atoi(os.Getenv("ISSUE_NUMBER")); err == nil && number > 0 {
-			subject = &githubSubject{Number: number}
-			isPR, _ = strconv.ParseBool(os.Getenv("IS_PR"))
-			if isPR {
-				subject.Title = os.Getenv("PR_TITLE")
-				subject.Body = os.Getenv("PR_BODY")
-			}
-		}
 	}
 	if subject != nil {
 		details := map[string]interface{}{"is_pr": isPR}
@@ -124,8 +118,8 @@ func (c *GitHubActionsCollector) Collect(_ context.Context) (map[string]interfac
 				details["url"] = subject.PullRequest.HTMLURL
 			}
 			for key, value := range map[string]string{
-				"head": cmp.Or(subject.Head.Ref, os.Getenv("GITHUB_HEAD_REF"), os.Getenv("PR_HEAD")),
-				"base": cmp.Or(subject.Base.Ref, os.Getenv("GITHUB_BASE_REF"), os.Getenv("PR_BASE")),
+				"head": cmp.Or(subject.Head.Ref, os.Getenv("GITHUB_HEAD_REF")),
+				"base": cmp.Or(subject.Base.Ref, os.Getenv("GITHUB_BASE_REF")),
 			} {
 				if value != "" {
 					details[key] = value
@@ -172,7 +166,7 @@ func (c *GitHubActionsCollector) collectWorkflowContext(result map[string]interf
 
 	for key, fields := range map[string]map[string]string{
 		"actor": {
-			"login":            cmp.Or(os.Getenv("ACTOR"), os.Getenv("GITHUB_ACTOR")),
+			"login":            os.Getenv("GITHUB_ACTOR"),
 			"triggering_actor": os.Getenv("GITHUB_TRIGGERING_ACTOR"),
 		},
 		"workflow": {
@@ -202,6 +196,7 @@ func (c *GitHubActionsCollector) collectWorkflowContext(result map[string]interf
 
 func readGitHubEvent() githubEvent {
 	var event githubEvent
+	// ai-prepare-env passes the payload inline; standard Actions event files are a fallback.
 	if payload := os.Getenv("GITHUB_EVENT_PAYLOAD"); payload != "" {
 		if err := json.Unmarshal([]byte(payload), &event); err == nil {
 			return event

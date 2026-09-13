@@ -29,6 +29,7 @@ func (c *GitCollector) Collect(ctx context.Context) (map[string]any, error) {
 	if err != nil {
 		return result, nil
 	}
+
 	result["root"] = strings.TrimSpace(root)
 
 	if remote, err := c.runGitCommand(ctx, "config", "--local", "--get", "remote.origin.url"); err == nil {

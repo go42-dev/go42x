@@ -116,6 +116,83 @@ func readJSON[T any](t *testing.T, root, path string) T {
 	return value
 }
 
+func TestGeneratePrepareEnvInstructions(t *testing.T) {
+	t.Setenv("PATH", "")
+	for _, entry := range os.Environ() {
+		key, _, _ := strings.Cut(entry, "=")
+		if strings.HasPrefix(key, "GITHUB_") || strings.HasPrefix(key, "RUNNER_") {
+			t.Setenv(key, "")
+		}
+	}
+	// The action passes the event inline and exports the short ref name.
+	for key, value := range map[string]string{
+		"GITHUB_ACTOR": "developer", "GITHUB_REPOSITORY": "org/repo",
+		"GITHUB_EVENT_NAME": "issue_comment", "GITHUB_HEAD_REF": "", "GITHUB_REF_NAME": "main",
+		"GITHUB_SHA": "checkout-sha", "GITHUB_SERVER_URL": "https://github.example", "GITHUB_RUN_ID": "42",
+		"GITHUB_EVENT_PAYLOAD": `{"action":"created","issue":{"number":7,"title":"Fix the PR","body":"PR description","pull_request":{"html_url":"https://github.example/org/repo/pull/7"}},"comment":{"body":"@agent fix this"}}`,
+	} {
+		t.Setenv(key, value)
+	}
+	templateDir := filepath.Join("..", "template")
+	cfg, err := config.LoadConfig(filepath.Join(templateDir, "go42x.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		name, ci, actions, ref string
+		want, absent           []string
+	}{
+		{
+			name: "action variables", ci: "true", actions: "true",
+			want: []string{
+				"CI: true", `CI environment value: "true"`, "Repository: org/repo", "Actor: developer",
+				"Event: issue_comment", "Action: created", "Checkout ref: main", "Commit: checkout-sha",
+				"Run: https://github.example/org/repo/actions/runs/42", "### Pull request #7",
+				"Fix the PR", "PR description", "URL: https://github.example/org/repo/pull/7",
+				"### Requested task", "@agent fix this",
+			},
+			absent: []string{"### Issue", "Source branch:"},
+		},
+		{
+			name: "full ref available", ci: "true", actions: "true", ref: "refs/heads/main",
+			want: []string{"Checkout ref: refs/heads/main"}, absent: []string{"Checkout ref: main"},
+		},
+		{
+			name: "local generation", actions: "false",
+			want: []string{"CI: false", `CI environment value: ""`}, absent: []string{"## GitHub Actions"},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("CI", tt.ci)
+			t.Setenv("GITHUB_ACTIONS", tt.actions)
+			t.Setenv("GITHUB_REF", tt.ref)
+			out := t.TempDir()
+			g := NewGenerator(slog.New(slog.DiscardHandler), cfg, templateDir, out)
+			if err := g.Generate(t.Context(), false); err != nil {
+				t.Fatal(err)
+			}
+			data, err := os.ReadFile(filepath.Join(out, "AGENTS.md"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			content := string(data)
+			for _, want := range tt.want {
+				if !strings.Contains(content, want) {
+					t.Errorf("generated instructions missing %q", want)
+				}
+			}
+			for _, absent := range tt.absent {
+				if strings.Contains(content, absent) {
+					t.Errorf("generated instructions contain unexpected %q", absent)
+				}
+			}
+			if strings.Contains(content, "{{") || strings.Contains(content, "<no value>") {
+				t.Error("generated instructions contain unresolved template values")
+			}
+		})
+	}
+}
+
 func TestGenerateMCPConfigurations(t *testing.T) {
 	t.Setenv("PATH", "")
 	t.Setenv("GITHUB_ACTIONS", "false")

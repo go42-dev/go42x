@@ -63,6 +63,7 @@ func (c *EnvironmentCollector) Collect(_ context.Context) (map[string]any, error
 		}
 		return result, fmt.Errorf("read project go.mod: %w", err)
 	}
+
 	for line := range strings.SplitSeq(string(data), "\n") {
 		line, _, _ = strings.Cut(line, "//")
 		fields := strings.Fields(line)
