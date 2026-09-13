@@ -77,8 +77,17 @@ func (g *Generator) registerProviders() {
 }
 
 func (g *Generator) Generate(ctx context.Context, clean bool) error {
+	plan, err := g.Prepare(ctx, clean)
+	if err != nil {
+		return err
+	}
+	return plan.Apply()
+}
+
+// Prepare renders and validates all outputs without applying filesystem changes.
+func (g *Generator) Prepare(ctx context.Context, clean bool) (*output.Plan, error) {
 	if err := g.config.Validate(); err != nil {
-		return fmt.Errorf("invalid config: %w", err)
+		return nil, fmt.Errorf("invalid config: %w", err)
 	}
 
 	for name, server := range g.config.MCP {
@@ -87,7 +96,7 @@ func (g *Generator) Generate(ctx context.Context, clean bool) error {
 		}
 		cwd, err := filepath.Abs(filepath.Join(g.outputDir, server.CWD))
 		if err != nil {
-			return fmt.Errorf("MCP server %s: failed to resolve cwd: %w", name, err)
+			return nil, fmt.Errorf("MCP server %s: failed to resolve cwd: %w", name, err)
 		}
 		server.CWD = cwd
 		g.config.MCP[name] = server
@@ -97,12 +106,12 @@ func (g *Generator) Generate(ctx context.Context, clean bool) error {
 
 	tplCtx, err := g.buildTemplateContext(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to build context: %w", err)
+		return nil, fmt.Errorf("failed to build context: %w", err)
 	}
 
 	plan := output.NewPlan(g.logger, g.outputDir)
 	if err := g.prepareInstructions(plan, tplCtx.ToMap(), clean); err != nil {
-		return fmt.Errorf("failed to prepare shared instructions: %w", err)
+		return nil, fmt.Errorf("failed to prepare shared instructions: %w", err)
 	}
 
 	var preparationErrors []error
@@ -125,12 +134,12 @@ func (g *Generator) Generate(ctx context.Context, clean bool) error {
 	}
 
 	if err := errors.Join(preparationErrors...); err != nil {
-		return err
+		return nil, err
 	}
 	if err := ctx.Err(); err != nil {
-		return err
+		return nil, err
 	}
-	return plan.Apply()
+	return plan, nil
 }
 
 func (g *Generator) buildTemplateContext(ctx context.Context) (*Context, error) {
@@ -139,9 +148,9 @@ func (g *Generator) buildTemplateContext(ctx context.Context) (*Context, error) 
 	)
 
 	collectors := []collectorAccessor{
-		collector.NewGitCollector(),
+		collector.NewGitCollector(g.outputDir),
 		collector.NewProjectCollector(g.config),
-		collector.NewEnvironmentCollector(g.config.EnvVars),
+		collector.NewEnvironmentCollector(g.config.EnvVars, g.outputDir),
 		collector.NewGitHubActionsCollector(),
 	}
 

@@ -35,6 +35,7 @@ var defaultExcludedFiles = []string{
 	"Cargo.lock",
 	"poetry.lock",
 }
+
 var defaultFilenames = []string{"Makefile", "Dockerfile", ".gitignore", ".env"}
 
 func (m *indexManager) shouldIndexFile(name string) bool {
@@ -192,4 +193,57 @@ func readBounded(ctx context.Context, reader io.Reader, limit int) ([]byte, erro
 			return nil, err
 		}
 	}
+}
+
+type Source struct {
+	Content       string `json:"content"`
+	StartLine     int    `json:"start_line"`
+	EndLine       int    `json:"end_line"`
+	TotalLines    int    `json:"total_lines"`
+	NextStartLine *int   `json:"next_start_line,omitempty"`
+}
+
+func ReadLines(content string, start, end int) (Source, error) {
+	result := Source{}
+	if start < 0 || end < 0 {
+		return result, fmt.Errorf("line numbers cannot be negative")
+	}
+	if start == 0 {
+		start = 1
+	}
+	if end == 0 {
+		end = start + 199
+	}
+	if end < start || end-start >= MaxReadLines {
+		return result, fmt.Errorf("request between 1 and %d lines", MaxReadLines)
+	}
+	if content == "" {
+		return result, nil
+	}
+	lines := sourceLines(content)
+	result.TotalLines = len(lines)
+	if start > len(lines) {
+		return result, fmt.Errorf("start_line exceeds file length of %d lines", len(lines))
+	}
+	end = min(end, len(lines))
+	result.StartLine = start
+	result.EndLine = start - 1
+	var out strings.Builder
+	for i := start - 1; i < end; i++ {
+		if out.Len()+len(lines[i])+1 > MaxReadBytes {
+			if i == start-1 {
+				return result, fmt.Errorf("line %d exceeds the %d-byte response limit", start, MaxReadBytes)
+			}
+			break
+		}
+		out.WriteString(lines[i])
+		out.WriteByte('\n')
+		result.EndLine = i + 1
+	}
+	result.Content = out.String()
+	if result.EndLine < len(lines) {
+		next := result.EndLine + 1
+		result.NextStartLine = &next
+	}
+	return result, nil
 }

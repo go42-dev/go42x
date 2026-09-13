@@ -10,9 +10,8 @@ import (
 	"github.com/go42-dev/go42x/pkg/agentenv/generator/output"
 )
 
-const Gemini = "gemini"
-
 const (
+	Gemini                 = "gemini"
 	geminiSettingsDir      = ".gemini"
 	geminiSettingsFile     = "settings.json"
 	mcpDefaultTimeout      = 30000 // in milliseconds

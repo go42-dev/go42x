@@ -22,8 +22,8 @@ func TestCollectorMetadata(t *testing.T) {
 		name     string
 		priority int
 	}{
-		{NewProjectCollector(nil), "project", 5}, {NewGitCollector(), "git", 10},
-		{NewEnvironmentCollector(nil), "environment", 20}, {NewGitHubActionsCollector(), "github_actions", 30},
+		{NewProjectCollector(nil), "project", 5}, {NewGitCollector("."), "git", 10},
+		{NewEnvironmentCollector(nil, "."), "environment", 20}, {NewGitHubActionsCollector(), "github_actions", 30},
 	}
 	for _, tt := range collectors {
 		if tt.collector.Name() != tt.name || tt.collector.Priority() != tt.priority {
@@ -81,7 +81,10 @@ func TestEnvironmentCollector(t *testing.T) {
 	t.Setenv("AGENTENV_TEST_INCLUDED", "yes")
 	t.Setenv("AGENTENV_TEST_EMPTY", "")
 	t.Setenv("AGENTENV_TEST_PRIVATE", "secret")
-	data, err := NewEnvironmentCollector([]string{"AGENTENV_TEST_INCLUDED", "AGENTENV_TEST_EMPTY"}).Collect(t.Context())
+	data, err := NewEnvironmentCollector(
+		[]string{"AGENTENV_TEST_INCLUDED", "AGENTENV_TEST_EMPTY"},
+		".",
+	).Collect(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +113,7 @@ func TestEnvironmentCollector(t *testing.T) {
 		}
 	}
 	t.Setenv("CI", "")
-	data, err = NewEnvironmentCollector(nil).Collect(t.Context())
+	data, err = NewEnvironmentCollector(nil, ".").Collect(t.Context())
 	if err != nil || data["variables"] != nil || data["is_ci"] != false || data["ci_mode"] != "" {
 		t.Fatalf("unconfigured environment variables = %v, %v", data, err)
 	}
@@ -222,7 +225,7 @@ func TestGitCollectorWithoutRepository(t *testing.T) {
 	t.Chdir(t.TempDir())
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
-	c := NewGitCollector()
+	c := NewGitCollector(".")
 	data, err := c.Collect(t.Context())
 	if err != nil || len(data) != 0 {
 		t.Fatalf("nonrepository = %v, %v", data, err)
@@ -259,7 +262,7 @@ func TestGitCollectorRepository(t *testing.T) {
 	git("commit", "--allow-empty", "-m", "fixture")
 	git("remote", "add", "origin", "https://example.com/org/repo.git")
 	git("tag", "v1.0.0")
-	c := NewGitCollector()
+	c := NewGitCollector(".")
 	data, err := c.Collect(t.Context())
 	if err != nil {
 		t.Fatal(err)

@@ -20,6 +20,9 @@ func newGenerateCommand(f *cmdutil.Factory) *cobra.Command {
 			settings := &agentenv.Settings{
 				Clean: viper.GetBool("clean"),
 			}
+			if err := settings.Validate(); err != nil {
+				return cmdutil.UsageError(err)
+			}
 			return runGenerateCommand(f, settings)
 		},
 	}

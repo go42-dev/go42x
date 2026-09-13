@@ -96,15 +96,3 @@ All tools exposed by these enabled servers are available through MCP.
 ## Instructions
 
 {{ .chunks }}
-
-## Operational Modes
-
-The user can select one operational mode by saying "Switch to [mode name] mode".
-
-{{ .modes }}
-
-## Workflows
-
-The user can select one workflow by saying "Use [workflow name] workflow".
-
-{{ .workflows }}

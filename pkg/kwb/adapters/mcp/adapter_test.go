@@ -21,7 +21,15 @@ func TestStructuredToolResponses(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(
+		filepath.Join(root, "README.md"),
+		[]byte("---\nid: server\ntitle: Server\n---\n# Server\n[Code](server.go)\n"),
+		0600,
+	); err != nil {
+		t.Fatal(err)
+	}
 	settings := kwb.NewSettings()
+	settings.Entrypoint = "README.md"
 	settings.RootPath, settings.IndexPath = root, filepath.Join(t.TempDir(), "index")
 	service, err := kwb.NewService(settings)
 	if err != nil {
@@ -32,10 +40,13 @@ func TestStructuredToolResponses(t *testing.T) {
 		t.Fatal(err)
 	}
 	arguments := map[string]map[string]any{
-		"kwb_search":     {"query": "http server", "kind": "code"},
-		"kwb_get_file":   {"path": "server.go", "start_line": 2, "end_line": 3},
-		"kwb_list_files": {"limit": 1},
-		"kwb_stats":      {},
+		"kwb_search":      {"query": "http server", "kind": "code", "offset": 0},
+		"kwb_get_file":    {"path": "server.go", "start_line": 2, "end_line": 3},
+		"kwb_list_files":  {"limit": 1, "offset": 0.0},
+		"kwb_stats":       {},
+		"docs_get":        {"id": "server"},
+		"docs_impact":     {"paths": []string{"server.go"}},
+		"project_context": {"task": "http server", "paths": []string{"server.go"}},
 	}
 	for _, tool := range New(service).Tools() {
 		t.Run(tool.Tool.Name, func(t *testing.T) {
@@ -79,6 +90,19 @@ func TestStructuredToolResponses(t *testing.T) {
 		result, err := New(service).searchHandler(t.Context(), request)
 		if err != nil || !result.IsError {
 			t.Fatalf("invalid limit %v accepted: %+v %v", limit, result, err)
+		}
+	}
+	for _, tool := range New(service).Tools() {
+		if tool.Tool.Name != "kwb_search" && tool.Tool.Name != "kwb_list_files" {
+			continue
+		}
+		for _, offset := range []any{-1, 0.5, "invalid", 1e30} {
+			request := mcp.CallToolRequest{}
+			request.Params.Arguments = map[string]any{"query": "server", "offset": offset}
+			result, err := tool.Handler(t.Context(), request)
+			if err != nil || !result.IsError {
+				t.Fatalf("%s accepted invalid offset %v: %+v %v", tool.Tool.Name, offset, result, err)
+			}
 		}
 	}
 }

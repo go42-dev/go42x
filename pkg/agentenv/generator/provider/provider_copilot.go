@@ -9,9 +9,10 @@ import (
 	"github.com/go42-dev/go42x/pkg/agentenv/generator/output"
 )
 
-const Copilot = "copilot"
-
-const copilotMcpConfigFile = ".mcp.json"
+const (
+	Copilot              = "copilot"
+	copilotMcpConfigFile = ".mcp.json"
+)
 
 // CopilotMCPConfig represents the project configuration for Copilot CLI.
 type CopilotMCPConfig struct {

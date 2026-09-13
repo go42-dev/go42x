@@ -44,10 +44,8 @@ type Project struct {
 
 // Context defines the shared instructions rendered to AGENTS.md.
 type Context struct {
-	Template     string `yaml:"template"`
-	ChunksDir    string `yaml:"chunks-dir"`
-	ModesDir     string `yaml:"modes-dir"`
-	WorkflowsDir string `yaml:"workflows-dir"`
+	Template  string `yaml:"template"`
+	ChunksDir string `yaml:"chunks-dir"`
 }
 
 type Provider struct {

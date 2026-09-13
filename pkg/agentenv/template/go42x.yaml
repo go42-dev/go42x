@@ -14,17 +14,16 @@ project:
     - cli
   metadata:
     repository: github.com/go42-dev/go42
+    documentation-entrypoint: docs/README.md
 
 # Environment variable names whose values should appear in the shared context.
 env: []
 
 # Shared instructions for every enabled provider, rendered once to AGENTS.md.
-# Directories are relative to .go42x; immediate *.tpl.md files load in filename order.
+# The chunk directory is relative to .go42x; immediate *.tpl.md files load in filename order.
 context:
   template: agents.tpl.md
   chunks-dir: 'chunks/'
-  modes-dir: 'modes/'
-  workflows-dir: 'workflows/'
 
 # Generation makes all tools from enabled MCP servers available and updates tool approvals.
 # auto-approve-tools configures native tool approvals for Claude, Gemini, and Crush.
@@ -144,10 +143,24 @@ mcp:
       - --
       - mcp
     tools:
+      - project_context
+      - docs_get
+      - docs_impact
       - kwb_get_file
       - kwb_list_files
       - kwb_search
       - kwb_stats
+
+  context7:
+    enabled: false
+    type: http
+    name: context7
+    url: https://mcp.context7.com/mcp
+    headers:
+      Authorization: "Bearer ${CONTEXT7_API_KEY}"
+    tools:
+      - resolve-library-id
+      - query-docs
 
   github:
     enabled: false

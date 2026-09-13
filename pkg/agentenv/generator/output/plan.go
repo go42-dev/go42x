@@ -231,3 +231,32 @@ func (p *Plan) backup(f *file) error {
 	p.logger.Info("Backed up output", "file", f.path, "backup", backup)
 	return nil
 }
+
+// Change describes a pending operation without exposing file contents or secrets.
+type Change struct {
+	Path      string `json:"path"`
+	Operation string `json:"operation"`
+	Kind      Kind   `json:"kind"`
+}
+
+// Changes returns only outputs that Apply would change, in application order.
+func (p *Plan) Changes() []Change {
+	changes := []Change{}
+	for _, f := range p.ordered {
+		operation := ""
+		switch {
+		case f.remove && f.exists:
+			operation = "remove"
+		case f.write && !f.exists:
+			operation = "create"
+		case f.write && (f.force || !bytes.Equal(f.previous, f.content)):
+			operation = "update"
+		}
+		if operation != "" {
+			root, _ := filepath.Abs(p.outputDir)
+			relative, _ := filepath.Rel(root, f.path)
+			changes = append(changes, Change{filepath.ToSlash(relative), operation, f.kind})
+		}
+	}
+	return changes
+}

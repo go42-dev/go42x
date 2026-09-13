@@ -10,11 +10,14 @@ const GitCollectorName = "git"
 
 // GitCollector collects repository identity and checkout metadata.
 type GitCollector struct {
+	root string
 	BaseCollector
 }
 
-func NewGitCollector() *GitCollector {
+// NewGitCollector creates a collector for the given project root.
+func NewGitCollector(root string) *GitCollector {
 	return &GitCollector{
+		root:          root,
 		BaseCollector: NewBaseCollector(GitCollectorName, 10),
 	}
 }
@@ -46,6 +49,7 @@ func (c *GitCollector) Collect(ctx context.Context) (map[string]any, error) {
 
 func (c *GitCollector) runGitCommand(ctx context.Context, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = c.root
 	output, err := cmd.Output()
 	if err != nil {
 		return "", err

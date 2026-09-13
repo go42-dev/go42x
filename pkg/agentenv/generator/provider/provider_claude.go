@@ -12,9 +12,8 @@ import (
 	"github.com/go42-dev/go42x/pkg/agentenv/generator/output"
 )
 
-const Claude = "claude"
-
 const (
+	Claude             = "claude"
 	claudeSettingsDir  = ".claude"
 	claudeSettingsFile = "settings.local.json"
 	claudeMCPFile      = ".mcp.json"

@@ -16,9 +16,8 @@ import (
 	"github.com/go42-dev/go42x/pkg/agentenv/generator/output"
 )
 
-const Codex = "codex"
-
 const (
+	Codex             = "codex"
 	codexSettingsDir  = ".codex"
 	codexSettingsFile = "config.toml"
 )

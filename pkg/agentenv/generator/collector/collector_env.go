@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"go/version"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 )
@@ -13,12 +14,15 @@ const EnvironmentCollectorName = "environment"
 
 // EnvironmentCollector collects runtime environment information
 type EnvironmentCollector struct {
+	root string
 	BaseCollector
 	envVars []string
 }
 
-func NewEnvironmentCollector(envVars []string) *EnvironmentCollector {
+// NewEnvironmentCollector creates a collector for the given project root.
+func NewEnvironmentCollector(envVars []string, root string) *EnvironmentCollector {
 	return &EnvironmentCollector{
+		root:          root,
 		BaseCollector: NewBaseCollector(EnvironmentCollectorName, 20),
 		envVars:       envVars,
 	}
@@ -33,7 +37,11 @@ func (c *EnvironmentCollector) Collect(_ context.Context) (map[string]any, error
 	result["os"] = runtime.GOOS
 	result["arch"] = runtime.GOARCH
 
-	if wd, err := os.Getwd(); err == nil {
+	root := c.root
+	if root == "" {
+		root = "."
+	}
+	if wd, err := filepath.Abs(root); err == nil {
 		result["working_dir"] = wd
 	}
 
@@ -48,7 +56,7 @@ func (c *EnvironmentCollector) Collect(_ context.Context) (map[string]any, error
 	}
 
 	// Read the project's Go requirement without invoking the Go toolchain.
-	data, err := os.ReadFile("go.mod")
+	data, err := os.ReadFile(filepath.Join(root, "go.mod"))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return result, nil

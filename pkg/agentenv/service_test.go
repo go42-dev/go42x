@@ -24,6 +24,7 @@ func testService(t *testing.T, dir string, clean bool) *Service {
 	}
 	return s
 }
+
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
@@ -33,6 +34,7 @@ func writeFile(t *testing.T, path, content string) {
 		t.Fatal(err)
 	}
 }
+
 func readFile(t *testing.T, path string) []byte {
 	t.Helper()
 	data, err := os.ReadFile(path)
@@ -72,6 +74,19 @@ func TestInitExtractsTemplatesAndPreservesCustomFiles(t *testing.T) {
 	if _, err := config.LoadConfig(filepath.Join(dir, ".go42x/go42x.yaml")); err != nil {
 		t.Fatal(err)
 	}
+	for _, removed := range []string{"modes", "workflows"} {
+		if _, err := os.Stat(filepath.Join(dir, ".go42x", removed)); !os.IsNotExist(err) {
+			t.Errorf("removed template directory %s was installed: %v", removed, err)
+		}
+	}
+	schemaPath := filepath.Join(dir, ".go42x/go42x.schema.json")
+	if string(readFile(t, schemaPath)) != config.Schema() {
+		t.Fatal("installed schema differs from the embedded schema")
+	}
+	if !strings.Contains(string(readFile(t, filepath.Join(dir, ".go42x/go42x.yaml"))),
+		"# yaml-language-server: $schema=go42x.schema.json") {
+		t.Fatal("default configuration must reference the adjacent schema")
+	}
 	err := fs.WalkDir(templateFS, "template", func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -109,11 +124,20 @@ func TestInitExtractsTemplatesAndPreservesCustomFiles(t *testing.T) {
 		}
 	}
 	writeFile(t, filepath.Join(dir, ".go42x/go42x.yaml"), "custom configuration")
+	customTemplate := filepath.Join(dir, ".go42x/agents.tpl.md")
+	writeFile(t, customTemplate, "custom instructions")
+	writeFile(t, schemaPath, "outdated schema")
 	if err := s.Init(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	if string(readFile(t, filepath.Join(dir, ".go42x/go42x.yaml"))) != "custom configuration" {
 		t.Fatal("existing config overwritten")
+	}
+	if string(readFile(t, customTemplate)) != "custom instructions" {
+		t.Fatal("existing template overwritten")
+	}
+	if string(readFile(t, schemaPath)) != config.Schema() {
+		t.Fatal("outdated schema was not refreshed")
 	}
 	if !bytes.Equal(before, readFile(t, filepath.Join(dir, ".gitignore"))) {
 		t.Fatal("repeated init changed gitignore")
@@ -121,7 +145,7 @@ func TestInitExtractsTemplatesAndPreservesCustomFiles(t *testing.T) {
 }
 
 func TestInitFilesystemErrors(t *testing.T) {
-	for _, stage := range []string{"configuration", "templates", "gitignore"} {
+	for _, stage := range []string{"configuration", "templates", "schema", "gitignore"} {
 		t.Run(stage, func(t *testing.T) {
 			dir := t.TempDir()
 			want := ""
@@ -132,6 +156,11 @@ func TestInitFilesystemErrors(t *testing.T) {
 			case "templates":
 				writeFile(t, filepath.Join(dir, ".go42x/chunks"), "blocked")
 				want = "extract template"
+			case "schema":
+				if err := os.MkdirAll(filepath.Join(dir, ".go42x/go42x.schema.json"), 0755); err != nil {
+					t.Fatal(err)
+				}
+				want = "update configuration schema"
 			case "gitignore":
 				if err := os.Mkdir(filepath.Join(dir, ".gitignore"), 0755); err != nil {
 					t.Fatal(err)

@@ -13,11 +13,7 @@ import (
 	"github.com/go42-dev/go42x/pkg/agentenv/generator/provider"
 )
 
-const (
-	chunksPlaceholder    = "{{ .chunks }}"
-	modesPlaceholder     = "{{ .modes }}"
-	workflowsPlaceholder = "{{ .workflows }}"
-)
+const chunksPlaceholder = "{{ .chunks }}"
 
 func defaultTemplateOps() template.FuncMap {
 	return template.FuncMap{
@@ -53,22 +49,11 @@ func (e *templateEngine) Render(cfg config.Context, ctxData map[string]any) (str
 	if err != nil {
 		return "", fmt.Errorf("failed to load template: %w", err)
 	}
-	for _, section := range []struct {
-		name        string
-		dir         string
-		placeholder string
-	}{
-		{"chunks", cfg.ChunksDir, chunksPlaceholder},
-		{"modes", cfg.ModesDir, modesPlaceholder},
-		{"workflows", cfg.WorkflowsDir, workflowsPlaceholder},
-	} {
-		parts, err := e.loadTemplates(section.dir)
-		if err != nil {
-			return "", fmt.Errorf("failed to load %s: %w", section.name, err)
-		}
-		content = e.inject(content, mergeStrings(parts), section.placeholder)
+	chunks, err := e.loadTemplates(cfg.ChunksDir)
+	if err != nil {
+		return "", fmt.Errorf("failed to load chunks: %w", err)
 	}
-	return e.Process(content, ctxData)
+	return e.Process(e.InjectChunks(content, mergeStrings(chunks)), ctxData)
 }
 
 func (e *templateEngine) loadTemplate(path string) (string, error) {
@@ -117,19 +102,7 @@ func (e *templateEngine) Process(content string, ctxData map[string]any) (string
 }
 
 func (e *templateEngine) InjectChunks(content string, chunks string) string {
-	return e.inject(content, chunks, chunksPlaceholder)
-}
-
-func (e *templateEngine) InjectModes(content string, modes string) string {
-	return e.inject(content, modes, modesPlaceholder)
-}
-
-func (e *templateEngine) InjectWorkflows(content string, workflows string) string {
-	return e.inject(content, workflows, workflowsPlaceholder)
-}
-
-func (e *templateEngine) inject(content string, payload string, placeholder string) string {
-	return strings.Replace(content, placeholder, payload, 1)
+	return strings.Replace(content, chunksPlaceholder, chunks, 1)
 }
 
 func mergeStrings(items []string) string {

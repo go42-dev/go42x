@@ -128,7 +128,9 @@ func TestFilteringAndIncrementalUpdates(t *testing.T) {
 		t.Fatalf("incremental report: %+v", report)
 	}
 	for _, word := range []string{"OriginalSymbol", "RemovedSymbol", "nectarine"} {
-		result, err := service.Search(t.Context(), SearchOptions{Query: word})
+		result, err := service.Search(t.Context(), SearchOptions{
+			Query: word,
+		})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -136,7 +138,9 @@ func TestFilteringAndIncrementalUpdates(t *testing.T) {
 			t.Fatalf("stale content for %s: %+v", word, result)
 		}
 	}
-	result, err := service.Search(t.Context(), SearchOptions{Query: "ReplacementSymbol"})
+	result, err := service.Search(t.Context(), SearchOptions{
+		Query: "ReplacementSymbol",
+	})
 	if err != nil || result.Total != 1 {
 		t.Fatalf("new content missing: %+v, %v", result, err)
 	}
@@ -190,7 +194,11 @@ func TestChunkRankingAndRanges(t *testing.T) {
 		t.Run(tc.query+tc.kind, func(t *testing.T) {
 			result, err := service.Search(
 				t.Context(),
-				SearchOptions{Query: tc.query, Kind: tc.kind, Language: tc.language},
+				SearchOptions{
+					Query:    tc.query,
+					Kind:     tc.kind,
+					Language: tc.language,
+				},
 			)
 			if err != nil {
 				t.Fatal(err)
@@ -214,7 +222,10 @@ func TestChunkRankingAndRanges(t *testing.T) {
 			}
 		})
 	}
-	result, err := service.Search(t.Context(), SearchOptions{Query: "server", PathPrefix: "guide"})
+	result, err := service.Search(t.Context(), SearchOptions{
+		Query:      "server",
+		PathPrefix: "guide",
+	})
 	if err != nil || len(result.Results) != 1 || result.Results[0].Path != "guide.md" {
 		t.Fatalf("prefix filter: %+v %v", result, err)
 	}
@@ -245,7 +256,10 @@ func TestPaginationAndFileReading(t *testing.T) {
 	buildFixture(t, service, root)
 	var paths []string
 	for offset := 0; ; {
-		page, err := service.ListFiles(t.Context(), ListOptions{Limit: 113, Offset: offset})
+		page, err := service.ListFiles(t.Context(), ListOptions{
+			Limit:  113,
+			Offset: offset,
+		})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -263,11 +277,18 @@ func TestPaginationAndFileReading(t *testing.T) {
 	if len(paths) != 1052 || len(slices.Compact(paths)) != 1052 {
 		t.Fatal("pagination lost or duplicated files")
 	}
-	first, err := service.Search(t.Context(), SearchOptions{Query: "apricot", Limit: 17})
+	first, err := service.Search(t.Context(), SearchOptions{
+		Query: "apricot",
+		Limit: 17,
+	})
 	if err != nil || first.NextOffset == nil {
 		t.Fatalf("first page: %+v %v", first, err)
 	}
-	second, err := service.Search(t.Context(), SearchOptions{Query: "apricot", Limit: 17, Offset: *first.NextOffset})
+	second, err := service.Search(t.Context(), SearchOptions{
+		Query:  "apricot",
+		Limit:  17,
+		Offset: *first.NextOffset,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,10 +316,15 @@ func TestPaginationAndFileReading(t *testing.T) {
 	if _, err := service.GetFile(t.Context(), "long.md", 1, 501); err == nil {
 		t.Fatal("oversized range accepted")
 	}
-	if _, err := service.Search(t.Context(), SearchOptions{Query: "orchard", Limit: MaxSearchLimit + 1}); err == nil {
+	if _, err := service.Search(t.Context(), SearchOptions{
+		Query: "orchard",
+		Limit: MaxSearchLimit + 1,
+	}); err == nil {
 		t.Fatal("oversized search accepted")
 	}
-	if _, err := service.ListFiles(t.Context(), ListOptions{Offset: -1}); err == nil {
+	if _, err := service.ListFiles(t.Context(), ListOptions{
+		Offset: -1,
+	}); err == nil {
 		t.Fatal("negative offset accepted")
 	}
 }
@@ -323,7 +349,9 @@ func TestFailedBuildKeepsPublishedIndex(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(before, after) {
 		t.Fatalf("failed build replaced index: %+v %+v %v", before, after, err)
 	}
-	result, err := service.Search(t.Context(), SearchOptions{Query: "original"})
+	result, err := service.Search(t.Context(), SearchOptions{
+		Query: "original",
+	})
 	if err != nil || result.Total != 1 {
 		t.Fatalf("old index damaged: %+v %v", result, err)
 	}
@@ -347,7 +375,9 @@ func TestConcurrentReadsUpdatesAndCancellation(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < 20; j++ {
-				result, err := reader.Search(t.Context(), SearchOptions{Query: "orchard"})
+				result, err := reader.Search(t.Context(), SearchOptions{
+					Query: "orchard",
+				})
 				if err != nil || result.Total != 1 {
 					t.Errorf("concurrent search: %+v %v", result, err)
 					return
@@ -362,7 +392,9 @@ func TestConcurrentReadsUpdatesAndCancellation(t *testing.T) {
 	wg.Wait()
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	if _, err := reader.Search(ctx, SearchOptions{Query: "orchard"}); !errors.Is(err, context.Canceled) {
+	if _, err := reader.Search(ctx, SearchOptions{
+		Query: "orchard",
+	}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("search cancellation: %v", err)
 	}
 	if _, err := reader.ListFiles(ctx, ListOptions{}); !errors.Is(err, context.Canceled) {
@@ -374,7 +406,9 @@ func TestConcurrentReadsUpdatesAndCancellation(t *testing.T) {
 	fastTimeout := testService(t, root, index, func(s *Settings) { s.SearchTimeout = time.Nanosecond })
 	if _, err := fastTimeout.Search(
 		t.Context(),
-		SearchOptions{Query: "orchard"},
+		SearchOptions{
+			Query: "orchard",
+		},
 	); !errors.Is(
 		err,
 		context.DeadlineExceeded,
@@ -425,7 +459,9 @@ func TestCrossProcessPublication(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(index, before.Generation)); err != nil {
 			t.Fatalf("active reader generation removed: %v", err)
 		}
-		result, err := reader.Search(t.Context(), SearchOptions{Query: "updated"})
+		result, err := reader.Search(t.Context(), SearchOptions{
+			Query: "updated",
+		})
 		if err != nil || result.Total != 1 || result.Generation == before.Generation {
 			t.Fatalf("reader did not refresh: %+v %v", result, err)
 		}
@@ -452,7 +488,9 @@ func TestBothIndexBackends(t *testing.T) {
 			if report := buildFixture(t, service, root); report.Indexed != 1 || report.Rebuilt {
 				t.Fatalf("report: %+v", report)
 			}
-			result, err := service.Search(t.Context(), SearchOptions{Query: "second"})
+			result, err := service.Search(t.Context(), SearchOptions{
+				Query: "second",
+			})
 			if err != nil || result.Total != 1 {
 				t.Fatalf("backend search: %+v %v", result, err)
 			}
@@ -505,9 +543,94 @@ func TestIdentifiersWithNumericSuffixes(t *testing.T) {
 	service := testService(t, root, filepath.Join(t.TempDir(), "index"), nil)
 	buildFixture(t, service, root)
 	for _, query := range []string{"NewHTTPServer42", "http server", "server42.go"} {
-		result, err := service.Search(t.Context(), SearchOptions{Query: query})
+		result, err := service.Search(t.Context(), SearchOptions{
+			Query: query,
+		})
 		if err != nil || result.Total == 0 || result.Results[0].Path != "server42.go" {
 			t.Fatalf("query %q: %+v %v", query, result, err)
 		}
+	}
+}
+
+func TestDocumentationMetadataAndFrontmatter(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "specs/token-policy.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatal(err)
+	}
+	source := "---\nid: REQ-001\ntitle: Token rotation\ncollection: requirements\nstatus: draft\nrelated: [ADR-001, auth]\n---\n\n# Refresh tokens\nRotate refresh tokens atomically.\n"
+	if err := os.WriteFile(path, []byte(source), 0600); err != nil {
+		t.Fatal(err)
+	}
+	settings := NewSettings()
+	settings.RootPath = root
+	settings.IndexPath = filepath.Join(t.TempDir(), "index")
+	service, err := NewService(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer service.Close() //nolint:errcheck
+	if _, err = service.BuildIndex(t.Context(), root); err != nil {
+		t.Fatal(err)
+	}
+	result, err := service.Search(t.Context(), SearchOptions{
+		Query: "refresh tokens",
+	})
+	if err != nil || len(result.Results) != 1 {
+		t.Fatalf("%+v %v", result, err)
+	}
+	hit := result.Results[0]
+	if hit.DocumentID != "REQ-001" || hit.DocumentStatus != "draft" || hit.Collection != "requirements" ||
+		len(hit.Related) != 2 ||
+		hit.StartLine < 8 ||
+		hit.Title != "Refresh tokens" ||
+		hit.SourceHash == "" {
+		t.Fatalf("metadata: %+v", hit)
+	}
+	stats, err := service.GetStats(t.Context())
+	if err != nil || stats.ChunkCount != 1 {
+		t.Fatalf("front matter produced extra chunks: %+v %v", stats, err)
+	}
+}
+
+func TestMissingReadLeaseDoesNotWriteOrChangeRoot(t *testing.T) {
+	root := t.TempDir()
+	settings := NewSettings()
+	settings.RootPath = root
+	settings.IndexPath = filepath.Join(t.TempDir(), "index")
+	if err := os.WriteFile(filepath.Join(root, "file.md"), []byte("# Indexed project\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewService(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = service.BuildIndex(t.Context(), root); err != nil {
+		t.Fatal(err)
+	}
+	generation, err := service.index.(*indexManager).generation()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = service.Close(); err != nil {
+		t.Fatal(err)
+	}
+	lease := filepath.Join(settings.IndexPath, generation, "LEASE")
+	if err = os.Remove(lease); err != nil {
+		t.Fatal(err)
+	}
+	reader, err := NewService(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close() //nolint:errcheck
+	if _, err = reader.GetStats(t.Context()); err == nil {
+		t.Fatal("missing lease accepted")
+	}
+	if _, err = reader.GetFile(t.Context(), "file.md", 0, 0); err == nil {
+		t.Fatal("corrupt index allowed unindexed fallback")
+	}
+	if _, err = os.Stat(lease); !os.IsNotExist(err) {
+		t.Fatalf("reader created lease: %v", err)
 	}
 }

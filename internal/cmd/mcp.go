@@ -4,51 +4,54 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"time"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	"github.com/go42-dev/go42x/internal/cmdutil"
 	"github.com/go42-dev/go42x/internal/version"
 	"github.com/go42-dev/go42x/pkg/kwb"
 	kwbmcp "github.com/go42-dev/go42x/pkg/kwb/adapters/mcp"
 	"github.com/go42-dev/go42x/pkg/mcpserver"
 )
 
-type mcpSettings struct {
-	IndexPath     string
-	Toolsets      []string
-	SearchTimeout time.Duration
-}
-
-func NewMCPCommand() *cobra.Command {
+func NewMCPCommand(f *cmdutil.Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:         "mcp",
 		Short:       "Start the go42x MCP server over stdio",
-		Long:        "Start the go42x MCP server over stdio. Select feature groups with --toolsets. ",
+		Long:        "Start the go42x MCP server over stdio with knowledge-base, documentation, and project context tools.",
 		Args:        cobra.NoArgs,
 		Annotations: map[string]string{"mcp-stdio": "true"},
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			settings := &mcpSettings{
-				IndexPath:     viper.GetString("index"),
-				Toolsets:      viper.GetStringSlice("toolsets"),
-				SearchTimeout: viper.GetDuration("search-timeout"),
+			settings := &mcpserver.Settings{
+				IndexPath:      viper.GetString("index"),
+				RootPath:       viper.GetString("root"),
+				ExplicitRoot:   cmdutil.ExplicitFlag(cmd, "root"),
+				SearchTimeout:  viper.GetDuration("search-timeout"),
+				DocsEntrypoint: viper.GetString("docs-entrypoint"),
 			}
-			return runMCPCommand(cmd, settings)
+			if settings.ExplicitRoot && !cmdutil.ExplicitFlag(cmd, "index") {
+				settings.IndexPath = filepath.Join(settings.RootPath, kwb.NewSettings().IndexPath)
+			}
+			if err := settings.Validate(); err != nil {
+				return cmdutil.UsageError(err)
+			}
+			return runMCPCommand(f, settings)
 		},
 	}
 
-	cmd.Flags().StringSlice("toolsets", []string{"kwb"}, "comma-separated tool groups to enable (available: kwb)")
+	cmd.Flags().
+		String("root", ".", "project root (default indexed project root, or current directory without an index)")
 	cmd.Flags().String("index", kwb.NewSettings().IndexPath, "knowledge-base index path")
 	cmd.Flags().Duration("search-timeout", kwb.NewSettings().SearchTimeout, "maximum duration of knowledge-base reads")
+	cmd.Flags().String("docs-entrypoint", kwb.DefaultEntrypoint, "project-relative documentation entrypoint")
 
 	return cmd
 }
 
-func runMCPCommand(cmd *cobra.Command, settings *mcpSettings) (retErr error) {
-	kwbSettings := kwb.NewSettings()
-	kwbSettings.IndexPath = settings.IndexPath
-	kwbSettings.SearchTimeout = settings.SearchTimeout
+func runMCPCommand(f *cmdutil.Factory, settings *mcpserver.Settings) (retErr error) {
+	kwbSettings := settings.KnowledgeBaseSettings()
 
 	service, err := kwb.NewService(kwbSettings,
 		kwb.WithLogger(slog.Default().With("component", "kwb-service")))
@@ -62,7 +65,6 @@ func runMCPCommand(cmd *cobra.Command, settings *mcpSettings) (retErr error) {
 	runtime, err := mcpserver.New(
 		mcpserver.WithLogger(slog.Default().With("component", "mcp-server")),
 		mcpserver.WithVersion(version.GetVersion()),
-		mcpserver.WithToolsets(settings.Toolsets...),
 	)
 	if err != nil {
 		return err
@@ -72,5 +74,9 @@ func runMCPCommand(cmd *cobra.Command, settings *mcpSettings) (retErr error) {
 		return err
 	}
 
-	return runtime.Serve(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout())
+	if _, err := service.ProjectRoot(); err != nil {
+		return err
+	}
+
+	return runtime.Serve(f.Context(), f.Input(), f.Output())
 }

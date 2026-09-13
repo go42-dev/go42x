@@ -34,14 +34,20 @@ type SearchOptions struct {
 }
 
 type SearchResult struct {
-	Path      string  `json:"path"`
-	Kind      string  `json:"kind"`
-	Language  string  `json:"language"`
-	Title     string  `json:"title,omitempty"`
-	StartLine int     `json:"start_line"`
-	EndLine   int     `json:"end_line"`
-	Snippet   string  `json:"snippet"`
-	Score     float64 `json:"score"`
+	SourceHash     string   `json:"source_hash"`
+	DocumentID     string   `json:"document_id,omitempty"`
+	DocumentStatus string   `json:"document_status,omitempty"`
+	Collection     string   `json:"collection,omitempty"`
+	Related        []string `json:"related,omitempty"`
+	SupersededBy   string   `json:"superseded_by,omitempty"`
+	Path           string   `json:"path"`
+	Kind           string   `json:"kind"`
+	Language       string   `json:"language"`
+	Title          string   `json:"title,omitempty"`
+	StartLine      int      `json:"start_line"`
+	EndLine        int      `json:"end_line"`
+	Snippet        string   `json:"snippet"`
+	Score          float64  `json:"score"`
 }
 
 type SearchResponse struct {
@@ -92,23 +98,11 @@ type Stats struct {
 }
 
 func (m *indexManager) Search(ctx context.Context, options SearchOptions) (*SearchResponse, error) {
-	if strings.TrimSpace(options.Query) == "" {
-		return nil, fmt.Errorf("query is required")
-	}
-	if len(options.Query) > 4096 {
-		return nil, fmt.Errorf("query exceeds 4096 bytes")
+	if err := options.Validate(); err != nil {
+		return nil, err
 	}
 	if options.Limit == 0 {
 		options.Limit = m.settings.SearchLimit
-	}
-	if options.Limit < 1 || options.Limit > MaxSearchLimit {
-		return nil, fmt.Errorf("limit must be between 1 and %d", MaxSearchLimit)
-	}
-	if options.Offset < 0 || options.Offset > MaxSearchOffset {
-		return nil, fmt.Errorf("offset must be between 0 and %d; narrow the search with filters", MaxSearchOffset)
-	}
-	if err := validKind(options.Kind); err != nil {
-		return nil, err
 	}
 	var matches []query.Query
 	exact := bleve.NewTermQuery(options.Query)
@@ -147,8 +141,23 @@ func (m *indexManager) Search(ctx context.Context, options SearchOptions) (*Sear
 		false,
 	)
 	request.SortBy([]string{"-_score", "_id"})
-	request.Fields = []string{"path", "kind", "language", "title", "content", "start_line", "end_line"}
-	response := &SearchResponse{Results: []SearchResult{}}
+	request.Fields = []string{
+		"path",
+		"kind",
+		"language",
+		"title",
+		"content",
+		"start_line",
+		"end_line",
+		"document_id",
+		"document_status",
+		"collection",
+		"related",
+		"superseded_by",
+	}
+	response := &SearchResponse{
+		Results: []SearchResult{},
+	}
 	err := m.withSnapshot(ctx, func(s *snapshot) error {
 		result, err := s.index.SearchInContext(ctx, request)
 		if err != nil {
@@ -163,9 +172,20 @@ func (m *indexManager) Search(ctx context.Context, options SearchOptions) (*Sear
 			start, _ := hit.Fields["start_line"].(float64)
 			snippet, first, last := excerpt(text("content"), options.Query)
 			response.Results = append(response.Results, SearchResult{
-				Path: text("path"), Kind: text("kind"), Language: text("language"), Title: text("title"),
-				StartLine: int(start) + first, EndLine: int(start) + last,
-				Snippet: snippet, Score: hit.Score,
+				Path:           text("path"),
+				Kind:           text("kind"),
+				Language:       text("language"),
+				Title:          text("title"),
+				StartLine:      int(start) + first,
+				EndLine:        int(start) + last,
+				Snippet:        snippet,
+				Score:          hit.Score,
+				SourceHash:     s.manifest.Files[text("path")].Hash,
+				DocumentID:     text("document_id"),
+				DocumentStatus: text("document_status"),
+				Collection:     text("collection"),
+				Related:        stringValues(hit.Fields["related"]),
+				SupersededBy:   text("superseded_by"),
 			})
 		}
 		if next := options.Offset + len(response.Results); uint64(next) < result.Total {
@@ -236,7 +256,9 @@ func (m *indexManager) ListFiles(ctx context.Context, options ListOptions) (*Fil
 	if err := validKind(options.Kind); err != nil {
 		return nil, err
 	}
-	response := &FilesResponse{Files: []FileInfo{}}
+	response := &FilesResponse{
+		Files: []FileInfo{},
+	}
 	err := m.withSnapshot(ctx, func(s *snapshot) error {
 		var paths []string
 		for path, file := range s.manifest.Files {
@@ -256,7 +278,12 @@ func (m *indexManager) ListFiles(ctx context.Context, options ListOptions) (*Fil
 		end := start + min(options.Limit, len(paths)-start)
 		for _, path := range paths[start:end] {
 			file := s.manifest.Files[path]
-			response.Files = append(response.Files, FileInfo{path, file.Kind, file.Language, file.Lines})
+			response.Files = append(response.Files, FileInfo{
+				path,
+				file.Kind,
+				file.Language,
+				file.Lines,
+			})
 		}
 		if end < len(paths) {
 			response.NextOffset = &end
@@ -284,8 +311,12 @@ func (m *indexManager) GetFile(ctx context.Context, path string, start, end int)
 	}
 	root := m.settings.RootPath
 	err := m.withSnapshot(ctx, func(s *snapshot) error { root = s.manifest.Root; return nil })
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return nil, err
+	if err != nil {
+		// Only an absent CURRENT pointer permits unindexed reads. A missing file
+		// inside an existing generation is corruption, not permission to change roots.
+		if _, generationErr := m.generation(); !errors.Is(generationErr, os.ErrNotExist) {
+			return nil, err
+		}
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -320,37 +351,18 @@ func (m *indexManager) GetFile(ctx context.Context, path string, start, end int)
 	if bytes.IndexByte(data, 0) >= 0 || !utf8.Valid(data) {
 		return nil, fmt.Errorf("file must contain UTF-8 text")
 	}
-	lines := sourceLines(string(data))
-	response := &FileContent{Path: filepath.ToSlash(filepath.Clean(path)), TotalLines: len(lines)}
-	if len(lines) == 0 {
-		return response, nil
+	source, err := ReadLines(string(data), start, end)
+	if err != nil {
+		return nil, err
 	}
-	if start > len(lines) {
-		return nil, fmt.Errorf("start_line exceeds file length of %d lines", len(lines))
-	}
-	end = min(end, len(lines))
-	var output strings.Builder
-	actualEnd := start - 1
-	for i := start - 1; i < end; i++ {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		if output.Len()+len(lines[i])+1 > MaxReadBytes {
-			if i == start-1 {
-				return nil, fmt.Errorf("line %d exceeds the %d-byte response limit", start, MaxReadBytes)
-			}
-			break
-		}
-		output.WriteString(lines[i])
-		output.WriteByte('\n')
-		actualEnd = i + 1
-	}
-	response.StartLine, response.EndLine, response.Content = start, actualEnd, output.String()
-	if actualEnd < len(lines) {
-		next := actualEnd + 1
-		response.NextStartLine = &next
-	}
-	return response, nil
+	return &FileContent{
+		Path:          filepath.ToSlash(filepath.Clean(path)),
+		Content:       source.Content,
+		StartLine:     source.StartLine,
+		EndLine:       source.EndLine,
+		TotalLines:    source.TotalLines,
+		NextStartLine: source.NextStartLine,
+	}, ctx.Err()
 }
 
 func (m *indexManager) GetStats(ctx context.Context) (*Stats, error) {
@@ -368,4 +380,44 @@ func (m *indexManager) GetStats(ctx context.Context) (*Stats, error) {
 		return ctx.Err()
 	})
 	return stats, err
+}
+
+// Validate checks search inputs without opening the index. Zero limit uses the service default.
+func (options SearchOptions) Validate() error {
+	if strings.TrimSpace(options.Query) == "" {
+		return fmt.Errorf("query is required")
+	}
+	if len(options.Query) > 4096 {
+		return fmt.Errorf("query exceeds 4096 bytes")
+	}
+	if options.Limit == 0 {
+		options.Limit = 10
+	}
+	if options.Limit < 1 || options.Limit > MaxSearchLimit {
+		return fmt.Errorf("limit must be between 1 and %d", MaxSearchLimit)
+	}
+	if options.Offset < 0 || options.Offset > MaxSearchOffset {
+		return fmt.Errorf("offset must be between 0 and %d; narrow the search with filters", MaxSearchOffset)
+	}
+	if err := validKind(options.Kind); err != nil {
+		return err
+	}
+	return nil
+}
+
+func stringValues(value any) []string {
+	switch value := value.(type) {
+	case string:
+		return []string{value}
+	case []interface{}:
+		result := []string{}
+		for _, v := range value {
+			if text, ok := v.(string); ok {
+				result = append(result, text)
+			}
+		}
+		return result
+	default:
+		return nil
+	}
 }

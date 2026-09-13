@@ -165,8 +165,8 @@ func TestGenerateMCPConfigurations(t *testing.T) {
 	gemini := readJSON[provider.GeminiSettings](t, out, ".gemini/settings.json")
 	crush := readJSON[provider.CrushConfig](t, out, ".crush.json")
 	copilot := readJSON[provider.CopilotMCPConfig](t, out, ".mcp.json")
-	if len(claudeMCP.MCPServers) != 7 || len(gemini.MCPServers) != 7 || len(copilot.MCPServers) != 7 ||
-		len(crush.MCP) != 7 {
+	if len(claudeMCP.MCPServers) != 8 || len(gemini.MCPServers) != 8 || len(copilot.MCPServers) != 8 ||
+		len(crush.MCP) != 8 {
 		t.Fatal("enabled server set does not match generated configurations")
 	}
 	for name, s := range cfg.MCP {
@@ -240,6 +240,11 @@ func TestGenerateMCPConfigurations(t *testing.T) {
 	if !strings.Contains(string(data), "`kwb_search`") || strings.Contains(string(data), "{{") ||
 		strings.Contains(string(data), "<no value>") {
 		t.Error("shared instructions have unresolved template values or tool names")
+	}
+	for _, removed := range []string{"## Operational Modes", "## Workflows"} {
+		if strings.Contains(string(data), removed) {
+			t.Errorf("shared instructions still contain %s", removed)
+		}
 	}
 	after, err := json.Marshal(cfg)
 	if err != nil {

@@ -13,13 +13,17 @@ import (
 )
 
 const (
-	agentEnvDir = ".go42x"
-	configFile  = "go42x.yaml"
+	agentEnvDir     = ".go42x"
+	configFile      = "go42x.yaml"
+	schemaFile      = "go42x.schema.json"
+	gitignoreFile   = ".gitignore"
+	gitignoreMarker = "# go42x generated files"
 )
 
 type Service struct {
 	logger   *slog.Logger
 	settings *Settings
+	config   *config.Config
 }
 
 func NewAgentEnvService(settings *Settings, opts ...Option) (*Service, error) {
@@ -42,6 +46,7 @@ func NewAgentEnvService(settings *Settings, opts ...Option) (*Service, error) {
 }
 
 // Init initializes the agentenv environment in the current directory.
+// Existing configuration and templates are preserved; the schema is refreshed.
 func (s *Service) Init(_ context.Context) error {
 	s.logger.Info("Initializing agentenv")
 
@@ -56,6 +61,11 @@ func (s *Service) Init(_ context.Context) error {
 
 	if err := extractTemplate(targetDir); err != nil {
 		return fmt.Errorf("failed to extract template: %w", err)
+	}
+
+	s.logger.Info("Updating configuration schema")
+	if err := os.WriteFile(filepath.Join(targetDir, schemaFile), []byte(config.Schema()), 0644); err != nil {
+		return fmt.Errorf("failed to update configuration schema: %w", err)
 	}
 
 	if err := updateGitIgnore("."); err != nil {
@@ -95,11 +105,6 @@ func (s *Service) Generate(ctx context.Context) error {
 
 	return nil
 }
-
-const (
-	gitignoreFile   = ".gitignore"
-	gitignoreMarker = "# go42x generated files"
-)
 
 var ignoreFiles = []string{
 	".go42x/kwb/",

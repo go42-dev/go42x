@@ -1,11 +1,20 @@
 package cmdutil
 
-import "github.com/spf13/pflag"
+import (
+	"fmt"
+	"slices"
+)
 
 type Options struct {
 	LogLevel string
 }
 
-func (*Options) BindFlags(f *pflag.FlagSet) {
-	f.String("log-level", "info", "Logging level (debug, info, warn, error)")
+func (o *Options) Validate() error {
+	if o == nil {
+		return fmt.Errorf("options cannot be nil")
+	}
+	if !slices.Contains([]string{"debug", "info", "warn", "error"}, o.LogLevel) {
+		return fmt.Errorf("log-level must be debug, info, warn, or error")
+	}
+	return nil
 }

@@ -42,11 +42,9 @@ func TestTemplateProcessing(t *testing.T) {
 
 func TestTemplateInjection(t *testing.T) {
 	e := newTemplateEngine("")
-	content := "before {{ .chunks }} {{ .modes }} {{ .workflows }} after"
+	content := "before {{ .chunks }} after"
 	content = e.InjectChunks(content, "chunk")
-	content = e.InjectModes(content, "mode")
-	content = e.InjectWorkflows(content, "workflow")
-	if content != "before chunk mode workflow after" {
+	if content != "before chunk after" {
 		t.Fatalf("injected = %q", content)
 	}
 	if got := e.InjectChunks("no placeholder", "chunk"); got != "no placeholder" {
@@ -100,10 +98,10 @@ func TestTemplateFiles(t *testing.T) {
 
 // Rendering failures used to be exercised separately by every provider.
 func TestTemplateGenerationErrors(t *testing.T) {
-	for _, stage := range []string{"template", "chunks", "modes", "workflows", "process", "output"} {
+	for _, stage := range []string{"template", "chunks", "process", "output"} {
 		t.Run(stage, func(t *testing.T) {
 			dir, out := t.TempDir(), t.TempDir()
-			content := "{{ .chunks }} {{ .modes }} {{ .workflows }}"
+			content := "{{ .chunks }}"
 			cfg := config.Context{Template: "main.tpl.md"}
 			want := ""
 			switch stage {
@@ -113,12 +111,6 @@ func TestTemplateGenerationErrors(t *testing.T) {
 			case "chunks":
 				cfg.ChunksDir = "missing"
 				want = "failed to load chunks"
-			case "modes":
-				cfg.ModesDir = "missing"
-				want = "failed to load modes"
-			case "workflows":
-				cfg.WorkflowsDir = "missing"
-				want = "failed to load workflows"
 			case "process":
 				content = "{{ upper .items }}"
 				want = "failed to execute template"

@@ -15,15 +15,11 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/go42-dev/go42x/internal/cmd/agentenv"
+	"github.com/go42-dev/go42x/internal/cmd/kwb"
 	"github.com/go42-dev/go42x/internal/cmdutil"
 )
 
 const envPrefix = "GO42X"
-
-const (
-	exitOK    = 0
-	exitError = 1
-)
 
 func NewGo42Command(ctx context.Context, f *cmdutil.Factory) *cobra.Command {
 	cmd := &cobra.Command{
@@ -40,15 +36,24 @@ func NewGo42Command(ctx context.Context, f *cmdutil.Factory) *cobra.Command {
 			if err := viper.BindPFlags(cmd.Flags()); err != nil {
 				return err
 			}
+
 			options := f.Options()
 			*options = cmdutil.Options{
 				LogLevel: viper.GetString("log-level"),
 			}
-			output := cmd.OutOrStdout()
-			if cmd.Annotations["mcp-stdio"] == "true" {
-				output = cmd.ErrOrStderr()
+			if err := options.Validate(); err != nil {
+				return cmdutil.UsageError(err)
 			}
+
+			f.SetIOStreams(cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
+
+			output := f.Output()
+			if cmd.Annotations["mcp-stdio"] == "true" || cmd.Annotations["result-output"] == "true" {
+				output = f.ErrorOutput()
+			}
+
 			initLogging(options.LogLevel, output)
+
 			return nil
 		},
 		SilenceUsage:  true,
@@ -64,12 +69,15 @@ func NewGo42Command(ctx context.Context, f *cmdutil.Factory) *cobra.Command {
 	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
 	viper.AutomaticEnv()
 
-	f.BindFlags(cmd.PersistentFlags())
+	cmd.PersistentFlags().String("log-level", "info", "Logging level (debug, info, warn, error)")
 
-	cmd.AddCommand(NewVersionCommand())
-	cmd.AddCommand(NewMCPCommand())
-	cmd.AddCommand(NewKnowledgeBaseCommand(f))
+	cmd.AddCommand(NewVersionCommand(f))
+	cmd.AddCommand(NewMCPCommand(f))
+	cmd.AddCommand(NewDoctorCommand(f))
+	cmd.AddCommand(kwb.NewKnowledgeBaseCommand(f))
 	cmd.AddCommand(agentenv.NewAgentEnvCommand(f))
+
+	cmdutil.ConfigureCommands(cmd)
 
 	return cmd
 }
@@ -81,17 +89,8 @@ func Execute() int {
 	factory := cmdutil.NewFactory(ctx)
 	cmd := NewGo42Command(ctx, factory)
 
-	var execErr error
-	cmd, execErr = cmd.ExecuteContextC(ctx)
-
-	if execErr != nil {
-		if cmd != nil && cmd.SilenceErrors {
-			return exitOK
-		}
-		return exitError
-	}
-
-	return exitOK
+	_, err := cmd.ExecuteContextC(ctx)
+	return cmdutil.ExitCode(err)
 }
 
 func initLogging(level string, output io.Writer) {

@@ -28,7 +28,8 @@ type testToolset struct {
 	tools []server.ServerTool
 }
 
-func (s testToolset) Name() string               { return s.name }
+func (s testToolset) Name() string { return s.name }
+
 func (s testToolset) Tools() []server.ServerTool { return s.tools }
 
 func probeTool() server.ServerTool {
@@ -56,7 +57,10 @@ func connect(t *testing.T, runtime *Server) (*client.Client, *mcp.InitializeResu
 	})
 	request := mcp.InitializeRequest{}
 	request.Params.ProtocolVersion = mcp.LATEST_PROTOCOL_VERSION
-	request.Params.ClientInfo = mcp.Implementation{Name: "test", Version: "1"}
+	request.Params.ClientInfo = mcp.Implementation{
+		Name:    "test",
+		Version: "1",
+	}
 	result, err := c.Initialize(t.Context(), request)
 	if err != nil {
 		t.Fatal(err)
@@ -70,8 +74,14 @@ func TestServerIdentityOptions(t *testing.T) {
 		opts []Option
 		want mcp.Implementation
 	}{
-		{"defaults", nil, mcp.Implementation{Name: "go42x", Version: "dev"}},
-		{"custom", []Option{WithName("project"), WithVersion("1.2.3")}, mcp.Implementation{Name: "project", Version: "1.2.3"}},
+		{"defaults", nil, mcp.Implementation{
+			Name:    "go42x",
+			Version: "dev",
+		}},
+		{"custom", []Option{WithName("project"), WithVersion("1.2.3")}, mcp.Implementation{
+			Name:    "project",
+			Version: "1.2.3",
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			runtime, err := New(tc.opts...)
@@ -108,7 +118,9 @@ func TestTransportUsesLoggerOption(t *testing.T) {
 		t.Fatal(err)
 	}
 	readErr := errors.New("test input failed")
-	if err := runtime.Serve(t.Context(), failingReader{readErr}, &output); !errors.Is(err, readErr) {
+	if err := runtime.Serve(t.Context(), failingReader{
+		readErr,
+	}, &output); !errors.Is(err, readErr) {
 		t.Fatalf("Serve error = %v, want %v", err, readErr)
 	}
 	for _, want := range []string{"level=ERROR", "component=mcp-test", readErr.Error()} {
@@ -124,95 +136,83 @@ func TestTransportUsesLoggerOption(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := runtime.Serve(t.Context(), failingReader{readErr}, io.Discard); !errors.Is(err, readErr) {
+		if err := runtime.Serve(t.Context(), failingReader{
+			readErr,
+		}, io.Discard); !errors.Is(err, readErr) {
 			t.Fatalf("Serve with default logger: %v", err)
 		}
 	}
 }
 
-func TestToolsetsAreIndependent(t *testing.T) {
+func TestAllRegisteredToolsetsAreAvailable(t *testing.T) {
 	settings := kwb.NewSettings()
 	settings.IndexPath = filepath.Join(t.TempDir(), "missing-index")
 	service, err := kwb.NewService(settings)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() {
+	t.Cleanup(func() {
 		if err := service.Close(); err != nil {
 			t.Error(err)
 		}
-	}()
-	groups := []toolsetAccessor{kwbmcp.New(service), testToolset{"project", []server.ServerTool{probeTool()}}}
-
-	for _, tc := range []struct {
-		name     string
-		selected []string
-		want     []string
-	}{
-		{"all", nil, []string{"kwb_get_file", "kwb_list_files", "kwb_search", "kwb_stats", "project_info"}},
-		{"project only", []string{"project"}, []string{"project_info"}},
-		{"none", []string{}, []string{}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			opts := []Option{WithVersion("test")}
-			if tc.selected != nil {
-				opts = append(opts, WithToolsets(tc.selected...))
-			}
-			runtime, err := New(opts...)
-			if err != nil {
-				t.Fatal(err)
-			}
-			for _, group := range groups {
-				if err := runtime.AddToolset(group); err != nil {
-					t.Fatal(err)
-				}
-			}
-			c, _ := connect(t, runtime)
-			list, err := c.ListTools(t.Context(), mcp.ListToolsRequest{})
-			if err != nil {
-				t.Fatal(err)
-			}
-			names := make([]string, 0, len(list.Tools))
-			for _, tool := range list.Tools {
-				names = append(names, tool.Name)
-			}
-			slices.Sort(names)
-			if !slices.Equal(names, tc.want) {
-				t.Fatalf("tools = %v, want %v", names, tc.want)
-			}
-			for _, name := range []string{"kwb_search", "kwb_stats"} {
-				if !slices.Contains(names, name) {
-					continue
-				}
-				request := mcp.CallToolRequest{}
-				request.Params.Name = name
-				if name == "kwb_search" {
-					request.Params.Arguments = map[string]any{"query": "hello"}
-				}
-				result, err := c.CallTool(t.Context(), request)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if !result.IsError || !strings.Contains(result.Content[0].(mcp.TextContent).Text, "go42x kwb --index") {
-					t.Fatalf("expected actionable missing-index error: %+v", result)
-				}
-			}
-			request := mcp.CallToolRequest{}
-			request.Params.Name = "project_info"
-			result, err := c.CallTool(t.Context(), request)
-			if len(tc.want) == 0 {
-				if err == nil {
-					t.Fatal("disabled tool was callable")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			if result.IsError || result.Content[0].(mcp.TextContent).Text != "project ready" {
-				t.Fatalf("independent tool failed: %+v", result)
-			}
-		})
+	})
+	runtime, err := New(WithVersion("test"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, group := range []toolsetAccessor{kwbmcp.New(service), testToolset{
+		"project",
+		[]server.ServerTool{probeTool()},
+	}} {
+		if err := runtime.AddToolset(group); err != nil {
+			t.Fatal(err)
+		}
+	}
+	c, _ := connect(t, runtime)
+	list, err := c.ListTools(t.Context(), mcp.ListToolsRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := make([]string, 0, len(list.Tools))
+	for _, tool := range list.Tools {
+		names = append(names, tool.Name)
+	}
+	slices.Sort(names)
+	want := []string{
+		"docs_get",
+		"docs_impact",
+		"kwb_get_file",
+		"kwb_list_files",
+		"kwb_search",
+		"kwb_stats",
+		"project_context",
+		"project_info",
+	}
+	if !slices.Equal(names, want) {
+		t.Fatalf("tools = %v, want %v", names, want)
+	}
+	for _, name := range []string{"kwb_search", "kwb_stats"} {
+		request := mcp.CallToolRequest{}
+		request.Params.Name = name
+		if name == "kwb_search" {
+			request.Params.Arguments = map[string]any{"query": "hello"}
+		}
+		result, err := c.CallTool(t.Context(), request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !result.IsError || !strings.Contains(result.Content[0].(mcp.TextContent).Text, "go42x kwb --index") {
+			t.Fatalf("expected actionable missing-index error: %+v", result)
+		}
+	}
+	request := mcp.CallToolRequest{}
+	request.Params.Name = "project_info"
+	result, err := c.CallTool(t.Context(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.IsError || result.Content[0].(mcp.TextContent).Text != "project ready" {
+		t.Fatalf("independent tool failed: %+v", result)
 	}
 }
 
@@ -285,25 +285,27 @@ func TestKnowledgeBaseStats(t *testing.T) {
 }
 
 func TestRegistrationRejectsAmbiguousTools(t *testing.T) {
-	group := testToolset{"project", []server.ServerTool{probeTool()}}
+	group := testToolset{
+		"project",
+		[]server.ServerTool{probeTool()},
+	}
 	for _, tc := range []struct {
-		name     string
-		selected []string
-		groups   []toolsetAccessor
-		want     string
+		name   string
+		groups []toolsetAccessor
+		want   string
 	}{
-		{"unknown group", []string{"missing"}, []toolsetAccessor{group}, "unknown toolset"},
-		{"repeated selection", []string{"project", "project"}, []toolsetAccessor{group}, "selected more than once"},
-		{"duplicate group", nil, []toolsetAccessor{group, group}, "duplicate toolset"},
-		{"duplicate tool across groups", nil, []toolsetAccessor{group, testToolset{"other", group.tools}}, "duplicate tool"},
-		{"duplicate tool within group", nil, []toolsetAccessor{testToolset{"project", []server.ServerTool{probeTool(), probeTool()}}}, "duplicate tool"},
+		{"duplicate group", []toolsetAccessor{group, group}, "duplicate toolset"},
+		{"duplicate tool across groups", []toolsetAccessor{group, testToolset{
+			"other",
+			group.tools,
+		}}, "duplicate tool"},
+		{"duplicate tool within group", []toolsetAccessor{testToolset{
+			"project",
+			[]server.ServerTool{probeTool(), probeTool()},
+		}}, "duplicate tool"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			var opts []Option
-			if tc.selected != nil {
-				opts = append(opts, WithToolsets(tc.selected...))
-			}
-			runtime, err := New(opts...)
+			runtime, err := New()
 			if err == nil {
 				for _, group := range tc.groups {
 					if err = runtime.AddToolset(group); err != nil {
@@ -335,7 +337,10 @@ func TestServeCancellationReachesActiveTools(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := runtime.AddToolset(testToolset{"project", []server.ServerTool{tool}}); err != nil {
+	if err := runtime.AddToolset(testToolset{
+		"project",
+		[]server.ServerTool{tool},
+	}); err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(t.Context())
@@ -376,5 +381,86 @@ func TestServeCancellationReachesActiveTools(t *testing.T) {
 	case <-finished:
 	default:
 		t.Fatal("server returned before its tool finished")
+	}
+}
+
+func TestDocumentationAndContextToolsWithoutIndex(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "guides"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(root, "guides/auth.md"),
+		[]byte(
+			"---\nid: auth\ntitle: Tokens\ncollection: handbook\nsidebar_position: 1\n---\n# Tokens\n[Code](../src/auth.go)\n",
+		),
+		0600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	settings := kwb.NewSettings()
+	settings.RootPath = root
+	settings.IndexPath = filepath.Join(root, ".go42x/kwb/index")
+	knowledge, err := kwb.NewService(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer knowledge.Close() //nolint:errcheck
+	runtime, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.AddToolset(kwbmcp.New(knowledge)); err != nil {
+		t.Fatal(err)
+	}
+	c, _ := connect(t, runtime)
+	listed, err := c.ListTools(t.Context(), mcp.ListToolsRequest{})
+	if err != nil || len(listed.Tools) != 7 {
+		t.Fatalf("list=%+v %v", listed, err)
+	}
+	arguments := map[string]map[string]any{
+		"docs_get":        {"id": "auth"},
+		"docs_impact":     {"paths": []string{"src/auth.go"}},
+		"project_context": {"task": "rotate tokens", "paths": []string{"src/auth.go"}},
+	}
+	for _, tool := range listed.Tools {
+		if tool.OutputSchema.Type != "object" || tool.Annotations.ReadOnlyHint == nil ||
+			!*tool.Annotations.ReadOnlyHint {
+			t.Fatalf("tool schema: %+v", tool)
+		}
+		args, ok := arguments[tool.Name]
+		if !ok {
+			continue
+		}
+		request := mcp.CallToolRequest{}
+		request.Params.Name = tool.Name
+		request.Params.Arguments = args
+		result, err := c.CallTool(t.Context(), request)
+		if err != nil || result.IsError || result.StructuredContent == nil || len(result.Content) != 1 {
+			t.Fatalf("%s: %+v %v", tool.Name, result, err)
+		}
+		data, err := json.Marshal(result.StructuredContent)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var structured, fallback any
+		if err = json.Unmarshal(data, &structured); err != nil {
+			t.Fatal(err)
+		}
+		if err = json.Unmarshal([]byte(result.Content[0].(mcp.TextContent).Text), &fallback); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(structured, fallback) {
+			t.Fatal("structured content differs from fallback")
+		}
+	}
+	for _, arguments := range []map[string]any{{"id": "auth", "start_line": 1.5}, {"id": "missing"}} {
+		request := mcp.CallToolRequest{}
+		request.Params.Name = "docs_get"
+		request.Params.Arguments = arguments
+		result, err := c.CallTool(t.Context(), request)
+		if err == nil && !result.IsError {
+			t.Fatalf("invalid request accepted: %+v", arguments)
+		}
 	}
 }

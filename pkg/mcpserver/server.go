@@ -7,7 +7,6 @@ import (
 	"io"
 	"log/slog"
 	"maps"
-	"slices"
 
 	"github.com/mark3labs/mcp-go/server"
 )
@@ -20,17 +19,16 @@ type toolsetAccessor interface {
 }
 
 type Server struct {
-	server          *server.MCPServer
-	logger          *slog.Logger
-	name            string
-	version         string
-	enabledToolsets []string
-	toolsets        map[string]bool
-	toolNames       map[string]string
+	logger    *slog.Logger
+	server    *server.MCPServer
+	name      string
+	version   string
+	toolsets  map[string]bool
+	toolNames map[string]string
 }
 
 // New creates a server with default name "go42x" and version "dev".
-// Register toolsets with AddToolsed before calling Serve.
+// Register toolsets with AddToolset before calling Serve.
 func New(opts ...Option) (*Server, error) {
 	s := &Server{
 		name:      "go42x",
@@ -48,14 +46,6 @@ func New(opts ...Option) (*Server, error) {
 		return nil, fmt.Errorf("MCP server name and version are required")
 	}
 
-	selected := make(map[string]bool, len(s.enabledToolsets))
-	for _, name := range s.enabledToolsets {
-		if selected[name] {
-			return nil, fmt.Errorf("toolset %q selected more than once", name)
-		}
-		selected[name] = true
-	}
-
 	s.server = server.NewMCPServer(
 		s.name, s.version,
 		server.WithToolCapabilities(false),
@@ -65,7 +55,7 @@ func New(opts ...Option) (*Server, error) {
 	return s, nil
 }
 
-// AddToolset registers a toolset before Serve, exposing its tools if enabled.
+// AddToolset registers a toolset before Serve, exposing all of its tools.
 // The caller owns the toolset and its dependencies.
 func (s *Server) AddToolset(set toolsetAccessor) error {
 	if set == nil {
@@ -79,10 +69,7 @@ func (s *Server) AddToolset(set toolsetAccessor) error {
 		return fmt.Errorf("duplicate toolset %q", name)
 	}
 
-	var tools []server.ServerTool
-	if s.enabledToolsets == nil || slices.Contains(s.enabledToolsets, name) {
-		tools = set.Tools()
-	}
+	tools := set.Tools()
 
 	names := make(map[string]string, len(tools))
 	for _, tool := range tools {
@@ -109,12 +96,6 @@ func (s *Server) AddToolset(set toolsetAccessor) error {
 // Serve runs the stdio transport until EOF or cancellation. It leaves the streams
 // open for the caller and waits for active tool calls before returning.
 func (s *Server) Serve(ctx context.Context, input io.Reader, output io.Writer) error {
-	for _, name := range s.enabledToolsets {
-		if !s.toolsets[name] {
-			return fmt.Errorf("unknown toolset %q", name)
-		}
-	}
-
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 

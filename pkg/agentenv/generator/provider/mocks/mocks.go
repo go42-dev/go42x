@@ -39,48 +39,6 @@ func (m *MockTemplateEngineAccessor) EXPECT() *MockTemplateEngineAccessorMockRec
 	return m.recorder
 }
 
-// InjectChunks mocks base method.
-func (m *MockTemplateEngineAccessor) InjectChunks(template, chunks string) string {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "InjectChunks", template, chunks)
-	ret0, _ := ret[0].(string)
-	return ret0
-}
-
-// InjectChunks indicates an expected call of InjectChunks.
-func (mr *MockTemplateEngineAccessorMockRecorder) InjectChunks(template, chunks any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InjectChunks", reflect.TypeOf((*MockTemplateEngineAccessor)(nil).InjectChunks), template, chunks)
-}
-
-// InjectModes mocks base method.
-func (m *MockTemplateEngineAccessor) InjectModes(template, modes string) string {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "InjectModes", template, modes)
-	ret0, _ := ret[0].(string)
-	return ret0
-}
-
-// InjectModes indicates an expected call of InjectModes.
-func (mr *MockTemplateEngineAccessorMockRecorder) InjectModes(template, modes any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InjectModes", reflect.TypeOf((*MockTemplateEngineAccessor)(nil).InjectModes), template, modes)
-}
-
-// InjectWorkflows mocks base method.
-func (m *MockTemplateEngineAccessor) InjectWorkflows(template, workflows string) string {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "InjectWorkflows", template, workflows)
-	ret0, _ := ret[0].(string)
-	return ret0
-}
-
-// InjectWorkflows indicates an expected call of InjectWorkflows.
-func (mr *MockTemplateEngineAccessorMockRecorder) InjectWorkflows(template, workflows any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InjectWorkflows", reflect.TypeOf((*MockTemplateEngineAccessor)(nil).InjectWorkflows), template, workflows)
-}
-
 // Process mocks base method.
 func (m *MockTemplateEngineAccessor) Process(template string, ctxData map[string]any) (string, error) {
 	m.ctrl.T.Helper()

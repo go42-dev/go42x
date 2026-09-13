@@ -156,10 +156,10 @@ func TestDefaultConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cfg.Providers) != 5 || len(cfg.MCP) != 5 {
+	if len(cfg.Providers) != 5 || len(cfg.MCP) != 6 {
 		t.Fatalf("default providers/servers = %d/%d", len(cfg.Providers), len(cfg.MCP))
 	}
-	paths := []string{cfg.Context.Template, cfg.Context.ChunksDir, cfg.Context.ModesDir, cfg.Context.WorkflowsDir}
+	paths := []string{cfg.Context.Template, cfg.Context.ChunksDir}
 	for _, p := range cfg.Providers {
 		paths = append(paths, p.Agents...)
 	}
@@ -183,6 +183,9 @@ func TestDefaultConfig(t *testing.T) {
 	var raw map[string]any
 	if err := yaml.Unmarshal(data, &raw); err != nil {
 		t.Fatal(err)
+	}
+	if err := compileSchema(t).Validate(raw); err != nil {
+		t.Fatalf("default configuration does not match the embedded schema: %v", err)
 	}
 	if _, ok := raw["version"].(string); !ok {
 		t.Fatal("version must be a YAML string")

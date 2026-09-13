@@ -6,25 +6,31 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/go42-dev/go42x/internal/cmdutil"
 	"github.com/go42-dev/go42x/internal/version"
 )
 
-func NewVersionCommand() *cobra.Command {
+func NewVersionCommand(f *cmdutil.Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "version",
 		Short: "Version information",
 		Long:  `Version information`,
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runVersionCommand(cmd)
+			return runVersionCommand(f)
 		},
 	}
 	return cmd
 }
 
-func runVersionCommand(_ *cobra.Command) error {
-	fmt.Printf("Version: %s\n", version.GetVersion())
-	fmt.Printf("Go:      %s\n", runtime.Version())
-	fmt.Printf("OS/Arch: %s/%s\n", runtime.GOOS, runtime.GOARCH)
-	return nil
+func runVersionCommand(f *cmdutil.Factory) error {
+	_, err := fmt.Fprintf(
+		f.Output(),
+		"Version: %s\nGo:      %s\nOS/Arch: %s/%s\n",
+		version.GetVersion(),
+		runtime.Version(),
+		runtime.GOOS,
+		runtime.GOARCH,
+	)
+	return err
 }

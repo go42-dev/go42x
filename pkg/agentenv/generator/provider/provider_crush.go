@@ -10,9 +10,8 @@ import (
 	"github.com/go42-dev/go42x/pkg/agentenv/generator/output"
 )
 
-const Crush = "crush"
-
 const (
+	Crush           = "crush"
 	crushSchema     = "https://charm.land/crush.json"
 	crushConfigFile = ".crush.json"
 )

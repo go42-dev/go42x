@@ -1,10 +1,47 @@
-{{ if or (hasMCPTool .mcp "go42x" "kwb_search") (hasMCPTool .mcp "go42x" "kwb_get_file") (hasMCPTool .mcp "go42x" "kwb_list_files") (hasMCPTool .mcp "go42x" "kwb_stats") -}}
 ### Searching documentation and code
 
-Use the knowledge-base tools from the `go42x` MCP server to find documentation sections, code declarations,
-configuration keys, examples, and related files. Use an available Go language server for references,
-implementations, type information, and call relationships. Use text search for literal
-or regular-expression searches, especially when checking recently edited files.
+Use the tools available in the current session. Prefer `rg --files` to locate
+files and `rg` for literal or regular-expression searches within them. Narrow
+searches by path, filename, language, or symbol before reading large files.
+Read relevant source before editing and preserve unrelated work.
+
+For code relationships, use an available language server to find definitions,
+references, implementations, type information, and call relationships. For
+documentation and broad code discovery, use an available knowledge-base search.
+Confirm indexed results against current source before making changes, especially
+for recently edited files.
+
+MCP tool names in these instructions are raw tool names. Select the matching
+tool exposed by the named server in your client; clients may add their own prefix.
+Only call tools exposed in the current session. When a service is unavailable,
+continue with local file search and source inspection.
+
+{{if hasMCPTool .mcp "go42x" "project_context"}}
+Use `project_context` with the task and affected project-relative paths to load
+project guidance and relevant evidence. Follow source continuation pointers when
+needed. Check coverage diagnostics before relying on retrieval results.
+{{end}}
+{{if hasMCPTool .mcp "go42x" "docs_get"}}
+Use `docs_get` to read a requirement, decision, or handbook page by its authored ID.
+Documents can live anywhere in the project. YAML front matter supplies `id`,
+`title`, and optional `collection`; directory names do not determine document type.
+The documentation entrypoint defaults to `docs/README.md`; configure another path
+with `go42x mcp --docs-entrypoint`. Discovery respects `.gitignore` files.
+Draft and proposed records require agreement before implementation. Acceptance
+alone does not establish delivery; retain the status and replacement chain when
+using historical records.
+{{end}}
+{{if hasMCPTool .mcp "go42x" "docs_impact"}}
+Use `docs_impact` with changed paths to find linked documentation to review.
+Unmapped paths still need judgment: missing links do not prove that documentation
+is unaffected. Maintain the application's local docs according to its policy.
+{{end}}
+
+{{ if or (hasMCPTool .mcp "go42x" "kwb_search") (hasMCPTool .mcp "go42x" "kwb_get_file") (hasMCPTool .mcp "go42x" "kwb_list_files") (hasMCPTool .mcp "go42x" "kwb_stats") -}}
+#### Knowledge-base search
+
+Use the knowledge-base tools from the `go42x` MCP server to find documentation
+sections, code declarations, configuration keys, examples, and related files.
 
 The knowledge base indexes Markdown by heading and Go by declaration. Other text
 formats use bounded line chunks. Exact symbols, headings, and filenames receive
