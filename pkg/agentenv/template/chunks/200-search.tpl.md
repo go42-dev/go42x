@@ -37,6 +37,31 @@ Unmapped paths still need judgment: missing links do not prove that documentatio
 is unaffected. Maintain the application's local docs according to its policy.
 {{end}}
 
+{{ if or (hasMCPTool .mcp "context7" "resolve-library-id") (hasMCPTool .mcp "context7" "query-docs") -}}
+#### Library documentation with Context7
+
+Use the `context7` MCP server to look up external library and framework APIs,
+setup instructions, and code examples. Check the project's dependency manifests
+or lockfiles for the version in use before applying examples.
+
+{{ if hasMCPTool .mcp "context7" "resolve-library-id" -}}
+Use `resolve-library-id` with `libraryName` and a focused `query` describing the
+task to find the matching library. Select the result by package identity and
+documentation relevance. Skip resolution when the user supplies a valid Context7
+library ID.
+{{ end }}
+{{ if hasMCPTool .mcp "context7" "query-docs" -}}
+Use `query-docs` with `libraryId` and a specific `query` about the API or behavior
+needed. Use the exact library ID returned by resolution or supplied by the user;
+do not guess IDs. When a matching version is listed, use its version-specific ID
+in the form `/org/project/version`.
+{{ end }}
+
+If Context7 is unavailable or lacks the needed library or version, consult the
+library's official documentation and installed source. Verify examples against
+the project's actual dependency version and existing usage.
+{{ end }}
+
 {{ if or (hasMCPTool .mcp "go42x" "kwb_search") (hasMCPTool .mcp "go42x" "kwb_get_file") (hasMCPTool .mcp "go42x" "kwb_list_files") (hasMCPTool .mcp "go42x" "kwb_stats") -}}
 #### Knowledge-base search
 
