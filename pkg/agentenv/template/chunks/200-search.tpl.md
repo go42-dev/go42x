@@ -116,11 +116,12 @@ response. Line numbers are one-based and inclusive. Paths resolve relative to
 the indexed project root, including when the server starts elsewhere. File reads
 reflect current source; search results reflect the last completed index update.
 
-Run `go42x kwb` after changing files. It hashes eligible source files, indexes
+Run `go42x kwb build` after changing files. It hashes eligible source files, indexes
 only changed files, and removes deleted or newly ignored files. An unchanged
-project does not publish another index. Use `go42x kwb --rebuild` for a full rebuild.
+project does not publish another index. Use `go42x kwb build --rebuild` for a full rebuild.
 The old index remains available until the new generation is published, and a
 running MCP server picks it up on its next request.
+Run `go42x kwb` or `go42x kwb --help` to list the available subcommands.
 
 Indexing respects `.gitignore` files inside the selected root, including nested
 rules and negation. It excludes its own index directory, build/tool directories,

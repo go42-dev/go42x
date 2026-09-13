@@ -86,7 +86,7 @@ func (m *indexManager) generation() (string, error) {
 	data, err := os.ReadFile(filepath.Join(m.settings.IndexPath, "CURRENT"))
 	if os.IsNotExist(err) {
 		return "", fmt.Errorf(
-			"index not found or requires rebuilding at %s; run 'go42x kwb --index %q' first: %w",
+			"index not found or requires rebuilding at %s; run 'go42x kwb build --index %q' first: %w",
 			m.settings.IndexPath,
 			m.settings.IndexPath,
 			err,
@@ -175,7 +175,7 @@ func (m *indexManager) refresh(ctx context.Context) error {
 	}
 	if meta.Version != schemaVersion {
 		_ = lease.Unlock()
-		return fmt.Errorf("index format changed; run 'go42x kwb --rebuild' first")
+		return fmt.Errorf("index format changed; run 'go42x kwb build --rebuild' first")
 	}
 	index, err := bleve.OpenUsing(
 		filepath.Join(directory, "data"),

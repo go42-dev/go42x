@@ -30,7 +30,7 @@ func DoctorChecks(root, indexPath string) []check.Check {
 			return check.Result{
 				Status:      check.Fail,
 				Message:     "Index missing, unreadable, incompatible, or belongs to another project",
-				Remediation: "go42x kwb --rebuild",
+				Remediation: "go42x kwb build --rebuild",
 			}
 		}
 		return check.Result{

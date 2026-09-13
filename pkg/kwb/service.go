@@ -371,7 +371,7 @@ func (s *Service) Context(ctx context.Context, options ContextOptions) (*Context
 			result.Diagnostics,
 			Diagnostic{
 				Code:    "index_unavailable",
-				Message: "Index missing, unreadable, or incompatible; rebuild with go42x kwb --rebuild",
+				Message: "Index missing, unreadable, or incompatible; rebuild with go42x kwb build --rebuild",
 			},
 		)
 		result.Coverage = "Live documentation only; code search coverage is reduced"
@@ -485,7 +485,7 @@ func (s *Service) Context(ctx context.Context, options ContextOptions) (*Context
 					Diagnostic{
 						Code:    "stale_candidate",
 						Path:    c.path,
-						Message: "Indexed source changed; stale snippet omitted, rebuild with go42x kwb",
+						Message: "Indexed source changed; stale snippet omitted, rebuild with go42x kwb build",
 					},
 				)
 				continue

@@ -201,7 +201,7 @@ func TestAllRegisteredToolsetsAreAvailable(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !result.IsError || !strings.Contains(result.Content[0].(mcp.TextContent).Text, "go42x kwb --index") {
+		if !result.IsError || !strings.Contains(result.Content[0].(mcp.TextContent).Text, "go42x kwb build --index") {
 			t.Fatalf("expected actionable missing-index error: %+v", result)
 		}
 	}
