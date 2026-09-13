@@ -25,8 +25,9 @@ func WithVersion(version string) Option {
 	}
 }
 
-// WithToolsets selects supplied groups by name. Without this option,
+// WithToolsets selects registered groups by name. Without this option,
 // all groups are enabled. Calling it without names disables all groups.
+// Serve rejects selected names that have not been registered with AddToolsed.
 func WithToolsets(names ...string) Option {
 	return func(s *Server) {
 		s.enabledToolsets = append([]string{}, names...)

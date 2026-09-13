@@ -1,16 +1,18 @@
 package collector
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 )
 
 const GitHubActionsCollectorName = "github_actions"
 
-// GitHubActionsCollector collects GitHub Actions workflow context
+// GitHubActionsCollector collects workflow metadata and event task context.
 type GitHubActionsCollector struct {
 	BaseCollector
 }
@@ -21,228 +23,197 @@ func NewGitHubActionsCollector() *GitHubActionsCollector {
 	}
 }
 
+// Decode only the event fields that contribute to the generated instructions.
+type githubEvent struct {
+	Action     string `json:"action"`
+	Number     int    `json:"number"`
+	Repository struct {
+		FullName string `json:"full_name"`
+	} `json:"repository"`
+	PullRequest *githubSubject `json:"pull_request"`
+	Issue       *githubSubject `json:"issue"`
+	Comment     struct {
+		Body string `json:"body"`
+	} `json:"comment"`
+	Review struct {
+		Body string `json:"body"`
+	} `json:"review"`
+}
+
+type githubSubject struct {
+	Number  int    `json:"number"`
+	Title   string `json:"title"`
+	Body    string `json:"body"`
+	HTMLURL string `json:"html_url"`
+	Head    struct {
+		Ref string `json:"ref"`
+	} `json:"head"`
+	Base struct {
+		Ref string `json:"ref"`
+	} `json:"base"`
+	// issue_comment events identify PR conversations through issue.pull_request.
+	PullRequest *struct {
+		HTMLURL string `json:"html_url"`
+	} `json:"pull_request"`
+}
+
 func (c *GitHubActionsCollector) Collect(_ context.Context) (map[string]interface{}, error) {
 	result := make(map[string]interface{})
-
 	if os.Getenv("GITHUB_ACTIONS") != "true" {
 		return result, nil
 	}
 
-	c.collectBasicInfo(result)
-	c.collectRepositoryInfo(result)
-	c.collectEventInfo(result)
-	c.collectPRIssueInfo(result)
-	c.collectActorInfo(result)
-	c.collectWorkflowInfo(result)
-	c.collectRunnerInfo(result)
-	c.derivatives(result)
+	c.collectWorkflowContext(result)
+
+	payload := readGitHubEvent()
+	repository := cmp.Or(os.Getenv("REPOSITORY"), os.Getenv("GITHUB_REPOSITORY"), payload.Repository.FullName)
+	repo := make(map[string]interface{})
+	if repository != "" {
+		repo["full_name"] = repository
+	}
+	if owner := os.Getenv("GITHUB_REPOSITORY_OWNER"); owner != "" {
+		repo["owner"] = owner
+	}
+	if len(repo) > 0 {
+		result["repository"] = repo
+	}
+	event := make(map[string]interface{})
+	for key, value := range map[string]string{
+		"name":   cmp.Or(os.Getenv("EVENT_NAME"), os.Getenv("GITHUB_EVENT_NAME")),
+		"action": payload.Action,
+	} {
+		if value != "" {
+			event[key] = value
+		}
+	}
+	if len(event) > 0 {
+		result["event"] = event
+	}
+	if request := cmp.Or(os.Getenv("USER_REQUEST"), payload.Comment.Body, payload.Review.Body); request != "" {
+		result["user_request"] = request
+	}
+
+	subject, isPR := payload.PullRequest, payload.PullRequest != nil
+	if subject == nil && payload.Issue != nil {
+		subject = payload.Issue
+		isPR = subject.PullRequest != nil
+	}
+	// Existing workflows can still provide explicit context when no event subject exists.
+	if subject == nil {
+		if number, err := strconv.Atoi(os.Getenv("ISSUE_NUMBER")); err == nil && number > 0 {
+			subject = &githubSubject{Number: number}
+			isPR, _ = strconv.ParseBool(os.Getenv("IS_PR"))
+			if isPR {
+				subject.Title = os.Getenv("PR_TITLE")
+				subject.Body = os.Getenv("PR_BODY")
+			}
+		}
+	}
+	if subject != nil {
+		details := map[string]interface{}{"is_pr": isPR}
+		if number := cmp.Or(subject.Number, payload.Number); number > 0 {
+			details["number"] = number
+		}
+		for key, value := range map[string]string{"title": subject.Title, "body": subject.Body, "url": subject.HTMLURL} {
+			if value != "" {
+				details[key] = value
+			}
+		}
+		if isPR {
+			if subject.PullRequest != nil && subject.PullRequest.HTMLURL != "" {
+				details["url"] = subject.PullRequest.HTMLURL
+			}
+			for key, value := range map[string]string{
+				"head": cmp.Or(subject.Head.Ref, os.Getenv("GITHUB_HEAD_REF"), os.Getenv("PR_HEAD")),
+				"base": cmp.Or(subject.Base.Ref, os.Getenv("GITHUB_BASE_REF"), os.Getenv("PR_BASE")),
+			} {
+				if value != "" {
+					details[key] = value
+				}
+			}
+			result["pull_request"] = details
+		} else {
+			result["issue"] = details
+		}
+	}
+	serverURL, runID := os.Getenv("GITHUB_SERVER_URL"), os.Getenv("GITHUB_RUN_ID")
+	if serverURL != "" && repository != "" && runID != "" {
+		result["build_url"] = fmt.Sprintf("%s/%s/actions/runs/%s", strings.TrimRight(serverURL, "/"), repository, runID)
+	}
 
 	return result, nil
 }
 
-func (c *GitHubActionsCollector) collectBasicInfo(result map[string]interface{}) {
-	envVars := map[string]string{
-		"action":           os.Getenv("GITHUB_ACTION"),
-		"action_path":      os.Getenv("GITHUB_ACTION_PATH"),
-		"actor":            os.Getenv("GITHUB_ACTOR"),
-		"api_url":          os.Getenv("GITHUB_API_URL"),
-		"base_ref":         os.Getenv("GITHUB_BASE_REF"),
-		"event_name":       os.Getenv("GITHUB_EVENT_NAME"),
-		"event_path":       os.Getenv("GITHUB_EVENT_PATH"),
-		"head_ref":         os.Getenv("GITHUB_HEAD_REF"),
-		"job":              os.Getenv("GITHUB_JOB"),
-		"ref":              os.Getenv("GITHUB_REF"),
-		"ref_name":         os.Getenv("GITHUB_REF_NAME"),
-		"ref_type":         os.Getenv("GITHUB_REF_TYPE"),
-		"repository":       os.Getenv("GITHUB_REPOSITORY"),
-		"repository_owner": os.Getenv("GITHUB_REPOSITORY_OWNER"),
-		"run_id":           os.Getenv("GITHUB_RUN_ID"),
-		"run_number":       os.Getenv("GITHUB_RUN_NUMBER"),
-		"run_attempt":      os.Getenv("GITHUB_RUN_ATTEMPT"),
-		"sha":              os.Getenv("GITHUB_SHA"),
-		"workflow":         os.Getenv("GITHUB_WORKFLOW"),
-		"workspace":        os.Getenv("GITHUB_WORKSPACE"),
-		"server_url":       os.Getenv("GITHUB_SERVER_URL"),
-	}
-	for key, value := range envVars {
-		if value != "" {
+func (c *GitHubActionsCollector) collectWorkflowContext(result map[string]interface{}) {
+	for key, env := range map[string]string{
+		"action":           "GITHUB_ACTION",
+		"action_path":      "GITHUB_ACTION_PATH",
+		"api_url":          "GITHUB_API_URL",
+		"base_ref":         "GITHUB_BASE_REF",
+		"event_name":       "GITHUB_EVENT_NAME",
+		"event_path":       "GITHUB_EVENT_PATH",
+		"head_ref":         "GITHUB_HEAD_REF",
+		"job":              "GITHUB_JOB",
+		"ref":              "GITHUB_REF",
+		"ref_name":         "GITHUB_REF_NAME",
+		"ref_type":         "GITHUB_REF_TYPE",
+		"repository_owner": "GITHUB_REPOSITORY_OWNER",
+		"run_id":           "GITHUB_RUN_ID",
+		"run_number":       "GITHUB_RUN_NUMBER",
+		"run_attempt":      "GITHUB_RUN_ATTEMPT",
+		"sha":              "GITHUB_SHA",
+		"workspace":        "GITHUB_WORKSPACE",
+		"server_url":       "GITHUB_SERVER_URL",
+	} {
+		if value := os.Getenv(env); value != "" {
 			result[key] = value
 		}
 	}
-}
 
-func (c *GitHubActionsCollector) collectRepositoryInfo(result map[string]interface{}) {
-	repo := make(map[string]interface{})
-
-	if r := os.Getenv("REPOSITORY"); r != "" {
-		repo["full_name"] = r
-	} else if r := os.Getenv("GITHUB_REPOSITORY"); r != "" {
-		repo["full_name"] = r
-	}
-
-	if owner := os.Getenv("GITHUB_REPOSITORY_OWNER"); owner != "" {
-		repo["owner"] = owner
-	}
-
-	if len(repo) > 0 {
-		result["repository"] = repo
-	}
-}
-
-func (c *GitHubActionsCollector) collectEventInfo(result map[string]interface{}) {
-	event := make(map[string]interface{})
-
-	if eventName := os.Getenv("EVENT_NAME"); eventName != "" {
-		event["name"] = eventName
-	} else if eventName := os.Getenv("GITHUB_EVENT_NAME"); eventName != "" {
-		event["name"] = eventName
-	}
-
-	// Parse event payload if available
-	if eventPayload := os.Getenv("GITHUB_EVENT_PAYLOAD"); eventPayload != "" {
-		var payload map[string]interface{}
-		if err := json.Unmarshal([]byte(eventPayload), &payload); err == nil {
-			event["payload"] = payload
-		} else {
-			event["payload_raw"] = eventPayload
+	for key, fields := range map[string]map[string]string{
+		"actor": {
+			"login":            cmp.Or(os.Getenv("ACTOR"), os.Getenv("GITHUB_ACTOR")),
+			"triggering_actor": os.Getenv("GITHUB_TRIGGERING_ACTOR"),
+		},
+		"workflow": {
+			"name": os.Getenv("GITHUB_WORKFLOW"),
+			"ref":  os.Getenv("GITHUB_WORKFLOW_REF"),
+			"sha":  os.Getenv("GITHUB_WORKFLOW_SHA"),
+		},
+		"runner": {
+			"name":       os.Getenv("RUNNER_NAME"),
+			"os":         os.Getenv("RUNNER_OS"),
+			"arch":       os.Getenv("RUNNER_ARCH"),
+			"temp_dir":   os.Getenv("RUNNER_TEMP"),
+			"tool_cache": os.Getenv("RUNNER_TOOL_CACHE"),
+		},
+	} {
+		group := make(map[string]interface{})
+		for name, value := range fields {
+			if value != "" {
+				group[name] = value
+			}
+		}
+		if len(group) > 0 {
+			result[key] = group
 		}
 	}
+}
 
-	// Try to read event from file if path is provided
-	if eventPath := os.Getenv("GITHUB_EVENT_PATH"); eventPath != "" {
-		if data, err := os.ReadFile(eventPath); err == nil {
-			var payload map[string]interface{}
-			if err := json.Unmarshal(data, &payload); err == nil {
-				if _, exists := event["payload"]; !exists {
-					event["payload"] = payload
-				}
+func readGitHubEvent() githubEvent {
+	var event githubEvent
+	if payload := os.Getenv("GITHUB_EVENT_PAYLOAD"); payload != "" {
+		if err := json.Unmarshal([]byte(payload), &event); err == nil {
+			return event
+		}
+	}
+	event = githubEvent{}
+	if path := os.Getenv("GITHUB_EVENT_PATH"); path != "" {
+		if data, err := os.ReadFile(path); err == nil {
+			if err := json.Unmarshal(data, &event); err == nil {
+				return event
 			}
 		}
 	}
-
-	if len(event) > 0 {
-		result["event"] = event
-	}
-}
-
-func (c *GitHubActionsCollector) collectPRIssueInfo(result map[string]interface{}) {
-	// Check if this is a PR
-	isPR := false
-	if pr := os.Getenv("IS_PR"); pr != "" {
-		isPR, _ = strconv.ParseBool(pr)
-	}
-
-	// Issue/PR number
-	var number int
-	if n := os.Getenv("ISSUE_NUMBER"); n != "" {
-		number, _ = strconv.Atoi(n)
-	}
-
-	if isPR {
-		pr := make(map[string]interface{})
-		pr["number"] = number
-		pr["is_pr"] = true
-
-		if title := os.Getenv("PR_TITLE"); title != "" {
-			pr["title"] = title
-		}
-		if body := os.Getenv("PR_BODY"); body != "" {
-			pr["body"] = body
-		}
-		if base := os.Getenv("PR_BASE"); base != "" {
-			pr["base"] = base
-		}
-		if head := os.Getenv("PR_HEAD"); head != "" {
-			pr["head"] = head
-		}
-
-		result["pull_request"] = pr
-	} else if number > 0 {
-		issue := make(map[string]interface{})
-		issue["number"] = number
-		issue["is_pr"] = false
-
-		result["issue"] = issue
-	}
-
-	// User request (comment or review body)
-	if request := os.Getenv("USER_REQUEST"); request != "" {
-		result["user_request"] = request
-	}
-}
-
-func (c *GitHubActionsCollector) collectActorInfo(result map[string]interface{}) {
-	actor := make(map[string]interface{})
-
-	if a := os.Getenv("ACTOR"); a != "" {
-		actor["login"] = a
-	} else if a := os.Getenv("GITHUB_ACTOR"); a != "" {
-		actor["login"] = a
-	}
-
-	if triggeredBy := os.Getenv("GITHUB_TRIGGERING_ACTOR"); triggeredBy != "" {
-		actor["triggering_actor"] = triggeredBy
-	}
-
-	if len(actor) > 0 {
-		result["actor"] = actor
-	}
-}
-
-func (c *GitHubActionsCollector) collectWorkflowInfo(result map[string]interface{}) {
-	workflow := make(map[string]interface{})
-
-	if w := os.Getenv("GITHUB_WORKFLOW"); w != "" {
-		workflow["name"] = w
-	}
-
-	if ref := os.Getenv("GITHUB_WORKFLOW_REF"); ref != "" {
-		workflow["ref"] = ref
-	}
-
-	if sha := os.Getenv("GITHUB_WORKFLOW_SHA"); sha != "" {
-		workflow["sha"] = sha
-	}
-
-	if len(workflow) > 0 {
-		result["workflow"] = workflow
-	}
-}
-
-func (c *GitHubActionsCollector) collectRunnerInfo(result map[string]interface{}) {
-	runner := make(map[string]interface{})
-
-	if name := os.Getenv("RUNNER_NAME"); name != "" {
-		runner["name"] = name
-	}
-
-	if osInfo := os.Getenv("RUNNER_OS"); osInfo != "" {
-		runner["os"] = osInfo
-	}
-
-	if arch := os.Getenv("RUNNER_ARCH"); arch != "" {
-		runner["arch"] = arch
-	}
-
-	if temp := os.Getenv("RUNNER_TEMP"); temp != "" {
-		runner["temp_dir"] = temp
-	}
-
-	if toolCache := os.Getenv("RUNNER_TOOL_CACHE"); toolCache != "" {
-		runner["tool_cache"] = toolCache
-	}
-
-	if len(runner) > 0 {
-		result["runner"] = runner
-	}
-}
-
-func (c *GitHubActionsCollector) derivatives(result map[string]interface{}) {
-	serverURL, _ := result["server_url"].(string)
-	repository, _ := result["repository"].(map[string]interface{})
-	fullName, _ := repository["full_name"].(string)
-	runID, _ := result["run_id"].(string)
-	if serverURL != "" && fullName != "" && runID != "" {
-		result["build_url"] = fmt.Sprintf("%s/%s/actions/runs/%s", serverURL, fullName, runID)
-	}
+	return githubEvent{}
 }

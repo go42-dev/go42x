@@ -17,8 +17,6 @@ func NewAgentEnvCommand(f *cmdutil.Factory) *cobra.Command {
 		},
 	}
 
-	cmd.PersistentFlags().StringP("output", "o", ".", "path to output directory")
-
 	cmd.AddCommand(newInitCommand(f))
 	cmd.AddCommand(newGenerateCommand(f))
 

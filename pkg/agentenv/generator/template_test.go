@@ -1,8 +1,15 @@
 package generator
 
 import (
+	"errors"
+	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/go42-dev/go42x/pkg/agentenv/config"
+	"github.com/go42-dev/go42x/pkg/agentenv/generator/output"
 )
 
 func TestTemplateProcessing(t *testing.T) {
@@ -63,5 +70,76 @@ func TestContextMapsAreIndependent(t *testing.T) {
 	ctx.Set("name", "second")
 	if ctx.ToMap()["name"] != "second" || a["name"] != "changed" {
 		t.Fatal("context replacement leaked across snapshots")
+	}
+}
+
+// File-loading coverage relocated from BaseProvider with the shared renderer.
+func TestTemplateFiles(t *testing.T) {
+	dir := t.TempDir()
+	e := newTemplateEngine(dir)
+	if err := os.WriteFile(filepath.Join(dir, "a.tpl.md"), []byte("  alpha \n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "b.tpl.md"), []byte("\n beta "), 0600); err != nil {
+		t.Fatal(err)
+	}
+	contents, err := e.loadTemplates(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := mergeStrings(contents); got != "alpha\n\nbeta" {
+		t.Fatalf("merge = %q", got)
+	}
+	if got := mergeStrings(nil); got != "" {
+		t.Fatalf("empty merge = %q", got)
+	}
+	if _, err := e.loadTemplates("missing"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("load error = %v", err)
+	}
+}
+
+// Rendering failures used to be exercised separately by every provider.
+func TestTemplateGenerationErrors(t *testing.T) {
+	for _, stage := range []string{"template", "chunks", "modes", "workflows", "process", "output"} {
+		t.Run(stage, func(t *testing.T) {
+			dir, out := t.TempDir(), t.TempDir()
+			content := "{{ .chunks }} {{ .modes }} {{ .workflows }}"
+			cfg := config.Context{Template: "main.tpl.md"}
+			want := ""
+			switch stage {
+			case "template":
+				cfg.Template = "missing"
+				want = "failed to load template"
+			case "chunks":
+				cfg.ChunksDir = "missing"
+				want = "failed to load chunks"
+			case "modes":
+				cfg.ModesDir = "missing"
+				want = "failed to load modes"
+			case "workflows":
+				cfg.WorkflowsDir = "missing"
+				want = "failed to load workflows"
+			case "process":
+				content = "{{ upper .items }}"
+				want = "failed to execute template"
+			case "output":
+				if err := os.Mkdir(filepath.Join(out, "AGENTS.md"), 0755); err != nil {
+					t.Fatal(err)
+				}
+				want = "read instructions AGENTS.md"
+			}
+			if err := os.WriteFile(filepath.Join(dir, "main.tpl.md"), []byte(content), 0600); err != nil {
+				t.Fatal(err)
+			}
+			g := NewGenerator(slog.New(slog.DiscardHandler), &config.Config{Context: cfg}, dir, out)
+			if err := g.prepareInstructions(
+				output.NewPlan(slog.New(slog.DiscardHandler), out),
+				map[string]any{"items": []string{"a"}},
+				false,
+			); err == nil ||
+				!strings.Contains(err.Error(), want) {
+				t.Fatalf("prepareInstructions() = %v, want %q", err, want)
+			}
+		})
 	}
 }

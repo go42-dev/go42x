@@ -7,7 +7,74 @@
   "required": [
     "version",
     "project",
+    "context",
     "providers"
+  ],
+  "definitions": {
+    "autoApproveTools": {
+      "type": "array",
+      "description": "Native tool approval rules; does not filter tool availability",
+      "items": {
+        "type": "string",
+        "pattern": "\\S"
+      }
+    },
+    "toolApprovalProvider": {
+      "type": "object",
+      "properties": {
+        "auto-approve-tools": {
+          "$ref": "#/definitions/autoApproveTools"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "providers": {
+            "anyOf": [
+              {
+                "required": [
+                  "claude"
+                ]
+              },
+              {
+                "required": [
+                  "crush"
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "mcp": {
+            "additionalProperties": {
+              "if": {
+                "properties": {
+                  "enabled": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "enabled"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "cwd": {
+                    "const": ""
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
   ],
   "properties": {
     "version": {
@@ -63,81 +130,95 @@
     },
     "env": {
       "type": "array",
-      "description": "Environment variables to pass to providers",
+      "description": "Environment variable names whose values should appear in the generated shared context",
       "items": {
         "type": "string"
+      }
+    },
+    "context": {
+      "type": "object",
+      "description": "Shared instructions rendered to AGENTS.md; Claude and Gemini import this file.",
+      "required": [
+        "template"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "template": {
+          "type": "string",
+          "description": "Template file path",
+          "minLength": 1
+        },
+        "chunks-dir": {
+          "type": "string",
+          "description": "Chunk directory relative to .go42x; immediate *.tpl.md files load in filename order. Omit to include no chunks."
+        },
+        "modes-dir": {
+          "type": "string",
+          "description": "Mode directory relative to .go42x; immediate *.tpl.md files load in filename order. Omit to include no modes."
+        },
+        "workflows-dir": {
+          "type": "string",
+          "description": "Workflow directory relative to .go42x; immediate *.tpl.md files load in filename order. Omit to include no workflows."
+        }
       }
     },
     "providers": {
       "type": "object",
       "description": "AI provider configurations",
       "minProperties": 1,
-      "additionalProperties": {
-        "type": "object",
-        "required": [
-          "template",
-          "output"
-        ],
-        "properties": {
-          "template": {
-            "type": "string",
-            "description": "Template file path"
-          },
-          "output": {
-            "type": "string",
-            "description": "Output file path"
-          },
-          "chunks": {
-            "type": "array",
-            "description": "Template chunk files to include",
-            "items": {
-              "type": "string"
+      "additionalProperties": false,
+      "properties": {
+        "claude": {
+          "type": "object",
+          "properties": {
+            "agents": {
+              "type": "array",
+              "description": "Agent templates",
+              "items": {
+                "type": "string"
+              }
+            },
+            "auto-approve-tools": {
+              "$ref": "#/definitions/autoApproveTools"
             }
           },
-          "modes": {
-            "type": "array",
-            "description": "Available modes",
-            "items": {
-              "type": "string"
+          "additionalProperties": false
+        },
+        "codex": {
+          "type": "object",
+          "properties": {
+            "approval-policy": {
+              "type": "string",
+              "description": "Codex command approval policy. Omit to preserve the existing policy. Does not change sandbox settings.",
+              "enum": [
+                "on-request",
+                "never"
+              ]
+            },
+            "mcp-approval": {
+              "type": "string",
+              "description": "Default tool approval mode for every enabled MCP server. Omit to use the client's default. Does not filter tool availability.",
+              "enum": [
+                "auto",
+                "prompt",
+                "writes",
+                "approve"
+              ]
             }
           },
-          "workflows": {
-            "type": "array",
-            "description": "Workflow templates",
-            "items": {
-              "type": "string"
-            }
-          },
-          "agents": {
-            "type": "array",
-            "description": "Agent templates",
-            "items": {
-              "type": "string"
-            }
-          },
-          "hooks": {
-            "type": "array",
-            "description": "Hook configurations",
-            "items": {
-              "type": "string"
-            }
-          },
-          "tools": {
-            "type": "array",
-            "description": "Available tools",
-            "items": {
-              "type": "string"
-            }
-          }
+          "additionalProperties": false
+        },
+        "gemini": {
+          "$ref": "#/definitions/toolApprovalProvider"
+        },
+        "crush": {
+          "$ref": "#/definitions/toolApprovalProvider"
+        },
+        "copilot": {
+          "type": "object",
+          "description": "All MCP tools are available. Tool approvals are managed in Copilot's user settings.",
+          "additionalProperties": false
         }
-      },
-      "propertyNames": {
-        "enum": [
-          "claude",
-          "gemini",
-          "crush",
-          "copilot"
-        ]
       }
     },
     "mcp": {
@@ -195,7 +276,7 @@
           },
           "tools": {
             "type": "array",
-            "description": "Raw MCP tool names, without a client or server prefix",
+            "description": "Known raw MCP tool names for context descriptions and client approval settings, without a client or server prefix. All tools from enabled servers remain available, including tools omitted from this list.",
             "items": {
               "type": "string",
               "pattern": "^(?!mcp__)[A-Za-z0-9_.-]+$",
@@ -212,7 +293,11 @@
           },
           "cwd": {
             "type": "string",
-            "description": "Working directory for the server"
+            "description": "Literal working directory for stdio servers. Relative paths resolve from the project directory; omit or leave empty for the client's default. Supported by Codex, Gemini, and Copilot; rejected on enabled servers when Claude or Crush is configured. Environment variables and home expansion are not supported.",
+            "pattern": "^$|\\S",
+            "not": {
+              "pattern": "\\u0000|\\$(?:[A-Za-z_]|\\{|\\()|%[A-Za-z_][A-Za-z0-9_]*%|^~"
+            }
           }
         },
         "allOf": [
@@ -247,7 +332,12 @@
             "then": {
               "required": [
                 "url"
-              ]
+              ],
+              "properties": {
+                "cwd": {
+                  "const": ""
+                }
+              }
             }
           }
         ]

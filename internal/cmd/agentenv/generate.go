@@ -18,8 +18,7 @@ func newGenerateCommand(f *cmdutil.Factory) *cobra.Command {
 		Long:  `Generate ai agent configuration`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			settings := &agentenv.Settings{
-				OutputPath:    viper.GetString("output"),
-				GenerateClean: viper.GetBool("clean"),
+				Clean: viper.GetBool("clean"),
 			}
 			return runGenerateCommand(f, settings)
 		},
@@ -27,7 +26,7 @@ func newGenerateCommand(f *cmdutil.Factory) *cobra.Command {
 
 	cmd.Flags().Bool(
 		"clean", false,
-		"remove generated instruction files before regenerating them",
+		"regenerate owned instruction files after all outputs are prepared",
 	)
 
 	return cmd

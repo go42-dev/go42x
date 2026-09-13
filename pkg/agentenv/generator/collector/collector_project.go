@@ -31,7 +31,6 @@ func (c *ProjectCollector) Collect(_ context.Context) (map[string]interface{}, e
 	result["name"] = c.config.Project.Name
 	result["language"] = c.config.Project.Language
 	result["description"] = c.config.Project.Description
-	result["version"] = c.config.Version
 
 	// Add tags as array
 	if len(c.config.Project.Tags) > 0 {
@@ -41,28 +40,6 @@ func (c *ProjectCollector) Collect(_ context.Context) (map[string]interface{}, e
 	// Add metadata as nested map
 	if len(c.config.Project.Metadata) > 0 {
 		result["metadata"] = c.config.Project.Metadata
-	}
-
-	// Add provider information
-	providers := make([]string, 0, len(c.config.Providers))
-	for name := range c.config.Providers {
-		providers = append(providers, name)
-	}
-	result["providers"] = providers
-
-	// Add MCP server information
-	mcpServers := make([]map[string]interface{}, 0)
-	for name, server := range c.config.MCP {
-		if server.Enabled {
-			mcpServers = append(mcpServers, map[string]interface{}{
-				"name":    name,
-				"type":    server.Transport(),
-				"command": server.Command,
-			})
-		}
-	}
-	if len(mcpServers) > 0 {
-		result["mcp_servers"] = mcpServers
 	}
 
 	return result, nil

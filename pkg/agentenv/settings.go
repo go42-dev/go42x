@@ -3,9 +3,7 @@ package agentenv
 import "fmt"
 
 type Settings struct {
-	OutputPath string
-
-	GenerateClean bool
+	Clean bool
 }
 
 func (o *Settings) Validate() error {

@@ -60,14 +60,15 @@ func runMCPCommand(cmd *cobra.Command, settings *mcpSettings) (retErr error) {
 	}()
 
 	runtime, err := mcpserver.New(
-		[]mcpserver.Toolset{
-			kwbmcp.New(service),
-		},
 		mcpserver.WithLogger(slog.Default().With("component", "mcp-server")),
 		mcpserver.WithVersion(version.GetVersion()),
 		mcpserver.WithToolsets(settings.Toolsets...),
 	)
 	if err != nil {
+		return err
+	}
+
+	if err := runtime.AddToolset(kwbmcp.New(service)); err != nil {
 		return err
 	}
 

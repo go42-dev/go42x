@@ -16,32 +16,32 @@ import (
 	gomock "go.uber.org/mock/gomock"
 )
 
-// MockToolset is a mock of Toolset interface.
-type MockToolset struct {
+// MocktoolsetAccessor is a mock of toolsetAccessor interface.
+type MocktoolsetAccessor struct {
 	ctrl     *gomock.Controller
-	recorder *MockToolsetMockRecorder
+	recorder *MocktoolsetAccessorMockRecorder
 	isgomock struct{}
 }
 
-// MockToolsetMockRecorder is the mock recorder for MockToolset.
-type MockToolsetMockRecorder struct {
-	mock *MockToolset
+// MocktoolsetAccessorMockRecorder is the mock recorder for MocktoolsetAccessor.
+type MocktoolsetAccessorMockRecorder struct {
+	mock *MocktoolsetAccessor
 }
 
-// NewMockToolset creates a new mock instance.
-func NewMockToolset(ctrl *gomock.Controller) *MockToolset {
-	mock := &MockToolset{ctrl: ctrl}
-	mock.recorder = &MockToolsetMockRecorder{mock}
+// NewMocktoolsetAccessor creates a new mock instance.
+func NewMocktoolsetAccessor(ctrl *gomock.Controller) *MocktoolsetAccessor {
+	mock := &MocktoolsetAccessor{ctrl: ctrl}
+	mock.recorder = &MocktoolsetAccessorMockRecorder{mock}
 	return mock
 }
 
 // EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockToolset) EXPECT() *MockToolsetMockRecorder {
+func (m *MocktoolsetAccessor) EXPECT() *MocktoolsetAccessorMockRecorder {
 	return m.recorder
 }
 
 // Name mocks base method.
-func (m *MockToolset) Name() string {
+func (m *MocktoolsetAccessor) Name() string {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Name")
 	ret0, _ := ret[0].(string)
@@ -49,13 +49,13 @@ func (m *MockToolset) Name() string {
 }
 
 // Name indicates an expected call of Name.
-func (mr *MockToolsetMockRecorder) Name() *gomock.Call {
+func (mr *MocktoolsetAccessorMockRecorder) Name() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Name", reflect.TypeOf((*MockToolset)(nil).Name))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Name", reflect.TypeOf((*MocktoolsetAccessor)(nil).Name))
 }
 
 // Tools mocks base method.
-func (m *MockToolset) Tools() []server.ServerTool {
+func (m *MocktoolsetAccessor) Tools() []server.ServerTool {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Tools")
 	ret0, _ := ret[0].([]server.ServerTool)
@@ -63,7 +63,7 @@ func (m *MockToolset) Tools() []server.ServerTool {
 }
 
 // Tools indicates an expected call of Tools.
-func (mr *MockToolsetMockRecorder) Tools() *gomock.Call {
+func (mr *MocktoolsetAccessorMockRecorder) Tools() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Tools", reflect.TypeOf((*MockToolset)(nil).Tools))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Tools", reflect.TypeOf((*MocktoolsetAccessor)(nil).Tools))
 }

@@ -6,13 +6,15 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
+	"slices"
 
 	"github.com/mark3labs/mcp-go/server"
 )
 
 //go:generate mockgen -source $GOFILE -package mocks -destination mocks/mocks.go
 
-type Toolset interface {
+type toolsetAccessor interface {
 	Name() string
 	Tools() []server.ServerTool
 }
@@ -23,14 +25,18 @@ type Server struct {
 	name            string
 	version         string
 	enabledToolsets []string
+	toolsets        map[string]bool
+	toolNames       map[string]string
 }
 
-// New creates a server from the supplied tool groups, with default name "go42x"
-// and version "dev". The caller owns the tool groups and their dependencies.
-func New(toolsets []Toolset, opts ...Option) (*Server, error) {
+// New creates a server with default name "go42x" and version "dev".
+// Register toolsets with AddToolsed before calling Serve.
+func New(opts ...Option) (*Server, error) {
 	s := &Server{
-		name:    "go42x",
-		version: "dev",
+		name:      "go42x",
+		version:   "dev",
+		toolsets:  make(map[string]bool),
+		toolNames: make(map[string]string),
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -42,66 +48,73 @@ func New(toolsets []Toolset, opts ...Option) (*Server, error) {
 		return nil, fmt.Errorf("MCP server name and version are required")
 	}
 
-	available := make(map[string]Toolset, len(toolsets))
-	for _, toolset := range toolsets {
-		if toolset == nil || toolset.Name() == "" {
-			return nil, fmt.Errorf("toolset name is required")
+	selected := make(map[string]bool, len(s.enabledToolsets))
+	for _, name := range s.enabledToolsets {
+		if selected[name] {
+			return nil, fmt.Errorf("toolset %q selected more than once", name)
 		}
-		name := toolset.Name()
-		if _, exists := available[name]; exists {
-			return nil, fmt.Errorf("duplicate toolset %q", name)
-		}
-		available[name] = toolset
+		selected[name] = true
 	}
 
-	selected := s.enabledToolsets
-	if selected == nil {
-		for _, toolset := range toolsets {
-			selected = append(selected, toolset.Name())
-		}
-	}
-
-	mcpServer := server.NewMCPServer(
+	s.server = server.NewMCPServer(
 		s.name, s.version,
 		server.WithToolCapabilities(false),
 		server.WithRecovery(),
 	)
 
-	groups := make(map[string]bool, len(selected))
-	names := make(map[string]string)
+	return s, nil
+}
 
-	for _, name := range selected {
-		toolset, exists := available[name]
-		if !exists {
-			return nil, fmt.Errorf("unknown toolset %q", name)
-		}
-
-		if groups[name] {
-			return nil, fmt.Errorf("toolset %q selected more than once", name)
-		}
-
-		groups[name] = true
-
-		for _, tool := range toolset.Tools() {
-			if tool.Tool.Name == "" || tool.Handler == nil {
-				return nil, fmt.Errorf("toolset %q: tool name and handler are required", name)
-			}
-			if previous, exists := names[tool.Tool.Name]; exists {
-				return nil, fmt.Errorf("duplicate tool %q in toolsets %q and %q", tool.Tool.Name, previous, name)
-			}
-			names[tool.Tool.Name] = name
-			mcpServer.AddTools(tool)
-		}
+// AddToolset registers a toolset before Serve, exposing its tools if enabled.
+// The caller owns the toolset and its dependencies.
+func (s *Server) AddToolset(set toolsetAccessor) error {
+	if set == nil {
+		return fmt.Errorf("toolset name is required")
+	}
+	name := set.Name()
+	if name == "" {
+		return fmt.Errorf("toolset name is required")
+	}
+	if s.toolsets[name] {
+		return fmt.Errorf("duplicate toolset %q", name)
 	}
 
-	s.server = mcpServer
+	var tools []server.ServerTool
+	if s.enabledToolsets == nil || slices.Contains(s.enabledToolsets, name) {
+		tools = set.Tools()
+	}
 
-	return s, nil
+	names := make(map[string]string, len(tools))
+	for _, tool := range tools {
+		if tool.Tool.Name == "" || tool.Handler == nil {
+			return fmt.Errorf("toolset %q: tool name and handler are required", name)
+		}
+		previous, exists := s.toolNames[tool.Tool.Name]
+		if !exists {
+			previous, exists = names[tool.Tool.Name]
+		}
+		if exists {
+			return fmt.Errorf("duplicate tool %q in toolsets %q and %q", tool.Tool.Name, previous, name)
+		}
+		names[tool.Tool.Name] = name
+	}
+
+	s.server.AddTools(tools...)
+	maps.Copy(s.toolNames, names)
+	s.toolsets[name] = true
+
+	return nil
 }
 
 // Serve runs the stdio transport until EOF or cancellation. It leaves the streams
 // open for the caller and waits for active tool calls before returning.
 func (s *Server) Serve(ctx context.Context, input io.Reader, output io.Writer) error {
+	for _, name := range s.enabledToolsets {
+		if !s.toolsets[name] {
+			return fmt.Errorf("unknown toolset %q", name)
+		}
+	}
+
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 

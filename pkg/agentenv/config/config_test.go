@@ -11,9 +11,17 @@ import (
 )
 
 func validConfig() *Config {
-	return &Config{Version: "1.0", Project: Project{Name: "example"}, Providers: map[string]Provider{
-		"claude": {Template: "claude.tpl.md", Output: "CLAUDE.md"},
-	}, MCP: map[string]MCPServer{"example": {Name: "example", Command: "example", Tools: []string{"search", "getIssue", "tool.v2-test"}}}}
+	return &Config{
+		Version: "1.0",
+		Project: Project{Name: "example"},
+		Context: Context{Template: "agents.tpl.md"},
+		Providers: map[string]Provider{
+			"claude": {},
+		},
+		MCP: map[string]MCPServer{
+			"example": {Name: "example", Command: "example", Tools: []string{"search", "getIssue", "tool.v2-test"}},
+		},
+	}
 }
 
 func TestValidate(t *testing.T) {
@@ -29,10 +37,9 @@ func TestValidate(t *testing.T) {
 		{"unknown provider", func(c *Config) { c.Providers = map[string]Provider{"typo": {}} }, "unknown provider"},
 		{
 			"missing template",
-			func(c *Config) { c.Providers["claude"] = Provider{Output: "out"} },
-			"template is required",
+			func(c *Config) { c.Context.Template = "" },
+			"context.template is required",
 		},
-		{"missing output", func(c *Config) { c.Providers["claude"] = Provider{Template: "in"} }, "output is required"},
 		{
 			"missing server name",
 			func(c *Config) { c.MCP["example"] = MCPServer{Command: "example"} },
@@ -149,18 +156,16 @@ func TestDefaultConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cfg.Providers) != 4 || len(cfg.MCP) != 5 {
+	if len(cfg.Providers) != 5 || len(cfg.MCP) != 5 {
 		t.Fatalf("default providers/servers = %d/%d", len(cfg.Providers), len(cfg.MCP))
 	}
-	for name, p := range cfg.Providers {
-		files := append([]string{p.Template}, p.Chunks...)
-		files = append(files, p.Modes...)
-		files = append(files, p.Workflows...)
-		files = append(files, p.Agents...)
-		for _, file := range files {
-			if _, err := os.Stat(filepath.Join("..", "template", file)); err != nil {
-				t.Errorf("provider %s references missing template %s: %v", name, file, err)
-			}
+	paths := []string{cfg.Context.Template, cfg.Context.ChunksDir, cfg.Context.ModesDir, cfg.Context.WorkflowsDir}
+	for _, p := range cfg.Providers {
+		paths = append(paths, p.Agents...)
+	}
+	for _, path := range paths {
+		if _, err := os.Stat(filepath.Join("..", "template", path)); err != nil {
+			t.Errorf("missing template path %s: %v", path, err)
 		}
 	}
 	for name, s := range cfg.MCP {

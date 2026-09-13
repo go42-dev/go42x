@@ -5,7 +5,7 @@ import "fmt"
 // MCPToolName formats a raw server tool name for client permissions and prompts.
 func MCPToolName(providerName, serverName, toolName string) string {
 	switch providerName {
-	case Claude:
+	case Claude, Codex:
 		return fmt.Sprintf("mcp__%s__%s", serverName, toolName)
 	case Crush, Gemini:
 		return fmt.Sprintf("mcp_%s_%s", serverName, toolName)

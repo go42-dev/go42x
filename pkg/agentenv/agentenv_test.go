@@ -17,7 +17,8 @@ import (
 
 func testService(t *testing.T, dir string, clean bool) *Service {
 	t.Helper()
-	s, err := NewAgentEnvService(&Settings{OutputPath: dir, GenerateClean: clean})
+	t.Chdir(dir)
+	s, err := NewAgentEnvService(&Settings{Clean: clean})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,14 +121,13 @@ func TestInitExtractsTemplatesAndPreservesCustomFiles(t *testing.T) {
 }
 
 func TestInitFilesystemErrors(t *testing.T) {
-	for _, stage := range []string{"output", "templates", "gitignore"} {
+	for _, stage := range []string{"configuration", "templates", "gitignore"} {
 		t.Run(stage, func(t *testing.T) {
 			dir := t.TempDir()
 			want := ""
 			switch stage {
-			case "output":
-				dir = filepath.Join(dir, "file")
-				writeFile(t, dir, "blocked")
+			case "configuration":
+				writeFile(t, filepath.Join(dir, ".go42x"), "blocked")
 				want = "check configuration"
 			case "templates":
 				writeFile(t, filepath.Join(dir, ".go42x/chunks"), "blocked")
@@ -180,25 +180,25 @@ func TestGenerateAndCleanPreserveSources(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, p := range cfg.Providers {
-		if len(readFile(t, filepath.Join(dir, p.Output))) == 0 {
-			t.Errorf("empty output %s", p.Output)
+	for _, path := range []string{"AGENTS.md", "CLAUDE.md", "GEMINI.md"} {
+		if len(readFile(t, filepath.Join(dir, path))) == 0 {
+			t.Errorf("empty output %s", path)
 		}
-		writeFile(t, filepath.Join(dir, p.Output), "stale")
+		writeFile(t, filepath.Join(dir, path), "stale")
 	}
 	if err := s.Generate(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	for _, p := range cfg.Providers {
-		if string(readFile(t, filepath.Join(dir, p.Output))) == "stale" {
-			t.Errorf("stale output %s", p.Output)
+	for _, path := range []string{"AGENTS.md", "CLAUDE.md", "GEMINI.md"} {
+		if string(readFile(t, filepath.Join(dir, path))) == "stale" {
+			t.Errorf("stale output %s", path)
 		}
 	}
 	if !bytes.Equal(before, readFile(t, configPath)) || string(readFile(t, custom)) != "preserve this" ||
 		string(readFile(t, asset)) != "preserve agent" {
 		t.Fatal("clean removed or changed user sources")
 	}
-	for _, path := range []string{".claude/settings.json", ".mcp.json", ".gemini/settings.json", ".crush.json", ".github/.copilot.mcp.json"} {
+	for _, path := range []string{".claude/settings.local.json", ".mcp.json", ".gemini/settings.json", ".crush.json"} {
 		if len(readFile(t, filepath.Join(dir, path))) == 0 {
 			t.Errorf("missing generated settings %s", path)
 		}
@@ -232,14 +232,15 @@ func TestGenerateErrors(t *testing.T) {
 		name, output, template, want string
 		clean                        bool
 	}{
-		{"missing template", "result.md", "missing", "generation failed", false},
-		{"clean blocked", "blocked", "claude.tpl.md", "remove generated file", true},
+		{"missing template", "AGENTS.md", "missing", "generation failed", false},
+		{"clean blocked", "AGENTS.md", "agents.tpl.md", "read instructions AGENTS.md", true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := config.Config{
 				Version:   "1.0",
 				Project:   config.Project{Name: "test"},
-				Providers: map[string]config.Provider{"claude": {Template: tt.template, Output: tt.output}},
+				Context:   config.Context{Template: tt.template},
+				Providers: map[string]config.Provider{"claude": {}},
 			}
 			data, err := yaml.Marshal(cfg)
 			if err != nil {

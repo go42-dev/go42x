@@ -8,7 +8,7 @@ import (
 
 const GitCollectorName = "git"
 
-// GitCollector collects Git repository information
+// GitCollector collects repository identity and checkout metadata.
 type GitCollector struct {
 	BaseCollector
 }
@@ -19,45 +19,29 @@ func NewGitCollector() *GitCollector {
 	}
 }
 
-func (c *GitCollector) Collect(ctx context.Context) (map[string]interface{}, error) {
-	result := make(map[string]interface{})
+func (c *GitCollector) Collect(ctx context.Context) (map[string]any, error) {
+	result := make(map[string]any)
 
-	if !c.isGitInstalled() {
+	root, err := c.runGitCommand(ctx, "rev-parse", "--show-toplevel")
+	if err != nil {
 		return result, nil
 	}
+	result["root"] = strings.TrimSpace(root)
 
+	if remote, err := c.runGitCommand(ctx, "config", "--local", "--get", "remote.origin.url"); err == nil {
+		result["remote"] = strings.TrimSpace(remote)
+	}
 	if branch, err := c.runGitCommand(ctx, "rev-parse", "--abbrev-ref", "HEAD"); err == nil {
 		result["branch"] = strings.TrimSpace(branch)
 	}
 	if commit, err := c.runGitCommand(ctx, "rev-parse", "HEAD"); err == nil {
 		result["commit"] = strings.TrimSpace(commit)
 	}
-	if shortCommit, err := c.runGitCommand(ctx, "rev-parse", "--short", "HEAD"); err == nil {
-		result["commit_short"] = strings.TrimSpace(shortCommit)
-	}
-	if remote, err := c.runGitCommand(ctx, "config", "--get", "remote.origin.url"); err == nil {
-		result["remote"] = strings.TrimSpace(remote)
-	}
-	if status, err := c.runGitCommand(ctx, "status", "--porcelain"); err == nil {
-		result["is_clean"] = len(strings.TrimSpace(status)) == 0
-	}
 	if tag, err := c.runGitCommand(ctx, "describe", "--exact-match", "--tags", "HEAD"); err == nil {
 		result["tag"] = strings.TrimSpace(tag)
 	}
-	if author, err := c.runGitCommand(ctx, "log", "-1", "--pretty=format:%an"); err == nil {
-		result["last_author"] = strings.TrimSpace(author)
-	}
-	if email, err := c.runGitCommand(ctx, "log", "-1", "--pretty=format:%ae"); err == nil {
-		result["last_author_email"] = strings.TrimSpace(email)
-	}
 
 	return result, nil
-}
-
-func (c *GitCollector) isGitInstalled() bool {
-	cmd := exec.Command("git", "--version")
-	err := cmd.Run()
-	return err == nil
 }
 
 func (c *GitCollector) runGitCommand(ctx context.Context, args ...string) (string, error) {

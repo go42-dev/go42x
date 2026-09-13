@@ -1,7 +1,8 @@
+{{ if or (hasMCPTool .mcp "go42x" "kwb_search") (hasMCPTool .mcp "go42x" "kwb_get_file") (hasMCPTool .mcp "go42x" "kwb_list_files") (hasMCPTool .mcp "go42x" "kwb_stats") -}}
 ### Searching documentation and code
 
-Use the go42x knowledge-base tools to find documentation sections, code declarations,
-configuration keys, examples, and related files. Use gopls for Go references,
+Use the knowledge-base tools from the `go42x` MCP server to find documentation sections, code declarations,
+configuration keys, examples, and related files. Use an available Go language server for references,
 implementations, type information, and call relationships. Use text search for literal
 or regular-expression searches, especially when checking recently edited files.
 
@@ -12,24 +13,34 @@ more weight than body matches. Code identifiers can also match component words:
 
 | Tool                         | Arguments                                                              | Result                                                                               |
 |------------------------------|------------------------------------------------------------------------|--------------------------------------------------------------------------------------|
-| `{{ mcpTool .provider "go42x" "kwb_search" }}`     | `query`; optional `kind`, `language`, `path_prefix`, `limit`, `offset` | Ranked snippets with path, title, kind, language, score, and source line ranges      |
-| `{{ mcpTool .provider "go42x" "kwb_get_file" }}`   | `path`; optional `start_line`, `end_line`                              | Current source lines and the next line to read                                       |
-| `{{ mcpTool .provider "go42x" "kwb_list_files" }}` | Optional `type`, `language`, `path_prefix`, `limit`, `offset`          | Unique files in path order, total, and the next offset                               |
-| `{{ mcpTool .provider "go42x" "kwb_stats" }}`      | None                                                                   | File count (`document_count`), chunk count, project root, index path, and generation |
+{{ if hasMCPTool .mcp "go42x" "kwb_search" -}}
+| `kwb_search`     | `query`; optional `kind`, `language`, `path_prefix`, `limit`, `offset` | Ranked snippets with path, title, kind, language, score, and source line ranges      |
+{{ end -}}
+{{ if hasMCPTool .mcp "go42x" "kwb_get_file" -}}
+| `kwb_get_file`   | `path`; optional `start_line`, `end_line`                              | Current source lines and the next line to read                                       |
+{{ end -}}
+{{ if hasMCPTool .mcp "go42x" "kwb_list_files" -}}
+| `kwb_list_files` | Optional `type`, `language`, `path_prefix`, `limit`, `offset`          | Unique files in path order, total, and the next offset                               |
+{{ end -}}
+{{ if hasMCPTool .mcp "go42x" "kwb_stats" -}}
+| `kwb_stats`      | None                                                                   | File count (`document_count`), chunk count, project root, index path, and generation |
+{{ end }}
 
-All four tools return structured JSON with a matching JSON text fallback.
+These tools return structured JSON with a matching JSON text fallback.
 
 Search queries are plain text. Use `kind="documentation"` for prose,
 `kind="code"` for source, or `kind="config"` for configuration. The file listing
 uses the argument `type` for the same categories. `language` narrows further,
 for example `go`, `md`, `ts`, or `json`. `path_prefix` is a project-relative prefix.
 
+{{ if and (hasMCPTool .mcp "go42x" "kwb_search") (hasMCPTool .mcp "go42x" "kwb_get_file") -}}
 Example workflow:
 
 1. Search with `query="http server", kind="code", language="go"`.
 2. Read a result using its `path`, `start_line`, and `end_line`.
-3. Use gopls to resolve references or implementations when needed.
+3. Use an available Go language server to resolve references or implementations.
 4. Follow `next_offset` to paginate or `next_start_line` to continue reading.
+{{ end }}
 
 Search defaults to 10 results and allows at most 100 per page. Search offsets
 are limited to 10,000; `window_limited=true` means filters are needed to reach
@@ -59,3 +70,4 @@ Set `go42x mcp --search-timeout=5s` or `GO42X_SEARCH_TIMEOUT=5s` to control the
 maximum duration of knowledge-base reads. Flags override `GO42X_*` environment
 variables. Build settings include `--root`, `--index`, `--exclude-dir`,
 `--include-ext`, and `--rebuild` (`GO42X_REBUILD=true`).
+{{ end }}

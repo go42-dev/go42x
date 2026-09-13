@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -73,12 +74,12 @@ func TestServerIdentityOptions(t *testing.T) {
 		{"custom", []Option{WithName("project"), WithVersion("1.2.3")}, mcp.Implementation{Name: "project", Version: "1.2.3"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			runtime, err := New(nil, tc.opts...)
+			runtime, err := New(tc.opts...)
 			if err != nil {
 				t.Fatal(err)
 			}
 			c, result := connect(t, runtime)
-			if result.ServerInfo != tc.want {
+			if !reflect.DeepEqual(result.ServerInfo, tc.want) {
 				t.Fatalf("identity = %+v, want %+v", result.ServerInfo, tc.want)
 			}
 			list, err := c.ListTools(t.Context(), mcp.ListToolsRequest{})
@@ -88,7 +89,7 @@ func TestServerIdentityOptions(t *testing.T) {
 		})
 	}
 	for _, opt := range []Option{WithName(""), WithVersion("")} {
-		if _, err := New(nil, opt); err == nil {
+		if _, err := New(opt); err == nil {
 			t.Fatal("empty identity override was accepted")
 		}
 	}
@@ -102,7 +103,7 @@ func (r failingReader) Read([]byte) (int, error) { return 0, r.err }
 
 func TestTransportUsesLoggerOption(t *testing.T) {
 	var logs, output bytes.Buffer
-	runtime, err := New(nil, WithLogger(slog.New(slog.NewTextHandler(&logs, nil)).With("component", "mcp-test")))
+	runtime, err := New(WithLogger(slog.New(slog.NewTextHandler(&logs, nil)).With("component", "mcp-test")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +120,7 @@ func TestTransportUsesLoggerOption(t *testing.T) {
 		t.Fatalf("logs leaked into protocol output: %q", output.String())
 	}
 	for _, opts := range [][]Option{nil, {WithLogger(nil)}} {
-		runtime, err := New(nil, opts...)
+		runtime, err := New(opts...)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -141,7 +142,7 @@ func TestToolsetsAreIndependent(t *testing.T) {
 			t.Error(err)
 		}
 	}()
-	groups := []Toolset{kwbmcp.New(service), testToolset{"project", []server.ServerTool{probeTool()}}}
+	groups := []toolsetAccessor{kwbmcp.New(service), testToolset{"project", []server.ServerTool{probeTool()}}}
 
 	for _, tc := range []struct {
 		name     string
@@ -157,9 +158,14 @@ func TestToolsetsAreIndependent(t *testing.T) {
 			if tc.selected != nil {
 				opts = append(opts, WithToolsets(tc.selected...))
 			}
-			runtime, err := New(groups, opts...)
+			runtime, err := New(opts...)
 			if err != nil {
 				t.Fatal(err)
+			}
+			for _, group := range groups {
+				if err := runtime.AddToolset(group); err != nil {
+					t.Fatal(err)
+				}
 			}
 			c, _ := connect(t, runtime)
 			list, err := c.ListTools(t.Context(), mcp.ListToolsRequest{})
@@ -235,8 +241,11 @@ func TestKnowledgeBaseStats(t *testing.T) {
 	if err := service.Close(); err != nil {
 		t.Fatal(err)
 	}
-	runtime, err := New([]Toolset{kwbmcp.New(service)})
+	runtime, err := New()
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.AddToolset(kwbmcp.New(service)); err != nil {
 		t.Fatal(err)
 	}
 	c, _ := connect(t, runtime)
@@ -280,21 +289,31 @@ func TestRegistrationRejectsAmbiguousTools(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		selected []string
-		groups   []Toolset
+		groups   []toolsetAccessor
 		want     string
 	}{
-		{"unknown group", []string{"missing"}, []Toolset{group}, "unknown toolset"},
-		{"repeated selection", []string{"project", "project"}, []Toolset{group}, "selected more than once"},
-		{"duplicate group", nil, []Toolset{group, group}, "duplicate toolset"},
-		{"duplicate tool across groups", nil, []Toolset{group, testToolset{"other", group.tools}}, "duplicate tool"},
-		{"duplicate tool within group", nil, []Toolset{testToolset{"project", []server.ServerTool{probeTool(), probeTool()}}}, "duplicate tool"},
+		{"unknown group", []string{"missing"}, []toolsetAccessor{group}, "unknown toolset"},
+		{"repeated selection", []string{"project", "project"}, []toolsetAccessor{group}, "selected more than once"},
+		{"duplicate group", nil, []toolsetAccessor{group, group}, "duplicate toolset"},
+		{"duplicate tool across groups", nil, []toolsetAccessor{group, testToolset{"other", group.tools}}, "duplicate tool"},
+		{"duplicate tool within group", nil, []toolsetAccessor{testToolset{"project", []server.ServerTool{probeTool(), probeTool()}}}, "duplicate tool"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var opts []Option
 			if tc.selected != nil {
 				opts = append(opts, WithToolsets(tc.selected...))
 			}
-			_, err := New(tc.groups, opts...)
+			runtime, err := New(opts...)
+			if err == nil {
+				for _, group := range tc.groups {
+					if err = runtime.AddToolset(group); err != nil {
+						break
+					}
+				}
+			}
+			if err == nil {
+				err = runtime.Serve(t.Context(), strings.NewReader(""), io.Discard)
+			}
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("error = %v, want %q", err, tc.want)
 			}
@@ -312,8 +331,11 @@ func TestServeCancellationReachesActiveTools(t *testing.T) {
 		close(finished)
 		return mcp.NewToolResultError(ctx.Err().Error()), nil
 	}
-	runtime, err := New([]Toolset{testToolset{"project", []server.ServerTool{tool}}})
+	runtime, err := New()
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.AddToolset(testToolset{"project", []server.ServerTool{tool}}); err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(t.Context())

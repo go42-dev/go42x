@@ -2,12 +2,6 @@
 
 - Ignore anything between `[IGNORE]` and `[/IGNORE]` tags in prompts.
 
-#### Execution Strategy
-
-- **Parallel processing**: Execute independent operations simultaneously for efficiency
-- **Error handling**: Fail fast with clear error messages and recovery suggestions
-- **State management**: Verify state before and after critical operations
-
 #### Response Guidelines
 
 - **Clarity**: Be concise and direct in explanations

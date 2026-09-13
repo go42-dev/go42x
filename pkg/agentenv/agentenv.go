@@ -41,25 +41,24 @@ func NewAgentEnvService(settings *Settings, opts ...Option) (*Service, error) {
 	return svc, nil
 }
 
-// Init initializes the agentenv environment
+// Init initializes the agentenv environment in the current directory.
 func (s *Service) Init(_ context.Context) error {
 	s.logger.Info("Initializing agentenv")
 
-	targetDir := filepath.Join(s.settings.OutputPath, agentEnvDir)
+	targetDir := agentEnvDir
 	if _, err := os.Stat(filepath.Join(targetDir, configFile)); err == nil {
 		s.logger.Info("Configuration already exists")
-		return nil
 	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("failed to check configuration: %w", err)
 	}
 
-	s.logger.Info("Creating default configuration")
+	s.logger.Info("Installing missing configuration templates")
 
 	if err := extractTemplate(targetDir); err != nil {
 		return fmt.Errorf("failed to extract template: %w", err)
 	}
 
-	if err := updateGitIgnore(s.settings.OutputPath); err != nil {
+	if err := updateGitIgnore("."); err != nil {
 		return fmt.Errorf("failed to update .gitignore: %w", err)
 	}
 
@@ -68,37 +67,27 @@ func (s *Service) Init(_ context.Context) error {
 	return nil
 }
 
-// Generate generates the agent environment configuration
+// Generate generates the agent environment configuration in the current directory.
 func (s *Service) Generate(ctx context.Context) error {
-	absolutePath, err := filepath.Abs(s.settings.OutputPath)
+	workingDir, err := os.Getwd()
 	if err != nil {
-		return fmt.Errorf("failed to get absolute path: %w", err)
+		return fmt.Errorf("failed to get current directory: %w", err)
 	}
-	s.logger.Info("Generating agentenv", "dir", absolutePath)
+	s.logger.Info("Generating agentenv", "dir", workingDir)
 
-	cfgPath := filepath.Join(s.settings.OutputPath, agentEnvDir, configFile)
+	templateDir := filepath.Join(workingDir, agentEnvDir)
+	cfgPath := filepath.Join(templateDir, configFile)
 	cfg, err := config.LoadConfig(cfgPath)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	templateDir := filepath.Join(s.settings.OutputPath, agentEnvDir)
-	if s.settings.GenerateClean {
-		s.logger.Info("Cleaning generated instructions", "dir", s.settings.OutputPath)
-		for _, provider := range cfg.Providers {
-			outputPath := filepath.Join(s.settings.OutputPath, provider.Output)
-			if err := os.Remove(outputPath); err != nil && !os.IsNotExist(err) {
-				return fmt.Errorf("failed to remove generated file %s: %w", outputPath, err)
-			}
-		}
-	}
-
 	gen := generator.NewGenerator(
 		s.logger.With("component", "generator"),
-		cfg, templateDir, s.settings.OutputPath,
+		cfg, templateDir, workingDir,
 	)
 
-	if err := gen.Generate(ctx); err != nil {
+	if err := gen.Generate(ctx, s.settings.Clean); err != nil {
 		return fmt.Errorf("generation failed: %w", err)
 	}
 
@@ -109,21 +98,21 @@ func (s *Service) Generate(ctx context.Context) error {
 
 const (
 	gitignoreFile   = ".gitignore"
-	gitignoreMarker = "# agentenv"
+	gitignoreMarker = "# go42x generated files"
 )
 
 var ignoreFiles = []string{
 	".go42x/kwb/",
-	".claude/",
+	".go42x/backups/",
 	".mcp.json",
+	".claude/",
 	"CLAUDE.md",
+	".codex/",
+	"AGENTS.md",
 	".gemini/",
 	"GEMINI.md",
 	".crush/",
 	".crush.json",
-	"CRUSH.md",
-	".github/copilot-instructions.md",
-	".github/.copilot.mcp.json",
 }
 
 func updateGitIgnore(outputPath string) error {
@@ -140,26 +129,35 @@ func updateGitIgnore(outputPath string) error {
 		return fmt.Errorf("failed to stat .gitignore: %w", err)
 	}
 
+	var content []byte
 	if stat.Size() > 0 {
-		// Check if the marker already exists anywhere in the file
-		content, err := os.ReadFile(gitignorePath)
+		content, err = os.ReadFile(gitignorePath)
 		if err != nil {
 			return fmt.Errorf("failed to read .gitignore: %w", err)
 		}
-		if bytes.Contains(content, []byte(gitignoreMarker)) {
-			// Marker already exists, no need to add again
-			return nil
-		}
 	}
 
-	if _, err := f.WriteString("\n" + gitignoreMarker + "\n"); err != nil {
-		return fmt.Errorf("failed to write to .gitignore: %w", err)
+	existing := make(map[string]bool)
+	for line := range bytes.SplitSeq(content, []byte("\n")) {
+		existing[string(bytes.TrimSpace(line))] = true
+	}
+
+	var additions bytes.Buffer
+	if !existing[gitignoreMarker] {
+		additions.WriteString(gitignoreMarker + "\n")
 	}
 
 	for _, file := range ignoreFiles {
-		if _, err := f.WriteString(file + "\n"); err != nil {
-			return fmt.Errorf("failed to write to .gitignore: %w", err)
+		if !existing[file] {
+			additions.WriteString(file + "\n")
 		}
+	}
+	if additions.Len() == 0 {
+		return nil
+	}
+
+	if _, err := f.WriteString("\n" + additions.String()); err != nil {
+		return fmt.Errorf("failed to write to .gitignore: %w", err)
 	}
 
 	return nil

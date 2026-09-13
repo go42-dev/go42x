@@ -7,10 +7,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
-	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/go42-dev/go42x/pkg/agentenv/config"
 )
@@ -61,20 +59,10 @@ func TestProjectCollector(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for key, want := range map[string]any{"name": "example", "language": "go", "description": "description", "version": "1.0", "tags": []string{"cli"}, "metadata": map[string]string{"repository": "example/repo"}} {
+	for key, want := range map[string]any{"name": "example", "language": "go", "description": "description", "tags": []string{"cli"}, "metadata": map[string]string{"repository": "example/repo"}} {
 		if !reflect.DeepEqual(data[key], want) {
 			t.Errorf("%s = %v, want %v", key, data[key], want)
 		}
-	}
-	names := data["providers"].([]string)
-	slices.Sort(names)
-	if !slices.Equal(names, []string{"claude", "gemini"}) {
-		t.Fatalf("providers = %v", names)
-	}
-	servers := data["mcp_servers"].([]map[string]any)
-	if len(servers) != 1 || servers[0]["name"] != "enabled" || servers[0]["type"] != "stdio" ||
-		servers[0]["command"] != "go42x" {
-		t.Fatalf("enabled servers = %v", servers)
 	}
 	data, err = NewProjectCollector(&config.Config{}).Collect(t.Context())
 	if err != nil {
@@ -93,7 +81,6 @@ func TestEnvironmentCollector(t *testing.T) {
 	t.Setenv("AGENTENV_TEST_INCLUDED", "yes")
 	t.Setenv("AGENTENV_TEST_EMPTY", "")
 	t.Setenv("AGENTENV_TEST_PRIVATE", "secret")
-	start := time.Now().Unix()
 	data, err := NewEnvironmentCollector([]string{"AGENTENV_TEST_INCLUDED", "AGENTENV_TEST_EMPTY"}).Collect(t.Context())
 	if err != nil {
 		t.Fatal(err)
@@ -102,27 +89,30 @@ func TestEnvironmentCollector(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for key, want := range map[string]any{"is_ci": true, "ci_mode": "true", "os": runtime.GOOS, "arch": runtime.GOARCH, "go_version": runtime.Version(), "num_cpu": runtime.NumCPU(), "working_dir": wd, "AGENTENV_TEST_INCLUDED": "yes"} {
+	for key, want := range map[string]any{
+		"is_ci":       true,
+		"ci_mode":     "true",
+		"os":          runtime.GOOS,
+		"arch":        runtime.GOARCH,
+		"working_dir": wd,
+	} {
 		if data[key] != want {
 			t.Errorf("%s = %v, want %v", key, data[key], want)
 		}
 	}
+	variables := data["variables"].(map[string]string)
+	if variables["AGENTENV_TEST_INCLUDED"] != "yes" {
+		t.Error("configured environment variable missing")
+	}
 	for _, key := range []string{"AGENTENV_TEST_PRIVATE", "AGENTENV_TEST_EMPTY"} {
-		if _, ok := data[key]; ok {
+		if _, ok := variables[key]; ok {
 			t.Errorf("unrequested or empty env var %s exposed", key)
 		}
 	}
-	timestamp := data["timestamp"].(int64)
-	if timestamp < start || timestamp > time.Now().Unix() {
-		t.Errorf("timestamp = %d", timestamp)
-	}
-	if _, err := time.Parse(time.RFC3339, data["timestamp_iso"].(string)); err != nil {
-		t.Fatal(err)
-	}
 	t.Setenv("CI", "")
 	data, err = NewEnvironmentCollector(nil).Collect(t.Context())
-	if err != nil || data["is_ci"] != false {
-		t.Fatalf("non-CI = %v, %v", data, err)
+	if err != nil || data["variables"] != nil || data["is_ci"] != false || data["ci_mode"] != "" {
+		t.Fatalf("unconfigured environment variables = %v, %v", data, err)
 	}
 }
 
@@ -196,13 +186,12 @@ func TestGitHubEventPayloads(t *testing.T) {
 	for _, tt := range []struct {
 		name, env, file string
 		want            any
-		raw             string
 	}{
-		{"env wins", `{"source":"env"}`, `{"source":"file"}`, map[string]any{"source": "env"}, ""},
-		{"file fallback", "", `{"source":"file"}`, map[string]any{"source": "file"}, ""},
-		{"malformed env fallback", "invalid", `{"source":"file"}`, map[string]any{"source": "file"}, "invalid"},
-		{"malformed file", "", "invalid", nil, ""},
-		{"missing file", "", "", nil, ""},
+		{"env wins", `{"comment":{"body":"env"}}`, `{"comment":{"body":"file"}}`, "env"},
+		{"file fallback", "", `{"comment":{"body":"file"}}`, "file"},
+		{"malformed env fallback", "invalid", `{"comment":{"body":"file"}}`, "file"},
+		{"malformed file", "", "invalid", nil},
+		{"missing file", "", "", nil},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			cleanActionsEnv(t)
@@ -219,12 +208,8 @@ func TestGitHubEventPayloads(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			event, _ := data["event"].(map[string]any)
-			if !reflect.DeepEqual(event["payload"], tt.want) {
-				t.Fatalf("payload = %v, want %v", event["payload"], tt.want)
-			}
-			if tt.raw != "" && event["payload_raw"] != tt.raw {
-				t.Fatalf("raw payload = %v", event["payload_raw"])
+			if !reflect.DeepEqual(data["user_request"], tt.want) {
+				t.Fatalf("request = %v, want %v", data["user_request"], tt.want)
 			}
 			if _, ok := data["build_url"]; ok {
 				t.Error("incomplete Actions context should not produce a malformed build URL")
@@ -279,17 +264,16 @@ func TestGitCollectorRepository(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for key, want := range map[string]any{"branch": "test", "commit": git("rev-parse", "HEAD"), "commit_short": git("rev-parse", "--short", "HEAD"), "remote": "https://example.com/org/repo.git", "is_clean": true, "tag": "v1.0.0", "last_author": "Test Author", "last_author_email": "test@example.com"} {
+	for key, want := range map[string]any{
+		"root":   git("rev-parse", "--show-toplevel"),
+		"remote": "https://example.com/org/repo.git",
+		"branch": "test",
+		"commit": git("rev-parse", "HEAD"),
+		"tag":    "v1.0.0",
+	} {
 		if data[key] != want {
 			t.Errorf("%s = %v, want %v", key, data[key], want)
 		}
-	}
-	if err := os.WriteFile("untracked.md", []byte("dirty"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	data, err = c.Collect(t.Context())
-	if err != nil || data["is_clean"] != false {
-		t.Fatalf("dirty repository = %v, %v", data, err)
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
