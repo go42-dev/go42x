@@ -5,13 +5,14 @@
 version: "1.0"
 
 project:
-  name: go42x
+  name: go42
   language: go
-  description: 'Helper tool for go42 project.'
+  description: 'Golang project operation blueprint.'
   tags:
     - go42
     - golang
-    - cli
+    - blueprint
+    - service
   metadata:
     repository: github.com/go42-dev/go42
     documentation-entrypoint: docs/README.md
