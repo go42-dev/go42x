@@ -196,3 +196,70 @@ func TestDefaultConfig(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadConfigProviderEnabled(t *testing.T) {
+	for _, tt := range []struct {
+		name, entry string
+		want        bool
+	}{
+		{"omitted", "{}", true},
+		{"enabled", "{enabled: true}", true},
+		{"disabled", "{enabled: false}", false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "go42x.yaml")
+			data := "version: '1.0'\nproject: {name: example}\ncontext: {template: agents.tpl.md}\nproviders:\n"
+			for _, name := range []string{"claude", "codex", "gemini", "crush", "copilot"} {
+				data += "  " + name + ": " + tt.entry + "\n"
+			}
+			if err := os.WriteFile(path, []byte(data), 0600); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := LoadConfig(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for name := range cfg.Providers {
+				if got := cfg.ProviderEnabled(name); got != tt.want {
+					t.Errorf("ProviderEnabled(%q) = %v, want %v", name, got, tt.want)
+				}
+			}
+			delete(cfg.Providers, "claude")
+			if cfg.ProviderEnabled("claude") {
+				t.Error("absent provider is enabled")
+			}
+		})
+	}
+}
+
+func TestDisabledProvidersAllowMCPCWD(t *testing.T) {
+	enabled, disabled := true, false
+	for _, name := range []string{"claude", "crush"} {
+		for _, tt := range []struct {
+			name    string
+			enabled *bool
+			wantErr bool
+		}{
+			{"omitted", nil, true},
+			{"enabled", &enabled, true},
+			{"disabled", &disabled, false},
+		} {
+			t.Run(name+"/"+tt.name, func(t *testing.T) {
+				cfg := validConfig()
+				cfg.Providers = map[string]Provider{
+					"copilot": {},
+					name:      {Enabled: tt.enabled},
+				}
+				cfg.MCP["example"] = MCPServer{Enabled: true, Name: "example", Command: "example", CWD: "src"}
+				err := cfg.Validate()
+				if tt.wantErr {
+					if err == nil || !strings.Contains(err.Error(), "provider "+name+" does not support cwd") {
+						t.Fatalf("Validate() = %v, want unsupported cwd error", err)
+					}
+				} else if err != nil {
+					t.Fatal(err)
+				}
+			})
+		}
+	}
+}

@@ -51,10 +51,18 @@ type Context struct {
 }
 
 type Provider struct {
+	Enabled          *bool    `yaml:"enabled,omitempty"`
 	Agents           []string `yaml:"agents,omitempty"`
 	AutoApproveTools []string `yaml:"auto-approve-tools,omitempty"`
 	ApprovalPolicy   *string  `yaml:"approval-policy,omitempty"`
 	MCPApproval      *string  `yaml:"mcp-approval,omitempty"`
+}
+
+// ProviderEnabled reports whether a provider is configured and enabled.
+// Configured providers are enabled by default when enabled is omitted.
+func (c *Config) ProviderEnabled(name string) bool {
+	provider, exists := c.Providers[name]
+	return exists && (provider.Enabled == nil || *provider.Enabled)
 }
 
 type MCPServer struct {
@@ -140,7 +148,7 @@ func (c *Config) Validate() error {
 		}
 		if server.Enabled && server.CWD != "" {
 			for _, provider := range providers {
-				if provider == "claude" || provider == "crush" {
+				if c.ProviderEnabled(provider) && (provider == "claude" || provider == "crush") {
 					return fmt.Errorf("MCP server %s: provider %s does not support cwd", name, provider)
 				}
 			}

@@ -107,6 +107,9 @@ func (g *Generator) Generate(ctx context.Context, clean bool) error {
 
 	var preparationErrors []error
 	for _, name := range slices.Sorted(maps.Keys(g.config.Providers)) {
+		if !g.config.ProviderEnabled(name) {
+			continue
+		}
 		providerConfig := g.config.Providers[name]
 		p, exists := g.providers[name]
 		if !exists {
@@ -185,7 +188,7 @@ func (g *Generator) prepareInstructions(plan *output.Plan, ctxData map[string]in
 	outputs := map[string]string{"AGENTS.md": content}
 
 	for name, path := range map[string]string{provider.Claude: "CLAUDE.md", provider.Gemini: "GEMINI.md"} {
-		if _, enabled := g.config.Providers[name]; enabled {
+		if g.config.ProviderEnabled(name) {
 			outputs[path] = "@AGENTS.md\n"
 		}
 	}

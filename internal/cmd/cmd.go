@@ -32,7 +32,7 @@ func NewGo42Command(ctx context.Context, f *cmdutil.Factory) *cobra.Command {
 		Long:  `Helper tool for go42 project`,
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runVersionCommand(cmd)
+			return cmd.Help()
 		},
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			// Cobra has parsed and merged the selected command's local and

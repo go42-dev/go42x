@@ -96,7 +96,7 @@ func (p *ClaudeProvider) prepareConfigFiles(plan *output.Plan, providerConfig co
 	}
 
 	// Copilot owns the shared file when enabled.
-	if _, enabled := p.config.Providers[Copilot]; enabled {
+	if p.config.ProviderEnabled(Copilot) {
 		return nil
 	}
 
