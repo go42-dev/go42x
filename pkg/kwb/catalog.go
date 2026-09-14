@@ -10,7 +10,6 @@ import (
 	"path"
 	"slices"
 	"strings"
-	"sync"
 
 	"github.com/go-git/go-git/v5/plumbing/format/gitignore"
 )
@@ -24,14 +23,15 @@ const (
 )
 
 type documentCatalog struct {
-	mu    sync.Mutex
-	root  string
-	cache map[string]*Document
+	access chan struct{}
+	root   string
+	cache  map[string]*Document
 }
 
 func newDocumentCatalog() *documentCatalog {
 	return &documentCatalog{
-		cache: map[string]*Document{},
+		access: make(chan struct{}, 1),
+		cache:  map[string]*Document{},
 	}
 }
 
@@ -63,8 +63,16 @@ func (c *Catalog) ByPath(path string) *Document {
 // respecting .gitignore. The configured entrypoint may be plain Markdown.
 // All reads are confined to the project root; symlinks are not catalogued.
 func (s *documentCatalog) Load(ctx context.Context, rootPath, entrypoint string) (*Catalog, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	// Waiting for another reader's cache refresh consumes this request's budget.
+	select {
+	case s.access <- struct{}{}:
+		defer func() { <-s.access }()
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if s.root != rootPath {
 		s.root = rootPath
 		s.cache = map[string]*Document{}
@@ -103,7 +111,8 @@ func (s *documentCatalog) Load(ctx context.Context, rootPath, entrypoint string)
 		if err != nil {
 			return err
 		}
-		data, readErr := io.ReadAll(io.LimitReader(file, MaxFileBytes+1))
+		// Keep one extra byte so oversized documents remain parse diagnostics.
+		data, readErr := readBounded(ctx, io.LimitReader(file, MaxFileBytes+1), MaxFileBytes+1)
 		_ = file.Close()
 		if readErr != nil {
 			return readErr
@@ -156,6 +165,9 @@ func (s *documentCatalog) Load(ctx context.Context, rootPath, entrypoint string)
 	}
 	positions := map[int]string{}
 	for _, doc := range catalog.Documents {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if doc.ID != "" && len(catalog.byID[doc.ID]) > 1 {
 			catalog.Diagnostics = append(
 				catalog.Diagnostics,
@@ -197,6 +209,9 @@ func (s *documentCatalog) Load(ctx context.Context, rootPath, entrypoint string)
 			catalog.Diagnostics = append(catalog.Diagnostics, diagnostics...)
 		}
 		for _, link := range doc.Links {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			if _, err := root.Stat(link.Path); err != nil {
 				catalog.Diagnostics = append(
 					catalog.Diagnostics,
@@ -370,6 +385,14 @@ func PathsOverlap(a, b string) bool {
 }
 
 func (c *Catalog) Impact(paths []string) *ImpactResult {
+	result, _ := c.impact(context.Background(), paths)
+	return result
+}
+
+func (c *Catalog) impact(ctx context.Context, paths []string) (*ImpactResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	result := &ImpactResult{
 		Documents:     []ImpactDocument{},
 		UnmappedPaths: []string{},
@@ -380,6 +403,9 @@ func (c *Catalog) Impact(paths []string) *ImpactResult {
 	mapped := map[string]bool{}
 	for _, doc := range c.Documents {
 		for _, changed := range paths {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			if PathsOverlap(doc.Path, changed) {
 				hit := impactHit(hits, doc, "changed_document")
 				hit.Evidence = append(hit.Evidence, Evidence{
@@ -388,6 +414,9 @@ func (c *Catalog) Impact(paths []string) *ImpactResult {
 				mapped[changed] = true
 			}
 			for _, link := range doc.Links {
+				if err := ctx.Err(); err != nil {
+					return nil, err
+				}
 				if PathsOverlap(link.Path, changed) {
 					hit := impactHit(hits, doc, "direct_link")
 					if len(hit.Evidence) < 10 {
@@ -409,6 +438,9 @@ func (c *Catalog) Impact(paths []string) *ImpactResult {
 	// handbook page to be discovered when the page's implementation changes.
 	edges := map[string][]string{}
 	for _, doc := range c.Documents {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		ids := slices.Clone(doc.Related)
 		if doc.SupersededBy != "" {
 			ids = append(ids, doc.SupersededBy)
@@ -446,6 +478,9 @@ func (c *Catalog) Impact(paths []string) *ImpactResult {
 		}
 	}
 	for len(queue) > 0 {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		current := queue[0]
 		queue = queue[1:]
 		if current.depth >= MaxRelationshipDepth {
@@ -505,7 +540,7 @@ func (c *Catalog) Impact(paths []string) *ImpactResult {
 		result.Diagnostics = result.Diagnostics[:100]
 		result.Truncated = true
 	}
-	return result
+	return result, ctx.Err()
 }
 
 func impactHit(hits map[string]*ImpactDocument, doc *Document, reason string) *ImpactDocument {

@@ -5,18 +5,33 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"strings"
 	"testing"
 	"time"
 )
 
 func TestMCPStdioSession(t *testing.T) {
 	t.Parallel()
+	runMCPStdioSession(t, false)
+}
+
+func TestMCPReadTimeouts(t *testing.T) {
+	t.Parallel()
+	runMCPStdioSession(t, true)
+}
+
+func runMCPStdioSession(t *testing.T, expectTimeout bool) {
+	t.Helper()
 	p := newProject(t)
-	p.write(t, "README.md", "# Local project\nE2E example.\n")
+	p.write(t, "README.md", "---\nid: overview\ntitle: Local project\n---\n# Local project\nE2E example.\n")
 	p.run(t, 0, "kwb", "build")
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 	defer cancel()
-	cmd := p.command(ctx, "mcp", "--root", p.root, "--log-level=debug")
+	args := []string{"mcp", "--root", p.root, "--log-level=debug"}
+	if expectTimeout {
+		args = append(args, "--search-timeout=1ns")
+	}
+	cmd := p.command(ctx, args...)
 	cmd.Dir = t.TempDir()
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -112,21 +127,43 @@ func TestMCPStdioSession(t *testing.T) {
 			Text string `json:"text"`
 		} `json:"content"`
 	}
-	request(3, "tools/call", map[string]any{"name": "kwb_stats", "arguments": map[string]any{}}, &called)
-	if called.IsError || len(called.Content) != 1 || called.Content[0].Type != "text" ||
-		!json.Valid([]byte(called.Content[0].Text)) {
-		t.Fatalf("kwb_stats did not return a successful JSON result: %+v", called)
-	}
-	var stats struct {
-		DocumentCount int    `json:"document_count"`
-		ChunkCount    int    `json:"chunk_count"`
-		Generation    string `json:"generation"`
-	}
-	if err := json.Unmarshal([]byte(called.Content[0].Text), &stats); err != nil {
-		t.Fatal(err)
-	}
-	if stats.DocumentCount != 1 || stats.ChunkCount < 1 || stats.Generation == "" {
-		t.Fatalf("kwb_stats does not describe the indexed project: %+v", stats)
+	if expectTimeout {
+		for i, tool := range []struct {
+			name string
+			args map[string]any
+		}{
+			{"kwb_search", map[string]any{"query": "project"}},
+			{"kwb_get_file", map[string]any{"path": "README.md"}},
+			{"kwb_list_files", map[string]any{}},
+			{"kwb_stats", map[string]any{}},
+			{"docs_get", map[string]any{"id": "overview"}},
+			{"docs_impact", map[string]any{"paths": []string{"README.md"}}},
+			{"project_context", map[string]any{"task": "project"}},
+		} {
+			called.IsError, called.Content = false, nil
+			request(i+3, "tools/call", map[string]any{"name": tool.name, "arguments": tool.args}, &called)
+			if !called.IsError || len(called.Content) != 1 || called.Content[0].Type != "text" ||
+				!strings.Contains(called.Content[0].Text, "context deadline exceeded") {
+				t.Errorf("%s did not report its read timeout: %+v", tool.name, called)
+			}
+		}
+	} else {
+		request(3, "tools/call", map[string]any{"name": "kwb_stats", "arguments": map[string]any{}}, &called)
+		if called.IsError || len(called.Content) != 1 || called.Content[0].Type != "text" ||
+			!json.Valid([]byte(called.Content[0].Text)) {
+			t.Fatalf("kwb_stats did not return a successful JSON result: %+v", called)
+		}
+		var stats struct {
+			DocumentCount int    `json:"document_count"`
+			ChunkCount    int    `json:"chunk_count"`
+			Generation    string `json:"generation"`
+		}
+		if err := json.Unmarshal([]byte(called.Content[0].Text), &stats); err != nil {
+			t.Fatal(err)
+		}
+		if stats.DocumentCount != 1 || stats.ChunkCount < 1 || stats.Generation == "" {
+			t.Fatalf("kwb_stats does not describe the indexed project: %+v", stats)
+		}
 	}
 	if err := stdin.Close(); err != nil {
 		t.Fatal(err)

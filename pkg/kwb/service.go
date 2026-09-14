@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"path"
@@ -130,6 +129,11 @@ func (s *Service) ProjectRoot() (string, error) {
 
 // Catalog reads current documentation independently of the search index lifecycle.
 func (s *Service) Catalog(ctx context.Context) (*Catalog, error) {
+	ctx, cancel := context.WithTimeout(ctx, s.settings.SearchTimeout)
+	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	root, err := s.ProjectRoot()
 	if err != nil {
 		return nil, err
@@ -138,6 +142,8 @@ func (s *Service) Catalog(ctx context.Context) (*Catalog, error) {
 }
 
 func (s *Service) GetDocument(ctx context.Context, id string, start, end int) (*DocumentResult, error) {
+	ctx, cancel := context.WithTimeout(ctx, s.settings.SearchTimeout)
+	defer cancel()
 	if strings.TrimSpace(id) == "" || len(id) > 128 {
 		return nil, fmt.Errorf("id must contain 1 to 128 bytes")
 	}
@@ -183,6 +189,9 @@ func (s *Service) GetDocument(ctx context.Context, id string, start, end int) (*
 		result.Truncated = true
 	}
 	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		data, err := json.Marshal(result)
 		if err != nil {
 			return nil, err
@@ -211,6 +220,8 @@ func (s *Service) GetDocument(ctx context.Context, id string, start, end int) (*
 }
 
 func (s *Service) Impact(ctx context.Context, paths []string) (*ImpactResult, error) {
+	ctx, cancel := context.WithTimeout(ctx, s.settings.SearchTimeout)
+	defer cancel()
 	normalized, err := NormalizePaths(paths)
 	if err != nil {
 		return nil, err
@@ -222,7 +233,10 @@ func (s *Service) Impact(ctx context.Context, paths []string) (*ImpactResult, er
 	if err != nil {
 		return nil, err
 	}
-	result := catalog.Impact(normalized)
+	result, err := catalog.impact(ctx, normalized)
+	if err != nil {
+		return nil, err
+	}
 	if err := boundImpact(result); err != nil {
 		return nil, err
 	}
@@ -270,6 +284,9 @@ type candidate struct {
 }
 
 func (s *Service) Context(ctx context.Context, options ContextOptions) (*ContextResult, error) {
+	// Inner reads inherit this deadline, so each stage consumes the same budget.
+	ctx, cancel := context.WithTimeout(ctx, s.settings.SearchTimeout)
+	defer cancel()
 	if strings.TrimSpace(options.Task) == "" || len(options.Task) > 4096 {
 		return nil, fmt.Errorf("task must contain 1 to 4096 bytes")
 	}
@@ -281,6 +298,9 @@ func (s *Service) Context(ctx context.Context, options ContextOptions) (*Context
 	}
 	paths, err := NormalizePaths(options.Paths)
 	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	projectRoot, err := s.ProjectRoot()
@@ -313,7 +333,10 @@ func (s *Service) Context(ctx context.Context, options ContextOptions) (*Context
 			start:  doc.BodyStartLine,
 		})
 	}
-	impact := catalog.Impact(paths)
+	impact, err := catalog.impact(ctx, paths)
+	if err != nil {
+		return nil, err
+	}
 	for _, hit := range impact.Documents {
 		if doc := catalog.ByPath(hit.Path); doc != nil {
 			add(candidate{
@@ -332,6 +355,9 @@ func (s *Service) Context(ctx context.Context, options ContextOptions) (*Context
 	}
 	rankedDocs := []ranked{}
 	for _, doc := range catalog.Documents {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if doc.Collection == "templates" && !authoring {
 			continue
 		}
@@ -466,8 +492,11 @@ func (s *Service) Context(ctx context.Context, options ContextOptions) (*Context
 				c.start, c.end = bestRange(c.doc, terms)
 			}
 		} else {
-			data, err := readCandidate(root, c.path)
+			data, err := readCandidate(ctx, root, c.path)
 			if err != nil {
+				if ctx.Err() != nil {
+					return nil, ctx.Err()
+				}
 				result.Diagnostics = append(
 					result.Diagnostics,
 					Diagnostic{
@@ -546,6 +575,9 @@ func (s *Service) Context(ctx context.Context, options ContextOptions) (*Context
 		result.Truncated = true
 	}
 	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		data, err := json.Marshal(result)
 		if err != nil {
 			return nil, err
@@ -567,7 +599,7 @@ func (s *Service) Context(ctx context.Context, options ContextOptions) (*Context
 	return result, ctx.Err()
 }
 
-func readCandidate(root *os.Root, path string) ([]byte, error) {
+func readCandidate(ctx context.Context, root *os.Root, path string) ([]byte, error) {
 	file, err := root.Open(path)
 	if err != nil {
 		return nil, err
@@ -580,11 +612,11 @@ func readCandidate(root *os.Root, path string) ([]byte, error) {
 	if !info.Mode().IsRegular() {
 		return nil, fmt.Errorf("not a regular file")
 	}
-	data, err := io.ReadAll(io.LimitReader(file, MaxFileBytes+1))
+	data, err := readBounded(ctx, file, MaxFileBytes)
 	if err != nil {
 		return nil, err
 	}
-	if len(data) > MaxFileBytes || !utf8.Valid(data) {
+	if !utf8.Valid(data) {
 		return nil, fmt.Errorf("source exceeds size limit or is not UTF-8")
 	}
 	return data, nil
