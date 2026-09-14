@@ -95,6 +95,11 @@ version = "0.14.0"
 backend = "go:github.com/daixiang0/gci"
 specifiers = ["0.14.0"]
 
+[[tools."go:github.com/go42-dev/go42x"]]
+version = "0.28.0"
+backend = "go:github.com/go42-dev/go42x"
+specifiers = ["0.28.0"]
+
 [[tools."go:github.com/google/yamlfmt/cmd/yamlfmt"]]
 version = "0.21.0"
 backend = "go:github.com/google/yamlfmt/cmd/yamlfmt"
@@ -109,6 +114,11 @@ specifiers = ["v2.29.1-0.20260904090110-598d6146b91b"]
 version = "0.6.0"
 backend = "go:go.uber.org/mock/mockgen"
 specifiers = ["0.6.0"]
+
+[[tools."go:golang.org/x/tools/gopls"]]
+version = "0.23.0"
+backend = "go:golang.org/x/tools/gopls"
+specifiers = ["0.23.0"]
 
 [[tools."go:golang.org/x/vuln/cmd/govulncheck"]]
 version = "1.7.0"

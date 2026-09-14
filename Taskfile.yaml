@@ -48,6 +48,17 @@ tasks:
     cmds:
       - "task --list --sort none"
 
+  tool:
+    desc: "Run a command with the project tools"
+    summary: "Usage: task tool -- COMMAND [ARGS...]"
+    interactive: true
+    silent: true
+    preconditions:
+      - sh: 'test -n {{.CLI_ARGS | shellQuote}}'
+        msg: "Usage: task tool -- COMMAND [ARGS...]"
+    cmds:
+      - 'mise exec -- {{.CLI_ARGS}}'
+
   setup:
     desc: "install dependencies"
     cmds:
