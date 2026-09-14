@@ -7,13 +7,9 @@ sidebar_position: 1
 
 # go42x documentation
 
-The [project README](../README.md) describes installation. The current CLI provides agent configuration, knowledge-base
-access, diagnostics, and MCP services. Service setup and deployment are proposed capabilities.
+Start with the [project README](../README.md) for installation, then use these guides.
 
-| Document                                           | Purpose                                     | Status           |
-|----------------------------------------------------|---------------------------------------------|------------------|
-| [Documentation policy](handbook/documentation.md)  | Writing rules and verification expectations | Project guidance |
-| [Local knowledge base](handbook/knowledge-base.md) | Retrieval, source coverage, and freshness   | Current source   |
-
-Acceptance of a decision records intent. Command availability and delivered behavior must be checked against source and
-execution evidence.
+| Guide | What it covers |
+| --- | --- |
+| [Writing documentation](handbook/documentation.md) | Clear instructions, command examples, and checks |
+| [Local knowledge base](handbook/knowledge-base.md) | Finding code and docs, and keeping the search index up to date |

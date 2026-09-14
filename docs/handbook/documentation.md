@@ -1,109 +1,72 @@
 ---
 id: documentation
-title: Maintaining go42x documentation
+title: Writing go42x documentation
 collection: handbook
 ---
 
-# Maintaining go42x documentation
+# Writing go42x documentation
 
-## Purpose and ownership
+Write docs that help someone use or change go42x. Start at the [documentation index](../README.md) and update the page
+that covers the command, setting, or template you are changing.
 
-Use this policy when writing or reviewing documentation for go42x commands, configuration, templates, and generated
-outputs. It applies to work produced with AI assistance as well as other authored changes.
-
-| Subject                                                                        | Owning source                                                                                                            |
-|--------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------|
-| Shared writing rules and the public evaluation and adoption journey            | The [go42 documentation](https://go42.dev/docs/documentation/)                                                           |
-| Available commands, arguments, and configuration behavior                      | The [command definitions](../../internal/cmd/) and owning package sources in this repository                             |
-| Default agent configuration and instruction templates                          | The [packaged templates](../../assets/agentenv/template/) and [generation implementation](../../pkg/agentenv/generator/) |
-| Executable repository workflows and tool versions                              | [Taskfile.yaml](../../Taskfile.yaml), [mise configuration](../../etc/mise.toml), and its lockfile                        |
-| An adopting application's configuration, handbook, requirements, and decisions | The application's own repository and documentation policy                                                                |
-
-The agreed go42x role includes orchestration of project and documentation setup, shared defaults, validation, and
-publishing. Describe capabilities according to the applicable implementation. The current
-[command tree](../../internal/cmd/cmd.go) provides agent configuration, knowledge-base access, diagnostics, and MCP services.
-Project setup and documentation publishing workflows remain planned work. Verify their implementation and availability
-before teaching new commands or claiming platform support.
+The go42 guide explains shared ideas. Application teams maintain their own instructions. Keep the details of go42x
+commands and generated files in this repository.
 
 ## Shared writing rules
 
-The [public documentation policy](https://go42.dev/docs/documentation/) is the editorial home of these rules. This local
-copy keeps them usable in the go42x checkout. Apply each rule to the page's purpose; choose useful headings and remove
-empty or irrelevant template sections.
+Use these rules when writing or reviewing docs, including work done with AI assistance.
 
-| Rule                                | Required practice                                                                                                                                                                                                     |
-|-------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| State the scope                     | Identify the reader's task, promised result, prerequisites, and applicable software versions or environments.                                                                                                         |
-| Make procedures executable          | Specify the working directory and required inputs. Separate copyable commands from output, preserve exact identifiers, and show expected results, effects on state, recovery, and cleanup where relevant.             |
-| Support claims with evidence        | Link the relevant source or check. Distinguish inspected code, executed checks, proposals, and delivered behavior. Label assumptions and gaps; use disposable examples and keep credentials out of recorded evidence. |
-| Make content accessible             | Use meaningful headings and links, readable examples, and text alternatives for informative images. Check navigation and the rendered meaning of changed content.                                                     |
-| Maintain documentation with changes | Update the owning document with behavior changes, preserve important URLs and anchors, and explain documentation impact. Update authored inputs and regenerate derived output.                                        |
-| Write consistently                  | Use direct language, stable terminology, and exact technical identifiers. Assume technical competence while explaining knowledge specific to go42.                                                                    |
+- Start with the reader's task. Say what they will learn or do and what they need first.
+- Use plain language. Keep sentences short and explain unfamiliar terms.
+- Make examples easy to use. Say where to run commands, explain placeholders, and show the expected result.
+  Keep commands and output in separate code blocks. Use exact command names, flags, and paths, with sample values
+  instead of secrets.
+- Check your instructions. Try the steps you describe. Say what you have not tested and label planned features.
+- Make pages easy to scan. Use clear headings, useful link text, and descriptions for images.
+- Update docs with the code. Fix affected instructions and links in the same change.
 
-Use **go42** for the upstream blueprint, **go42x** for its orchestration tool, **application** for a project adopting the
-blueprint, and **local handbook** for that application's effective instructions. Preserve exact command names, flags,
-configuration keys, output fields, and file paths.
+## Writing command examples
 
-## Documenting commands and generated state
+Say what the command does, where to run it, and what the reader needs first. Explain where placeholder values come from.
+Use the exact names and flags from the command's help and implementation.
 
-State the go42x release or source revision that the example applies to, its working directory, prerequisite tools, and
-relevant configuration. Explain how readers obtain placeholder values. Separate copyable commands, illustrative output,
-and incomplete examples with language-tagged code fences and clear labels.
+Show useful output and explain how to tell whether the command worked. Explain exit codes that scripts need to handle.
+Say which files or other data it creates, changes, or deletes, and what happens if someone runs it again. Explain common
+failures and how to recover, including how to undo changes when needed. Keep commands and output in separate code blocks
+with language labels.
 
-For a command, document required inputs, useful output, exit status, effects on files or other state, and relevant failure
-and recovery behavior. Explain repeated execution where it can preserve, replace, or remove state. Keep credentials and
-private configuration out of examples and retained output. Link to the implementation or test behind the behavior.
+Try the example before calling it ready. If the steps differ across operating systems, explain the differences and say
+where you tried them. Mention version differences only when they change what the reader needs to do. Label features
+that are still planned.
 
-Aim for the same workflow across operating systems. Keep necessary installation differences explicit, and record the
-platforms on which the procedure was executed. A packaged binary, successful compilation, and a completed workflow are
-different kinds of evidence. State which was verified.
+## Explaining generated files
 
-For generated content, identify the editable input and the command that produces the output. Explain which defaults a
-project owns after adoption and how generation handles local edits. Change packaged defaults in the owning template or
-generator; use the project's authored inputs when changing its local instructions. Record the relevant regeneration
-results with the change.
+Tell readers which files they edit and which command generates the output. Explain what happens to their local edits
+when they run that command again.
 
-## Maintaining policy and verification evidence
+Change shared defaults in the [packaged templates](../../assets/agentenv/template/) or
+[generator](../../pkg/agentenv/generator/). Change a project's instructions in that project's source templates. Run the
+generator and inspect its output after changing a template.
 
-Update this policy and affected command explanations alongside changes to their behavior. Review public go42-docs
-guidance when an advertised workflow changes, and review go42's local handbook when its effective instructions are
-affected. Report unmapped documentation impact explicitly when source or retrieval links are incomplete.
+## Adding a page
 
-Use the checks appropriate to the changed documentation and the behavior it describes. The
-[Taskfile](../../Taskfile.yaml) defines the available repository checks. Record the command or method, relevant versions,
-environment, expected result, observed result, and remaining gaps. Label source review, execution evidence, and planned
-behavior separately. Review rendered content and navigation when a change affects publication.
+Keep handbook pages in `docs/handbook/`. Use a lowercase filename with hyphens between words. Give each page a YAML
+header with a unique `id`, a clear `title`, and `collection: handbook`, followed by one H1 heading matching the title.
+Keep the ID when renaming or moving the page.
 
-When adopting a changed shared writing rule, update the local rule and policy edition together. Record the scope and
-reason for local exceptions and coordinate changes with the corresponding go42 and go42-docs policies.
+Add the page to the [index](../README.md) with a short description. Use relative links to local files, including `.md`
+for Markdown pages. Fix links when a page moves. Read the page in an editor or repository viewer and check its headings,
+examples, tables, and links.
 
-## Source files and authoring
+## Checking changes
 
-Start at the [documentation index](../README.md). Maintain authored guidance in `docs/` and update an existing page when
-it owns the subject. Handbook pages live in `docs/handbook/`; give a new page a lowercase, hyphenated filename, unique
-`id`, descriptive `title`, and `collection: handbook` in YAML front matter. Include one visible H1 and add the page to the
-index with a short purpose. These are authoring conventions; the current lint tasks do not validate the metadata schema.
-
-Use relative links to local Markdown and source files, with `.md` on document links. Review inbound links and adjust
-relative paths when moving a document. Preview Markdown in an editor or repository viewer and check headings, code
-blocks, tables, and link destinations. go42x documentation currently has no website build or publishing task.
-
-Edit the owning source template when changing generated instructions. Keep detailed task logs and temporary output in
-`.build/`; retain durable facts in the owning handbook and evidence with the implementation review.
-
-## Setup and documentation checks
-
-Install mise and Task and make both available on `PATH`. The [mise configuration](../../etc/mise.toml) specifies the
-minimum mise version and pinned project tools. From the go42x repository root, prepare the documentation tools:
+Install mise and Task first. From the go42x repository root, prepare the documentation tools:
 
 ```sh
 task setup:docs
 ```
 
-This installs locked Task, Node.js, Markdownlint, and Vale versions and downloads the configured style packages. Tools and
-caches live in `.tools/`; downloaded styles live in `etc/.vale/styles/`. Initial setup needs network access. Run setup
-again after changing the tool configuration, lockfile, or Vale packages. The full `task setup` also prepares these tools
-alongside the other development dependencies.
+The full `task setup` also installs them. Repeat setup when the tool configuration or Vale styles change.
 
 After editing, run:
 
@@ -111,32 +74,14 @@ After editing, run:
 task docs:check
 ```
 
-This checks Markdown and prose under `docs/` and exits with status zero on success. Use
-`task lint:markdown -- docs/handbook/documentation.md` or `task lint:prose -- docs/handbook/documentation.md` for a targeted
-check. Fix findings in the authored files and rerun the full documentation check before completing the change.
+This runs Markdownlint and Vale on `docs/`. It checks formatting and prose; it does not validate page headers or build a
+website. Check links and try any changed command examples yourself. CI runs the same documentation checks.
 
-The [documentation lint job](../../.github/workflows/110-lint.yaml) runs `task setup:docs` and `task docs:check` in CI.
-The [unified workflow](../../.github/workflows/100-unified-workflow.yaml) requires lint to pass before subsequent test and
-build stages. Keep Task definitions, CI callers, and these instructions aligned when commands or check coverage change.
+In the change description, say what you checked, what happened, and anything still untested. Include environment details
+when they explain the result. Keep temporary files in `.build/` and useful instructions in the handbook.
 
-## Reviewing changes and retaining results
+## Keeping the guides consistent
 
-| Changed source                                    | Documentation to inspect                                                                                       |
-|---------------------------------------------------|----------------------------------------------------------------------------------------------------------------|
-| CLI commands or configuration                     | Local command guidance and examples; public go42-docs workflows that invoke the command.                       |
-| Packaged templates or generators                  | Input/output ownership, rerun and recovery instructions, generated examples, and affected go42 handbook pages. |
-| Tool versions, Taskfile, or release configuration | Installation, prerequisites, verification commands, and claims about platform coverage.                        |
-
-Link related changes in go42 and go42-docs and identify the version their examples describe. Execute the affected
-procedure when its commands, defaults, prerequisites, output, or state changes. Check repeated execution and recovery
-where applicable. A wording edit needs proportionate Markdown review and documentation checks.
-
-Keep the date, page and steps, documentation and go42x revisions, relevant go42 revision, local modifications,
-OS/architecture, tool versions, initial state, commands, expected and actual results, cleanup, and remaining gaps with
-the implementation change. Include the fields relevant to the procedure and link durable evidence from its owning
-document. Update the example's applicability after rerunning it; retain earlier results with their original baseline.
-
-Markdown and prose checks establish their configured rule results. Verify source links during review and run the command
-or application checks needed to support changed instructions. Mark untested environments and planned capabilities
-explicitly. When reporting a failure, include the page, step, revisions, environment, and expected and actual results,
-with credentials removed from retained output.
+Update docs with the commands and templates they describe. Check the go42 handbook and go42 guide when the change also
+affects their examples. When a shared writing rule changes, update it in all three projects and explain any local
+difference.
