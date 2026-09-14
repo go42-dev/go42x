@@ -66,6 +66,8 @@ func newCheckCommand(f *cmdutil.Factory) *cobra.Command {
 			return nil
 		},
 	}
+
 	cmd.Flags().Bool("json", false, "output structured freshness results")
+
 	return cmd
 }

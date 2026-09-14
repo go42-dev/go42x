@@ -74,6 +74,7 @@ func runBuildCommand(f *cmdutil.Factory, settings *kwb.Settings) error {
 	if err != nil {
 		return fmt.Errorf("failed to create service: %w", err)
 	}
+
 	defer service.Close() // nolint:errcheck
 
 	if _, err := service.BuildIndex(f.Context(), settings.RootPath); err != nil {

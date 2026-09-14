@@ -26,7 +26,13 @@ func NewKnowledgeBaseCommand(f *cmdutil.Factory) *cobra.Command {
 	cmd.PersistentFlags().
 		Duration("search-timeout", defaults.SearchTimeout, "maximum duration of a knowledge-base read")
 
-	cmd.AddCommand(newBuildCommand(f), newSearchCommand(f), newReadCommand(f), newStatsCommand(f), newCheckCommand(f))
+	cmd.AddCommand(
+		newBuildCommand(f),
+		newSearchCommand(f),
+		newReadCommand(f),
+		newStatsCommand(f),
+		newCheckCommand(f),
+	)
 
 	return cmd
 }

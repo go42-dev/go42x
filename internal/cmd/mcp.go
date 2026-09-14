@@ -44,10 +44,14 @@ func NewMCPCommand(f *cmdutil.Factory) *cobra.Command {
 
 	cmd.Flags().
 		String("root", ".", "project root (default indexed project root, or current directory without an index)")
-	cmd.Flags().String("index", kwb.NewSettings().IndexPath, "knowledge-base index path")
-	cmd.Flags().Duration("search-timeout", kwb.NewSettings().SearchTimeout, "maximum duration of knowledge-base reads")
-	cmd.Flags().String("docs-entrypoint", kwb.DefaultEntrypoint, "project-relative documentation entrypoint")
-	cmd.Flags().StringSlice("context-doc", nil, "authored document IDs to include as project guidance (at most 8)")
+	cmd.Flags().
+		String("index", kwb.NewSettings().IndexPath, "knowledge-base index path")
+	cmd.Flags().
+		Duration("search-timeout", kwb.NewSettings().SearchTimeout, "maximum duration of knowledge-base reads")
+	cmd.Flags().
+		String("docs-entrypoint", kwb.DefaultEntrypoint, "project-relative documentation entrypoint")
+	cmd.Flags().
+		StringSlice("context-doc", nil, "authored document IDs to include as project guidance (at most 8)")
 
 	return cmd
 }

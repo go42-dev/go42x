@@ -27,8 +27,6 @@ before teaching new commands or claiming platform support.
 
 ## Shared writing rules
 
-Shared policy edition: September 14, 2026. Record software applicability separately for each procedure.
-
 The [public documentation policy](https://go42.dev/docs/documentation/) is the editorial home of these rules. This local
 copy keeps them usable in the go42x checkout. Apply each rule to the page's purpose; choose useful headings and remove
 empty or irrelevant template sections.
