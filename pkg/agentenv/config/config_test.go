@@ -193,7 +193,7 @@ func TestDefaultConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cfg.Providers) != 5 || len(cfg.MCP) != 6 {
+	if len(cfg.Providers) != 5 || len(cfg.MCP) != 7 {
 		t.Fatalf("default providers/servers = %d/%d", len(cfg.Providers), len(cfg.MCP))
 	}
 	paths := []string{cfg.Context.Template, cfg.Context.ChunksDir}
@@ -209,7 +209,7 @@ func TestDefaultConfig(t *testing.T) {
 		if len(s.Tools) == 0 {
 			t.Errorf("server %s has no tools", name)
 		}
-		if s.Enabled != (name == "go42x" || name == "gopls") {
+		if s.Enabled != (name == "go42x" || name == "gopls" || name == "mise") {
 			t.Errorf("unexpected enabled state for %s", name)
 		}
 	}

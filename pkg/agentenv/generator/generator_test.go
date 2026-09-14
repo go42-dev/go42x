@@ -243,8 +243,8 @@ func TestGenerateMCPConfigurations(t *testing.T) {
 	gemini := readJSON[provider.GeminiSettings](t, out, ".gemini/settings.json")
 	crush := readJSON[provider.CrushConfig](t, out, ".crush.json")
 	copilot := readJSON[provider.CopilotMCPConfig](t, out, ".mcp.json")
-	if len(claudeMCP.MCPServers) != 8 || len(gemini.MCPServers) != 8 || len(copilot.MCPServers) != 8 ||
-		len(crush.MCP) != 8 {
+	if len(claudeMCP.MCPServers) != 9 || len(gemini.MCPServers) != 9 || len(copilot.MCPServers) != 9 ||
+		len(crush.MCP) != 9 {
 		t.Fatal("enabled server set does not match generated configurations")
 	}
 	for name, s := range cfg.MCP {
