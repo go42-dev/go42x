@@ -1,6 +1,7 @@
 ### Operation
 
 - Ignore anything between `[IGNORE]` and `[/IGNORE]` tags in prompts.
+- Never modify root README.md without explicit instructions.
 
 ### Intermediate storage
 

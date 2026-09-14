@@ -34,8 +34,3 @@ go install github.com/go42-dev/go42x@latest
 ### Download Binary
 
 Download the latest binary from the [releases page](https://github.com/go42-dev/go42x/releases).
-
-## Embedded assets
-
-Bundled templates and the configuration schema live in [`assets/agentenv/`](assets/agentenv/).
-Edit these files to change the defaults bundled into the CLI; [`assets/embed.go`](assets/embed.go) embeds them at build time.
