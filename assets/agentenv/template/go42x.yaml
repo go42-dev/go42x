@@ -30,6 +30,8 @@ context:
 # auto-approve-tools configures native tool approvals for Claude, Gemini, and Crush.
 # Other existing settings are preserved; defaults fill only missing fields.
 # Set enabled: false to skip a provider; omitted enabled defaults to true.
+# Keep shared defaults disabled; enable your providers in ignored go42x.local.yaml.
+# --providers or GO42X_PROVIDERS selects an exact list for generate and doctor.
 # Disabling preserves existing settings and removes generated CLAUDE.md/GEMINI.md imports.
 # Shared AGENTS.md is still generated when all providers are disabled.
 providers:

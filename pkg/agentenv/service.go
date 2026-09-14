@@ -88,7 +88,7 @@ func (s *Service) Generate(ctx context.Context) error {
 
 	templateDir := filepath.Join(workingDir, agentEnvDir)
 	cfgPath := filepath.Join(templateDir, configFile)
-	cfg, err := config.LoadConfig(cfgPath)
+	cfg, err := config.LoadProjectConfig(cfgPath, s.settings.Providers)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
@@ -108,6 +108,7 @@ func (s *Service) Generate(ctx context.Context) error {
 }
 
 var ignoreFiles = []string{
+	".go42x/go42x.local.yaml",
 	".go42x/kwb/",
 	".go42x/backups/",
 	".mcp.json",

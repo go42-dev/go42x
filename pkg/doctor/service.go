@@ -50,7 +50,7 @@ func NewService(settings *Settings, opts ...Option) (*Service, error) {
 	}
 
 	agentEnvSvc, err := agentenv.NewAgentEnvService(
-		&agentenv.Settings{},
+		&agentenv.Settings{Providers: svc.settings.Providers},
 		agentenv.WithLogger(svc.logger.With("component", "agentenv")))
 	if err != nil {
 		return nil, err

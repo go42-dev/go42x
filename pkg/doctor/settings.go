@@ -3,6 +3,8 @@ package doctor
 import (
 	"fmt"
 	"time"
+
+	"github.com/go42-dev/go42x/pkg/agentenv/config"
 )
 
 type Settings struct {
@@ -11,6 +13,7 @@ type Settings struct {
 	ProbeMCP  bool
 	Timeout   time.Duration
 	JSON      bool
+	Providers []string
 }
 
 func NewSettings() *Settings {
@@ -30,5 +33,5 @@ func (s *Settings) Validate() error {
 	if s.Timeout <= 0 {
 		return fmt.Errorf("timeout must be positive")
 	}
-	return nil
+	return config.ValidateProviders(s.Providers)
 }

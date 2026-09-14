@@ -65,6 +65,8 @@ func TestInitExtractsTemplatesAndPreservesCustomFiles(t *testing.T) {
 	custom := filepath.Join(dir, ".go42x/chunks/10-personality.tpl.md")
 	writeFile(t, custom, "custom personality")
 	writeFile(t, filepath.Join(dir, ".gitignore"), "existing-entry\n")
+	localPath := filepath.Join(dir, ".go42x", config.LocalConfigFile)
+	writeFile(t, localPath, "providers: {codex: {enabled: true}}\n")
 	s := testService(t, dir, false)
 	if err := s.Init(t.Context()); err != nil {
 		t.Fatal(err)
@@ -143,6 +145,9 @@ func TestInitExtractsTemplatesAndPreservesCustomFiles(t *testing.T) {
 	}
 	if !bytes.Equal(before, readFile(t, filepath.Join(dir, ".gitignore"))) {
 		t.Fatal("repeated init changed gitignore")
+	}
+	if string(readFile(t, localPath)) != "providers: {codex: {enabled: true}}\n" {
+		t.Fatal("repeated init changed local preferences")
 	}
 }
 

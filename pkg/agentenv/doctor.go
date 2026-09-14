@@ -19,7 +19,7 @@ import (
 func (s *Service) DoctorChecks(root string) []check.Check {
 	checks := []check.Check{{ID: "agentenv.config", Run: func(ctx context.Context) check.Result {
 		var err error
-		s.config, err = config.LoadConfig(filepath.Join(root, agentEnvDir, configFile))
+		s.config, err = config.LoadProjectConfig(filepath.Join(root, agentEnvDir, configFile), s.settings.Providers)
 		if err != nil {
 			message := "Configuration cannot be read or validated"
 			if errors.Is(err, os.ErrNotExist) {
@@ -29,7 +29,7 @@ func (s *Service) DoctorChecks(root string) []check.Check {
 			return check.Result{
 				Status:      check.Fail,
 				Message:     message,
-				Remediation: "Run go42x agentenv init if needed, then review .go42x/go42x.yaml",
+				Remediation: "Run go42x agentenv init if needed, then review .go42x/go42x.yaml and go42x.local.yaml",
 			}
 		}
 		return check.Result{Status: check.Pass, Message: "Configuration is valid"}
@@ -67,7 +67,7 @@ func (s *Service) DoctorChecks(root string) []check.Check {
 			return check.Result{
 				Status:      check.Warn,
 				Message:     "No agent providers are enabled",
-				Remediation: "Enable the providers you use in .go42x/go42x.yaml",
+				Remediation: "Select providers in .go42x/go42x.local.yaml, with GO42X_PROVIDERS, or with --providers",
 			}
 		}
 		return check.Result{Status: check.Pass, Message: "Enabled agent providers", Evidence: enabled}

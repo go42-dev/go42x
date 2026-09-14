@@ -20,11 +20,11 @@ var (
 )
 
 const (
-	SupportedVersion = "1.0"
-
+	SupportedVersion   = "1.0"
 	MCPServerTypeStdio = "stdio"
 	MCPServerTypeHTTP  = "http"
 	MCPServerTypeSSE   = "sse"
+	LocalConfigFile    = "go42x.local.yaml"
 )
 
 type Config struct {
@@ -86,12 +86,32 @@ func (s MCPServer) Transport() string {
 }
 
 func LoadConfig(path string) (*Config, error) {
+	data, err := readConfig(path)
+	if err != nil {
+		return nil, err
+	}
+	cfg, err := decodeConfig(data)
+	if err != nil {
+		return nil, err
+	}
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
+	}
+	return cfg, nil
+}
+
+func readConfig(path string) ([]byte, error) {
 	// #nosec G304 -- Reading the caller-selected project configuration is the purpose of this loader.
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
+	return data, nil
+}
 
+// decodeConfig checks field names, value types, and document boundaries without
+// requiring a complete configuration. Validation follows override resolution.
+func decodeConfig(data []byte) (*Config, error) {
 	var config Config
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)
@@ -104,10 +124,6 @@ func LoadConfig(path string) (*Config, error) {
 			return nil, fmt.Errorf("failed to parse YAML: %w", err)
 		}
 		return nil, fmt.Errorf("configuration must contain exactly one YAML document")
-	}
-
-	if err := config.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid config: %w", err)
 	}
 
 	return &config, nil
