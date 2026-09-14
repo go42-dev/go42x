@@ -40,6 +40,7 @@ type manifest struct {
 	IndexType string                `json:"index_type"`
 	BuiltAt   time.Time             `json:"built_at"`
 	Files     map[string]fileRecord `json:"files"`
+	Selection *sourceSelection      `json:"selection,omitempty"`
 }
 
 type snapshot struct {
@@ -318,6 +319,9 @@ func (m *indexManager) BuildIndex(ctx context.Context, root string) (report Buil
 			return report, err
 		}
 	}
+	if err := ensureSourceIgnore(ctx, root); err != nil {
+		return report, err
+	}
 	report.Rebuilt = m.settings.Rebuild || previous == nil || previous.Version != schemaVersion ||
 		previous.Root != root ||
 		previous.IndexType != m.settings.IndexType
@@ -329,6 +333,7 @@ func (m *indexManager) BuildIndex(ctx context.Context, root string) (report Buil
 		Root:      root,
 		IndexType: m.settings.IndexType,
 		Files:     map[string]fileRecord{},
+		Selection: selectionFrom(m.settings),
 	}
 	var directory string
 	var index bleve.Index
@@ -469,7 +474,8 @@ func (m *indexManager) BuildIndex(ctx context.Context, root string) (report Buil
 		report.Chunks += record.Chunks
 	}
 	report.Files = len(meta.Files)
-	if report.Indexed == 0 && report.Deleted == 0 && !report.Rebuilt {
+	if report.Indexed == 0 && report.Deleted == 0 && !report.Rebuilt &&
+		previous.Selection.equal(meta.Selection) {
 		return report, ctx.Err()
 	}
 	if err := prepare(); err != nil {

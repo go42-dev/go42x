@@ -56,6 +56,21 @@ func (mr *MockindexAccessorMockRecorder) BuildIndex(ctx, rootPath any) *gomock.C
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BuildIndex", reflect.TypeOf((*MockindexAccessor)(nil).BuildIndex), ctx, rootPath)
 }
 
+// CheckFreshness mocks base method.
+func (m *MockindexAccessor) CheckFreshness(ctx context.Context) (*kwb.FreshnessResult, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CheckFreshness", ctx)
+	ret0, _ := ret[0].(*kwb.FreshnessResult)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CheckFreshness indicates an expected call of CheckFreshness.
+func (mr *MockindexAccessorMockRecorder) CheckFreshness(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CheckFreshness", reflect.TypeOf((*MockindexAccessor)(nil).CheckFreshness), ctx)
+}
+
 // CloseIndex mocks base method.
 func (m *MockindexAccessor) CloseIndex() error {
 	m.ctrl.T.Helper()

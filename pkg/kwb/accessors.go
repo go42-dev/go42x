@@ -11,6 +11,7 @@ type indexAccessor interface {
 	GetFile(ctx context.Context, path string, startLine, endLine int) (*FileContent, error)
 	ListFiles(ctx context.Context, options ListOptions) (*FilesResponse, error)
 	GetStats(ctx context.Context) (*Stats, error)
+	CheckFreshness(ctx context.Context) (*FreshnessResult, error)
 	ProjectRoot() (string, error)
 	CloseIndex() error
 }

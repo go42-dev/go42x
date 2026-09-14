@@ -15,7 +15,7 @@ import (
 )
 
 var defaultExcludedDirs = []string{
-	".git", "vendor", "node_modules", ".idea", ".vscode", "dist", "build", "bin", ".go42x",
+	".git", "vendor", "node_modules", ".idea", ".vscode", "dist", "build", "bin",
 	".build", ".tools", ".task", ".venv", "__pycache__",
 }
 
@@ -36,7 +36,75 @@ var defaultExcludedFiles = []string{
 	"poetry.lock",
 }
 
-var defaultFilenames = []string{"Makefile", "Dockerfile", ".gitignore", ".env"}
+var defaultFilenames = []string{"Makefile", "Dockerfile", ".gitignore", ".env", ".env.example", "kwb.ignore"}
+
+const sourceIgnorePath = ".go42x/kwb.ignore"
+
+// Only authored configuration and instruction templates belong to the corpus.
+func authoredAgentFile(relative string, directory bool) bool {
+	parts := strings.Split(filepath.ToSlash(relative), "/")
+	for i, part := range parts {
+		if part != ".go42x" {
+			continue
+		}
+		tail := parts[i+1:]
+		if len(tail) == 0 {
+			return directory
+		}
+		if tail[0] == "chunks" {
+			return directory || strings.HasSuffix(relative, ".tpl.md")
+		}
+		if len(tail) != 1 || directory {
+			return false
+		}
+		return tail[0] == "go42x.yaml" || tail[0] == "kwb.ignore" || strings.HasSuffix(tail[0], ".tpl.md")
+	}
+	return true
+}
+
+func (m *indexManager) sourceExclusions(ctx context.Context, root string) (gitignore.Matcher, error) {
+	handle, err := os.OpenRoot(root)
+	if err != nil {
+		return nil, err
+	}
+	defer handle.Close() //nolint:errcheck
+	var lines []string
+	info, err := handle.Lstat(sourceIgnorePath)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	if err == nil && info.Mode().IsRegular() {
+		file, err := handle.Open(sourceIgnorePath)
+		if err != nil {
+			return nil, err
+		}
+		defer file.Close()
+		data, err := readBounded(ctx, file, MaxReadBytes)
+		if err != nil {
+			return nil, fmt.Errorf("reading %s: %w", sourceIgnorePath, err)
+		}
+		lines = strings.Split(string(data), "\n")
+	}
+	lines = append(lines, m.settings.ExcludeFiles...)
+	patterns := []gitignore.Pattern{}
+	for _, line := range lines {
+		line = strings.TrimSuffix(line, "\r")
+		if line != "" && !strings.HasPrefix(line, "#") {
+			// Keep descendants reachable for later exceptions to /** patterns.
+			if strings.HasSuffix(line, "/**") {
+				line += "/*"
+			}
+			if line == "**" {
+				line = "*"
+			}
+			if line == "!**" {
+				line = "!*"
+			}
+			patterns = append(patterns, gitignore.ParsePattern(line, nil))
+		}
+	}
+	return gitignore.NewMatcher(patterns), nil
+}
 
 func (m *indexManager) shouldIndexFile(name string) bool {
 	ext := strings.ToLower(filepath.Ext(name))
@@ -58,10 +126,15 @@ func (m *indexManager) walkFiles(
 	root string,
 	visit func(string, os.FileInfo, []byte) error,
 ) error {
-	return m.walkDirectory(ctx, root, "", nil, visit)
+	exclusions, err := m.sourceExclusions(ctx, root)
+	if err != nil {
+		return err
+	}
+	return m.walkDirectory(ctx, root, "", nil, exclusions, visit)
 }
 
 func (m *indexManager) walkDirectory(ctx context.Context, root, relative string, inherited []gitignore.Pattern,
+	exclusions gitignore.Matcher,
 	visit func(string, os.FileInfo, []byte) error) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -114,13 +187,17 @@ func (m *indexManager) walkDirectory(ctx context.Context, root, relative string,
 		if matcher.Match(strings.Split(filepath.ToSlash(rel), "/"), entry.IsDir()) {
 			continue
 		}
+		if !authoredAgentFile(rel, entry.IsDir()) ||
+			exclusions.Match(strings.Split(filepath.ToSlash(rel), "/"), entry.IsDir()) {
+			continue
+		}
 		if entry.IsDir() {
 			if slices.Contains(defaultExcludedDirs, entry.Name()) ||
 				slices.Contains(m.settings.ExcludeDirs, entry.Name()) ||
 				slices.Contains(m.settings.ExcludeDirs, filepath.ToSlash(rel)) {
 				continue
 			}
-			if err := m.walkDirectory(ctx, root, rel, patterns, visit); err != nil {
+			if err := m.walkDirectory(ctx, root, rel, patterns, exclusions, visit); err != nil {
 				return err
 			}
 			continue

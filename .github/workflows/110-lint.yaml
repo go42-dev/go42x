@@ -126,6 +126,34 @@ jobs:
       - name: 'Check GitHub Actions workflows'
         run: task --exit-code lint:actions
 
+  # Documentation checks use the same Task entrypoint locally and in CI.
+  documentation-lint:
+    name: documentation-lint
+    runs-on: ${{ inputs.runs_on }}
+    continue-on-error: ${{ inputs.continue_on_error }}
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    permissions:
+      contents: read
+    env:
+      MISE_DEFAULT_CONFIG_FILENAME: etc/mise.toml
+      MISE_DATA_DIR: ${{ github.workspace }}/.tools
+      MISE_CACHE_DIR: ${{ github.workspace }}/.tools/cache
+      MISE_STATE_DIR: ${{ github.workspace }}/.tools/state
+    steps:
+      - name: 'Checkout repository'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: 'Install pinned Task'
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: '2026.9.1'
+          install_args: --locked task
+      - name: 'Set up documentation tools'
+        run: task setup:docs
+      - name: 'Check Markdown and prose'
+        run: task docs:check
+
   # Ensure generated files and Go module metadata are committed and up to date.
   project-lint:
     name: project-lint

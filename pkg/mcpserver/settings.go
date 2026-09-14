@@ -13,6 +13,7 @@ type Settings struct {
 	ExplicitRoot   bool
 	IndexPath      string
 	DocsEntrypoint string
+	ContextDocs    []string
 	SearchTimeout  time.Duration
 }
 
@@ -37,5 +38,6 @@ func (s *Settings) KnowledgeBaseSettings() *kwb.Settings {
 	settings.RequireRootMatch = s.ExplicitRoot
 	settings.SearchTimeout = s.SearchTimeout
 	settings.Entrypoint = s.DocsEntrypoint
+	settings.ContextDocs = s.ContextDocs
 	return settings
 }

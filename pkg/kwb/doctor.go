@@ -2,6 +2,7 @@ package kwb
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 
 	"github.com/go42-dev/go42x/pkg/doctor/check"
@@ -25,18 +26,32 @@ func DoctorChecks(root, indexPath string) []check.Check {
 			}
 		}
 		defer service.Close() //nolint:errcheck
-		stats, err := service.GetStats(ctx)
+		freshness, err := service.CheckFreshness(ctx)
 		if err != nil {
+			if freshness != nil && freshness.Generation != "" {
+				return check.Result{
+					Status:      check.Warn,
+					Message:     "Index freshness scan could not complete",
+					Remediation: "go42x kwb check --json --search-timeout=30s",
+					Evidence:    []string{freshness.Generation},
+				}
+			}
 			return check.Result{
 				Status:      check.Fail,
 				Message:     "Index missing, unreadable, incompatible, or belongs to another project",
 				Remediation: "go42x kwb build --rebuild",
 			}
 		}
+		if !freshness.Complete || freshness.Status != "fresh" {
+			return check.Result{Status: check.Warn,
+				Message: fmt.Sprintf("Index %s: %d new, %d changed, %d deleted, %d excluded", freshness.Status,
+					freshness.New.Count, freshness.Changed.Count, freshness.Deleted.Count, freshness.Excluded.Count),
+				Remediation: "go42x kwb build; go42x kwb check --json", Evidence: []string{freshness.Generation}}
+		}
 		return check.Result{
 			Status:   check.Pass,
-			Message:  "Index is readable and matches the project; source freshness is unchecked",
-			Evidence: []string{stats.Generation},
+			Message:  "Index matches eligible source checked during this scan",
+			Evidence: []string{freshness.Generation},
 		}
 	}}}
 }

@@ -82,6 +82,7 @@ func TestFilteringAndIncrementalUpdates(t *testing.T) {
 	want := []string{
 		".env",
 		".gitignore",
+		sourceIgnorePath,
 		"Dockerfile",
 		"README.md",
 		"extra.xyz",
@@ -263,7 +264,7 @@ func TestPaginationAndFileReading(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if page.Total != 1052 {
+		if page.Total != 1053 {
 			t.Fatalf("total=%d", page.Total)
 		}
 		for _, file := range page.Files {
@@ -274,7 +275,7 @@ func TestPaginationAndFileReading(t *testing.T) {
 		}
 		offset = *page.NextOffset
 	}
-	if len(paths) != 1052 || len(slices.Compact(paths)) != 1052 {
+	if len(paths) != 1053 || len(slices.Compact(paths)) != 1053 {
 		t.Fatal("pagination lost or duplicated files")
 	}
 	first, err := service.Search(t.Context(), SearchOptions{
@@ -517,7 +518,7 @@ func TestRecursiveIgnoreNegationAndRootReads(t *testing.T) {
 	for _, file := range files.Files {
 		paths = append(paths, file.Path)
 	}
-	if !slices.Equal(paths, []string{".gitignore", "keep.md", "recursive/keep.md"}) {
+	if !slices.Equal(paths, []string{".gitignore", sourceIgnorePath, "keep.md", "recursive/keep.md"}) {
 		t.Fatalf("ignore semantics: %v", paths)
 	}
 	outside := filepath.Join(t.TempDir(), "outside.md")
@@ -588,7 +589,8 @@ func TestDocumentationMetadataAndFrontmatter(t *testing.T) {
 		t.Fatalf("metadata: %+v", hit)
 	}
 	stats, err := service.GetStats(t.Context())
-	if err != nil || stats.ChunkCount != 1 {
+	// One document chunk plus the automatically created project ignore file.
+	if err != nil || stats.ChunkCount != 2 {
 		t.Fatalf("front matter produced extra chunks: %+v %v", stats, err)
 	}
 }

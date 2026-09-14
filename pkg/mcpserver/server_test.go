@@ -278,7 +278,7 @@ func TestKnowledgeBaseStats(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if stats.DocumentCount != 2 || stats.IndexPath != indexPath {
+		if stats.DocumentCount != 3 || stats.IndexPath != indexPath {
 			t.Fatalf("unexpected index statistics: %+v", stats)
 		}
 	}

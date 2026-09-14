@@ -101,7 +101,7 @@ func TestRunnersUseTypedSettingsAndFactoryStreams(t *testing.T) {
 					t.Fatalf("read: %+v", result)
 				}
 			case "stats":
-				if result["document_count"] != float64(1) {
+				if result["document_count"] != float64(2) {
 					t.Fatalf("stats: %+v", result)
 				}
 			}

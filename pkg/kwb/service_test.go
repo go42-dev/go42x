@@ -73,11 +73,14 @@ func TestContextOrderStatusSourceAndDeterminism(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Items) < 5 || result.Items[0].Path != "docs/README.md" || result.Items[1].Reason != "direct_link" {
+	if len(result.Items) < 5 || result.Items[0].Path != "docs/README.md" || result.Items[1].Path != "src/auth.go" {
 		t.Fatalf("items: %+v", result.Items)
 	}
-	foundCode, foundDraft := false, false
+	foundCode, foundDraft, foundLink := false, false, false
 	for _, item := range result.Items {
+		if item.Path == "docs/handbook/auth.md" && item.Reason == "direct_link" && len(item.Evidence) > 0 {
+			foundLink = true
+		}
 		if item.Path == "src/auth.go" {
 			foundCode = true
 		}
@@ -88,8 +91,8 @@ func TestContextOrderStatusSourceAndDeterminism(t *testing.T) {
 			t.Fatal("template in implementation context")
 		}
 	}
-	if !foundCode || !foundDraft {
-		t.Fatalf("code=%v draft=%v", foundCode, foundDraft)
+	if !foundCode || !foundDraft || !foundLink {
+		t.Fatalf("code=%v draft=%v link=%v", foundCode, foundDraft, foundLink)
 	}
 	second, err := service.Context(t.Context(), options)
 	if err != nil || !reflect.DeepEqual(result, second) {

@@ -47,4 +47,9 @@ func TestDoctorIndexCheck(t *testing.T) {
 			}
 		})
 	}
+	writeFixture(t, root, "new.md", "new source\n")
+	report, err = check.Run(t.Context(), DoctorChecks(root, "")...)
+	if err != nil || report.Status != check.Warn {
+		t.Fatalf("stale index: %+v %v", report, err)
+	}
 }

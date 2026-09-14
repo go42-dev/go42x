@@ -47,7 +47,7 @@ func TestKnowledgeBaseDefaultsToHelp(t *testing.T) {
 	if output != help {
 		t.Fatalf("kwb output differs from --help:\n%s", output)
 	}
-	for _, command := range []string{"build", "read", "search", "stats"} {
+	for _, command := range []string{"build", "read", "search", "stats", "check"} {
 		if !strings.Contains(output, "\n  "+command+" ") {
 			t.Errorf("help does not list %s:\n%s", command, output)
 		}
@@ -90,10 +90,21 @@ func TestKnowledgeBaseBuildCommand(t *testing.T) {
 			if output, err := executeCommand(t, args...); err != nil {
 				t.Fatalf("build: %v\n%s", err, output)
 			}
+			ignorePath := filepath.Join(root, ".go42x/kwb.ignore")
+			ignore, err := os.ReadFile(ignorePath)
+			if err != nil ||
+				string(ignore) != "# go42x knowledgebase will ignore the following files and directories\n\n" {
+				t.Fatalf("default project ignore file: %q %v", ignore, err)
+			}
 			current := filepath.Join(index, "CURRENT")
 			generation, err := os.ReadFile(current)
 			if err != nil {
 				t.Fatal(err)
+			}
+			checkOutput, err := executeCommand(t, "kwb", "check", "--index", index, "--json")
+			var freshness kwb.FreshnessResult
+			if err != nil || json.Unmarshal([]byte(checkOutput), &freshness) != nil || freshness.Status != "fresh" {
+				t.Fatalf("check did not retain custom build settings: %s %v", checkOutput, err)
 			}
 
 			output, err := executeCommand(t, "kwb", "search", "nectarines", "--index", index, "--json")
@@ -128,6 +139,20 @@ func TestKnowledgeBaseBuildCommand(t *testing.T) {
 			}
 			if bytes.Equal(generation, rebuilt) {
 				t.Fatal("--rebuild did not replace the index generation")
+			}
+			for _, custom := range []string{"# Local exclusions\n*.generated.js\n", ""} {
+				if err := os.WriteFile(ignorePath, []byte(custom), 0600); err != nil {
+					t.Fatal(err)
+				}
+				for _, buildArgs := range [][]string{args, append(args, "--rebuild")} {
+					if output, err := executeCommand(t, buildArgs...); err != nil {
+						t.Fatalf("build with custom ignore: %v\n%s", err, output)
+					}
+					preserved, err := os.ReadFile(ignorePath)
+					if err != nil || string(preserved) != custom {
+						t.Fatalf("build overwrote custom exclusions: %q %v", preserved, err)
+					}
+				}
 			}
 		})
 	}

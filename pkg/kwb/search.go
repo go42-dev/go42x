@@ -34,6 +34,10 @@ type SearchOptions struct {
 }
 
 type SearchResult struct {
+	ChunkID        string   `json:"chunk_id"`
+	ChunkStartLine int      `json:"chunk_start_line"`
+	ChunkEndLine   int      `json:"chunk_end_line"`
+	Symbols        []string `json:"symbols,omitempty"`
 	SourceHash     string   `json:"source_hash"`
 	DocumentID     string   `json:"document_id,omitempty"`
 	DocumentStatus string   `json:"document_status,omitempty"`
@@ -142,6 +146,7 @@ func (m *indexManager) Search(ctx context.Context, options SearchOptions) (*Sear
 	)
 	request.SortBy([]string{"-_score", "_id"})
 	request.Fields = []string{
+		"symbols",
 		"path",
 		"kind",
 		"language",
@@ -170,8 +175,13 @@ func (m *indexManager) Search(ctx context.Context, options SearchOptions) (*Sear
 			}
 			text := func(name string) string { value, _ := hit.Fields[name].(string); return value }
 			start, _ := hit.Fields["start_line"].(float64)
+			end, _ := hit.Fields["end_line"].(float64)
 			snippet, first, last := excerpt(text("content"), options.Query)
 			response.Results = append(response.Results, SearchResult{
+				ChunkID:        hit.ID,
+				ChunkStartLine: int(start),
+				ChunkEndLine:   int(end),
+				Symbols:        stringValues(hit.Fields["symbols"]),
 				Path:           text("path"),
 				Kind:           text("kind"),
 				Language:       text("language"),

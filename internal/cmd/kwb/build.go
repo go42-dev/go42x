@@ -17,7 +17,7 @@ func newBuildCommand(f *cmdutil.Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "build",
 		Short: "Update the knowledge base index",
-		Long:  "Index changed documentation and source files.",
+		Long:  "Index changed documentation and source files. Create .go42x/kwb.ignore with a comment header if missing.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			settings := &kwb.Settings{
@@ -27,6 +27,7 @@ func newBuildCommand(f *cmdutil.Factory) *cobra.Command {
 				BatchSize:           viper.GetInt("batch-size"),
 				IndexType:           viper.GetString("index-type"),
 				ExcludeDirs:         viper.GetStringSlice("exclude-dir"),
+				ExcludeFiles:        viper.GetStringSlice("exclude-file"),
 				ExtraExtensions:     viper.GetStringSlice("include-ext"),
 				Rebuild:             viper.GetBool("rebuild"),
 				SearchTimeout:       defaults.SearchTimeout,
@@ -57,6 +58,8 @@ func newBuildCommand(f *cmdutil.Factory) *cobra.Command {
 		String("index-type", defaults.IndexType, "index type: scorch or upsidedown")
 	cmd.Flags().
 		StringSlice("exclude-dir", defaults.ExcludeDirs, "additional directories to exclude")
+	cmd.Flags().
+		StringSlice("exclude-file", nil, "additional root-relative gitignore patterns (also reads .go42x/kwb.ignore)")
 	cmd.Flags().
 		StringSlice("include-ext", defaults.ExtraExtensions, "additional file extensions to index")
 

@@ -28,6 +28,8 @@ func runMCPStdioSession(t *testing.T, expectTimeout bool) {
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 	defer cancel()
 	args := []string{"mcp", "--root", p.root, "--log-level=debug"}
+	p.env = append(p.env, "GO42X_CONTEXT_DOC=missing-env-guidance")
+	args = append(args, "--context-doc=overview")
 	if expectTimeout {
 		args = append(args, "--search-timeout=1ns")
 	}
@@ -161,8 +163,19 @@ func runMCPStdioSession(t *testing.T, expectTimeout bool) {
 		if err := json.Unmarshal([]byte(called.Content[0].Text), &stats); err != nil {
 			t.Fatal(err)
 		}
-		if stats.DocumentCount != 1 || stats.ChunkCount < 1 || stats.Generation == "" {
+		if stats.DocumentCount != 2 || stats.ChunkCount < 2 || stats.Generation == "" {
 			t.Fatalf("kwb_stats does not describe the indexed project: %+v", stats)
+		}
+		request(
+			4,
+			"tools/call",
+			map[string]any{"name": "project_context", "arguments": map[string]any{"task": "unrelated task"}},
+			&called,
+		)
+		if called.IsError || len(called.Content) != 1 ||
+			!strings.Contains(called.Content[0].Text, "project_guidance") ||
+			strings.Contains(called.Content[0].Text, "guidance_unavailable") {
+			t.Fatalf("configured guidance or flag precedence lost: %+v", called)
 		}
 	}
 	if err := stdin.Close(); err != nil {

@@ -61,12 +61,12 @@ func TestDoctorReportsAndExitCodes(t *testing.T) {
 	// Run outside the project so --root must select the requested directory.
 	caller := newProject(t)
 	for _, tc := range []struct {
-		name, status, configStatus string
-		exit                       int
+		name, status, configStatus, indexStatus string
+		exit                                    int
 	}{
-		{"healthy", "pass", "pass", 0},
-		{"outdated instructions", "warn", "pass", 0},
-		{"invalid configuration", "fail", "fail", 1},
+		{"healthy", "pass", "pass", "pass", 0},
+		{"outdated instructions", "warn", "pass", "warn", 0},
+		{"invalid configuration", "fail", "fail", "warn", 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			switch tc.name {
@@ -88,7 +88,7 @@ func TestDoctorReportsAndExitCodes(t *testing.T) {
 			for _, check := range report.Checks {
 				statuses[check.ID] = check.Status
 			}
-			if statuses["agentenv.config"] != tc.configStatus || statuses["kwb.index"] != "pass" {
+			if statuses["agentenv.config"] != tc.configStatus || statuses["kwb.index"] != tc.indexStatus {
 				t.Errorf("unexpected diagnostic checks: %v", statuses)
 			}
 			if strings.Contains(result.stderr, "Error:") {

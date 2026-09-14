@@ -20,6 +20,8 @@ type Settings struct {
 	IndexPath           string
 	ExtraExtensions     []string
 	ExcludeDirs         []string
+	ExcludeFiles        []string
+	ContextDocs         []string
 	MaxFileSize         int
 	BatchSize           int
 	IndexType           string
@@ -57,6 +59,14 @@ func (s *Settings) Validate() error {
 	}
 	if s.DefaultContentBytes < 1 || s.DefaultContentBytes > MaxContentBytes {
 		return fmt.Errorf("default content bytes must be between 1 and %d", MaxContentBytes)
+	}
+	if len(s.ContextDocs) > 8 {
+		return fmt.Errorf("context docs allows at most 8 authored IDs")
+	}
+	for _, id := range s.ContextDocs {
+		if strings.TrimSpace(id) == "" || len(id) > 128 {
+			return fmt.Errorf("context document IDs must contain 1 to 128 bytes")
+		}
 	}
 	if s.BatchSize <= 0 {
 		return fmt.Errorf("batch size must be greater than 0")
