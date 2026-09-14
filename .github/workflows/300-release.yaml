@@ -3,7 +3,7 @@
 name: release
 run-name: 'release ${{ inputs.version }}'
 
-# Validate a tested master commit, rerun unit tests, and publish signed CLI artifacts.
+# Validate a tested master commit, rerun unit and E2E tests, and publish signed CLI artifacts.
 
 on:
   workflow_dispatch:
@@ -140,11 +140,24 @@ jobs:
       source_sha: ${{ needs.validate-release.outputs.source_sha }}
       timeout_minutes: 10
 
+  e2e-tests:
+    needs:
+      - validate-release
+    permissions:
+      contents: read
+    uses: ./.github/workflows/120-e2e-tests.yaml
+    with:
+      runs_on: ubuntu-latest
+      continue_on_error: false
+      source_sha: ${{ needs.validate-release.outputs.source_sha }}
+      timeout_minutes: 10
+
   publish-release:
     name: publish-release
     needs:
       - validate-release
       - unit-tests
+      - e2e-tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -172,7 +185,7 @@ jobs:
           version: '2026.9.1'
           install_args: --locked task goreleaser syft cosign
       - name: 'Validate GoReleaser configuration'
-        run: task release-check
+        run: task release:check
       - name: 'Prepare local release tag'
         env:
           RELEASE_VERSION: ${{ needs.validate-release.outputs.release_version }}

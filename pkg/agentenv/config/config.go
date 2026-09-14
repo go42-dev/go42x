@@ -20,6 +20,8 @@ var (
 )
 
 const (
+	SupportedVersion = "1.0"
+
 	MCPServerTypeStdio = "stdio"
 	MCPServerTypeHTTP  = "http"
 	MCPServerTypeSSE   = "sse"
@@ -84,6 +86,7 @@ func (s MCPServer) Transport() string {
 }
 
 func LoadConfig(path string) (*Config, error) {
+	// #nosec G304 -- Reading the caller-selected project configuration is the purpose of this loader.
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
@@ -94,6 +97,13 @@ func LoadConfig(path string) (*Config, error) {
 	decoder.KnownFields(true)
 	if err := decoder.Decode(&config); err != nil && err != io.EOF {
 		return nil, fmt.Errorf("failed to parse YAML: %w", err)
+	}
+	var extra yaml.Node
+	if err := decoder.Decode(&extra); err != io.EOF {
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse YAML: %w", err)
+		}
+		return nil, fmt.Errorf("configuration must contain exactly one YAML document")
 	}
 
 	if err := config.Validate(); err != nil {
@@ -110,6 +120,9 @@ func (c *Config) Validate() error {
 
 	if c.Version == "" {
 		return fmt.Errorf("version is required")
+	}
+	if c.Version != SupportedVersion {
+		return fmt.Errorf("unsupported configuration version %q; supported version is %q", c.Version, SupportedVersion)
 	}
 
 	if c.Project.Name == "" {

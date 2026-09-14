@@ -1,0 +1,82 @@
+---
+
+name: release-tests
+
+# Run the existing CLI scenarios against each archive on its native OS and architecture.
+
+on:
+  workflow_call:
+    inputs:
+      artifact_id:
+        required: true
+        type: string
+      continue_on_error:
+        required: true
+        type: boolean
+      timeout_minutes:
+        required: false
+        type: number
+        default: 15
+
+permissions: {}
+
+jobs:
+  release-tests:
+    name: release-tests (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ${{ matrix.runs_on }}
+    continue-on-error: ${{ inputs.continue_on_error }}
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runs_on: ubuntu-24.04
+            goos: linux
+            goarch: amd64
+          - runs_on: ubuntu-24.04-arm
+            goos: linux
+            goarch: arm64
+          - runs_on: macos-15-intel
+            goos: darwin
+            goarch: amd64
+          - runs_on: macos-15
+            goos: darwin
+            goarch: arm64
+    env:
+      MISE_DEFAULT_CONFIG_FILENAME: etc/mise.toml
+      MISE_DATA_DIR: ${{ github.workspace }}/.tools
+      MISE_CACHE_DIR: ${{ github.workspace }}/.tools/cache
+      MISE_STATE_DIR: ${{ github.workspace }}/.tools/state
+    steps:
+      - name: 'Checkout repository'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: 'Setup Go'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: 'go.mod'
+      - name: 'Install pinned Task'
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: '2026.9.1'
+          install_args: --locked task
+      - name: 'Validate native runner target'
+        env:
+          EXPECTED_GOOS: ${{ matrix.goos }}
+          EXPECTED_GOARCH: ${{ matrix.goarch }}
+        run: |
+          test "$(go env GOHOSTOS)" = "$EXPECTED_GOOS"
+          test "$(go env GOHOSTARCH)" = "$EXPECTED_GOARCH"
+      - name: 'Download the release snapshot from this build'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ inputs.artifact_id }}
+          merge-multiple: true
+          path: .build/dist
+      - name: 'Verify artifacts and test the packaged CLI'
+        run: task test:release
+        env:
+          CGO_ENABLED: 1 # needed for the test runner's race detector; the packaged CLI is unchanged

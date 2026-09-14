@@ -32,6 +32,9 @@ func TestValidate(t *testing.T) {
 	}{
 		{"valid", func(*Config) {}, ""},
 		{"missing version", func(c *Config) { c.Version = "" }, "version is required"},
+		{"future version", func(c *Config) { c.Version = "99.0" }, "unsupported configuration version"},
+		{"old version", func(c *Config) { c.Version = "0.9" }, "unsupported configuration version"},
+		{"malformed version", func(c *Config) { c.Version = "banana" }, "unsupported configuration version"},
 		{"missing project", func(c *Config) { c.Project.Name = "" }, "project name is required"},
 		{"missing providers", func(c *Config) { c.Providers = nil }, "at least one provider"},
 		{"unknown provider", func(c *Config) { c.Providers = map[string]Provider{"typo": {}} }, "unknown provider"},
@@ -150,8 +153,42 @@ func TestLoadConfig(t *testing.T) {
 	}
 }
 
+func TestLoadConfigSingleDocument(t *testing.T) {
+	data, err := yaml.Marshal(validConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct{ name, prefix, suffix, want string }{
+		{"single document", "", "", ""},
+		{"trailing comments", "", "\n# trailing comment\n\n", ""},
+		{"explicit document markers", "---\n", "...\n# trailing comment\n", ""},
+		{"second mapping", "", "---\nproject: {name: ignored}\n", "exactly one YAML document"},
+		{"second scalar", "", "---\nignored\n", "exactly one YAML document"},
+		{"second empty document", "", "---\n", "exactly one YAML document"},
+		{"second null document", "", "---\nnull\n", "exactly one YAML document"},
+		{"malformed second document", "", "---\nversion: [\n", "failed to parse YAML"},
+		{"malformed trailing content", "", "...\ninvalid trailing content\n", "failed to parse YAML"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "go42x.yaml")
+			if err := os.WriteFile(path, []byte(tt.prefix+string(data)+tt.suffix), 0600); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := LoadConfig(path)
+			if tt.want == "" {
+				if err != nil || cfg == nil || cfg.Project.Name != "example" {
+					t.Fatalf("LoadConfig() = %+v, %v; want the single project configuration", cfg, err)
+				}
+			} else if cfg != nil || err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("LoadConfig() = %+v, %v; want no config and %q", cfg, err, tt.want)
+			}
+		})
+	}
+}
+
 func TestDefaultConfig(t *testing.T) {
-	path := filepath.Join("..", "template", "go42x.yaml")
+	templateDir := filepath.Join("..", "..", "..", "assets", "agentenv", "template")
+	path := filepath.Join(templateDir, "go42x.yaml")
 	cfg, err := LoadConfig(path)
 	if err != nil {
 		t.Fatal(err)
@@ -164,7 +201,7 @@ func TestDefaultConfig(t *testing.T) {
 		paths = append(paths, p.Agents...)
 	}
 	for _, path := range paths {
-		if _, err := os.Stat(filepath.Join("..", "template", path)); err != nil {
+		if _, err := os.Stat(filepath.Join(templateDir, path)); err != nil {
 			t.Errorf("missing template path %s: %v", path, err)
 		}
 	}

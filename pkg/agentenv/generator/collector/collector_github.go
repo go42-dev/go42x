@@ -204,6 +204,7 @@ func readGitHubEvent() githubEvent {
 	}
 	event = githubEvent{}
 	if path := os.Getenv("GITHUB_EVENT_PATH"); path != "" {
+		// #nosec G304 G703 -- The trusted runner supplies its event-file path; event payload content cannot select it.
 		if data, err := os.ReadFile(path); err == nil {
 			if err := json.Unmarshal(data, &event); err == nil {
 				return event

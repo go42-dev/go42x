@@ -54,7 +54,7 @@ func TestDoctorMissingAndDriftDoNotWrite(t *testing.T) {
 	writeFile(
 		t,
 		filepath.Join(root, ".go42x/go42x.yaml"),
-		"version: '1'\nproject: {name: test}\ncontext: {template: agents.tpl.md}\nproviders:\n  codex: {enabled: false}\n",
+		"version: '1.0'\nproject: {name: test}\ncontext: {template: agents.tpl.md}\nproviders:\n  codex: {enabled: false}\n",
 	)
 	writeFile(t, filepath.Join(root, ".go42x/agents.tpl.md"), "# Test\n")
 	before = snapshotTree(t, root)
@@ -101,7 +101,7 @@ func TestDoctorChecksUseExplicitCheckout(t *testing.T) {
 	writeFile(
 		t,
 		filepath.Join(root, ".go42x/go42x.yaml"),
-		"version: '1'\nproject: {name: target}\ncontext: {template: agents.tpl.md}\nproviders: {codex: {enabled: false}}\n",
+		"version: '1.0'\nproject: {name: target}\ncontext: {template: agents.tpl.md}\nproviders: {codex: {enabled: false}}\n",
 	)
 	writeFile(
 		t,

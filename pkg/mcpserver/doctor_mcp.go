@@ -81,6 +81,7 @@ func probeMCP(parent context.Context, server config.MCPServer, timeout time.Dura
 			transport.WithCommandLogger(slog.New(slog.DiscardHandler)),
 			transport.WithCommandStderrWriter(io.Discard),
 			transport.WithCommandFunc(func(ctx context.Context, command string, env, args []string) (*exec.Cmd, error) {
+				// #nosec G204 -- --probe-mcp explicitly runs the server selected by trusted local configuration, without a shell.
 				cmd := exec.CommandContext(ctx, command, args...)
 				cmd.Dir = server.CWD
 				cmd.Env = append(os.Environ(), env...)

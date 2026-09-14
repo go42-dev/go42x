@@ -1,0 +1,28 @@
+---
+
+version: "1.0"
+project:
+  name: example-e2e
+context:
+  template: agents.tpl.md
+providers:
+  claude:
+    enabled: true
+  codex:
+    enabled: true
+  gemini:
+    enabled: true
+  crush:
+    enabled: true
+  copilot:
+    enabled: true
+mcp:
+  local:
+    enabled: true
+    name: local
+    type: stdio
+    command: go42x
+    args:
+      - mcp
+    tools:
+      - kwb_stats

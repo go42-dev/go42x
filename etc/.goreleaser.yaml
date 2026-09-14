@@ -89,7 +89,7 @@ checksum:
   algorithm: sha256
 
 snapshot:
-  version_template: "{{ .Tag }}-next"
+  version_template: "{{ .Version }}-next"
 
 changelog:
   sort: asc

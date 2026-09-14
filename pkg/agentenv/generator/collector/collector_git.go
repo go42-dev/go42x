@@ -49,6 +49,7 @@ func (c *GitCollector) Collect(ctx context.Context) (map[string]any, error) {
 }
 
 func (c *GitCollector) runGitCommand(ctx context.Context, args ...string) (string, error) {
+	// #nosec G204 -- All callers supply fixed Git arguments; no shell interprets repository data.
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = c.root
 	output, err := cmd.Output()

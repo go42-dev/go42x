@@ -56,6 +56,7 @@ func (c *EnvironmentCollector) Collect(_ context.Context) (map[string]any, error
 	}
 
 	// Read the project's Go requirement without invoking the Go toolchain.
+	// #nosec G304 -- The caller explicitly selects the local project whose go.mod is inspected.
 	data, err := os.ReadFile(filepath.Join(root, "go.mod"))
 	if err != nil {
 		if os.IsNotExist(err) {

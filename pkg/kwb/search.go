@@ -188,7 +188,7 @@ func (m *indexManager) Search(ctx context.Context, options SearchOptions) (*Sear
 				SupersededBy:   text("superseded_by"),
 			})
 		}
-		if next := options.Offset + len(response.Results); uint64(next) < result.Total {
+		if next := options.Offset + len(response.Results); next >= 0 && uint64(next) < result.Total {
 			if next <= MaxSearchOffset {
 				response.NextOffset = &next
 			} else {

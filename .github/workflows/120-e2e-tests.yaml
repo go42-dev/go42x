@@ -1,8 +1,8 @@
 ---
 
-name: unit-tests
+name: e2e-tests
 
-# Unit tests.
+# Runs the compiled CLI against isolated projects without external services.
 
 on:
   workflow_call:
@@ -26,8 +26,8 @@ on:
 permissions: {}
 
 jobs:
-  unit-tests:
-    name: unit-tests
+  e2e-tests:
+    name: e2e-tests
     runs-on: ${{ inputs.runs_on }}
     continue-on-error: ${{ inputs.continue_on_error }}
     timeout-minutes: ${{ inputs.timeout_minutes }}
@@ -38,7 +38,6 @@ jobs:
       MISE_DATA_DIR: ${{ github.workspace }}/.tools
       MISE_CACHE_DIR: ${{ github.workspace }}/.tools/cache
       MISE_STATE_DIR: ${{ github.workspace }}/.tools/state
-    # ----
     steps:
       - name: 'Checkout repository'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -69,7 +68,6 @@ jobs:
           path: |
             ${{ steps.go-cache.outputs.go-build }}
             ${{ steps.go-cache.outputs.go-mod }}
-          # Refresh per commit and reuse earlier builds from this job.
           key: ${{ env.GO_CACHE_PREFIX }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ github.sha }}
           restore-keys: |
             ${{ env.GO_CACHE_PREFIX }}-${{ hashFiles('go.mod', 'go.sum') }}-
@@ -81,17 +79,7 @@ jobs:
           install_args: --locked task
       - name: 'Download Go modules'
         run: go mod download
-      - name: 'Run unit tests with coverage and race detector'
-        run: task test:unit
+      - name: 'Run end-to-end tests with race detector'
+        run: task test:e2e
         env:
-          CGO_ENABLED: 1 # needed for -race
-      - name: 'Upload coverage reports'
-        continue-on-error: true
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: code-coverage
-          path: |-
-            .build/coverage.out
-            .build/coverage.html
-          include-hidden-files: true
-          if-no-files-found: error
+          CGO_ENABLED: 1 # needed for the test runner and CLI -race builds

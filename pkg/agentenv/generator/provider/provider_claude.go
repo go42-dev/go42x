@@ -160,6 +160,7 @@ func (p *ClaudeProvider) prepareAgents(
 
 		// Read the template file from templateDir
 		sourcePath := filepath.Join(p.templateDir, agentPath)
+		// #nosec G304 -- Agent template paths are selected by the trusted local project configuration.
 		templateContent, err := os.ReadFile(sourcePath)
 		if err != nil {
 			return fmt.Errorf("failed to read agent template %s: %w", agentPath, err)

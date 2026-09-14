@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -132,6 +133,31 @@ mcp: {server: {enabled: true, name: server, command: go42x, cwd: src}}`,
 			}
 			if _, err := LoadConfig(path); (err != nil) != tt.wantErr {
 				t.Errorf("LoadConfig() = %v, want error %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestSchemaMatchesSupportedConfigVersions(t *testing.T) {
+	compiled := compileSchema(t)
+	for _, version := range []string{"1.0", "0.9", "1.1", "99.0", "1", "banana", "", " 1.0 "} {
+		t.Run(version, func(t *testing.T) {
+			data := []byte(fmt.Sprintf("version: %q\nproject: {name: example}\n"+
+				"context: {template: agents.tpl.md}\nproviders: {codex: {}}\n", version))
+			var document map[string]any
+			if err := yaml.Unmarshal(data, &document); err != nil {
+				t.Fatal(err)
+			}
+			wantErr := version != "1.0"
+			if err := compiled.Validate(document); (err != nil) != wantErr {
+				t.Errorf("schema validation = %v, want error %v", err, wantErr)
+			}
+			path := filepath.Join(t.TempDir(), "go42x.yaml")
+			if err := os.WriteFile(path, data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := LoadConfig(path); (err != nil) != wantErr {
+				t.Errorf("LoadConfig() = %v, want error %v", err, wantErr)
 			}
 		})
 	}

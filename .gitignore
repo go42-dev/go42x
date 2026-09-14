@@ -5,10 +5,7 @@
 .idea/
 .vscode
 
-# artifacts
-build/
-
-# Task, mise, and coverage artifacts
+# operations
 .build/
 .tools/
 .task/

@@ -57,6 +57,7 @@ func (e *templateEngine) Render(cfg config.Context, ctxData map[string]any) (str
 }
 
 func (e *templateEngine) loadTemplate(path string) (string, error) {
+	// #nosec G304 -- Template paths are authored in the trusted local project configuration.
 	data, err := os.ReadFile(filepath.Join(e.baseDir, path))
 	if err != nil {
 		return "", fmt.Errorf("failed to read template %s: %w", path, err)

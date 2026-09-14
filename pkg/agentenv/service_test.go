@@ -12,6 +12,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/go42-dev/go42x/assets"
 	"github.com/go42-dev/go42x/pkg/agentenv/config"
 )
 
@@ -87,22 +88,23 @@ func TestInitExtractsTemplatesAndPreservesCustomFiles(t *testing.T) {
 		"# yaml-language-server: $schema=go42x.schema.json") {
 		t.Fatal("default configuration must reference the adjacent schema")
 	}
-	err := fs.WalkDir(templateFS, "template", func(path string, entry fs.DirEntry, err error) error {
+	templateFS, err := assets.AgentEnvTemplates()
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = fs.WalkDir(templateFS, ".", func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if entry.IsDir() {
 			return nil
 		}
-		relative, err := filepath.Rel("template", path)
-		if err != nil {
-			return err
-		}
+		relative := filepath.FromSlash(path)
 		target := filepath.Join(dir, ".go42x", relative)
 		if target == custom {
 			return nil
 		}
-		want, err := templateFS.ReadFile(path)
+		want, err := fs.ReadFile(templateFS, path)
 		if err != nil {
 			return err
 		}

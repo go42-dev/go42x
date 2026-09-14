@@ -64,6 +64,7 @@ func (s *Service) Init(_ context.Context) error {
 	}
 
 	s.logger.Info("Updating configuration schema")
+	// #nosec G306 -- The embedded JSON schema is public project metadata, so 0644 is intentional.
 	if err := os.WriteFile(filepath.Join(targetDir, schemaFile), []byte(config.Schema()), 0644); err != nil {
 		return fmt.Errorf("failed to update configuration schema: %w", err)
 	}
@@ -123,6 +124,7 @@ var ignoreFiles = []string{
 func updateGitIgnore(outputPath string) error {
 	gitignorePath := filepath.Join(outputPath, gitignoreFile)
 
+	// #nosec G304 G302 -- This trusted project path holds public ignore rules, which intentionally use 0644.
 	f, err := os.OpenFile(gitignorePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return fmt.Errorf("failed to open .gitignore: %w", err)
@@ -136,6 +138,7 @@ func updateGitIgnore(outputPath string) error {
 
 	var content []byte
 	if stat.Size() > 0 {
+		// #nosec G304 -- Read the same caller-selected .gitignore opened above; generation assumes a trusted project tree.
 		content, err = os.ReadFile(gitignorePath)
 		if err != nil {
 			return fmt.Errorf("failed to read .gitignore: %w", err)

@@ -54,7 +54,7 @@ tasks:
       - "mise install --locked"
       - "go mod download"
 
-  setup-release:
+  setup:release:
     desc: "install release dependencies"
     cmds:
       - "mise install --locked task goreleaser syft cosign"
@@ -65,11 +65,11 @@ tasks:
   # ╰─────────────────────----------------─────────╯
 
   # @note -count=1 is needed to prevent caching of test results.
-  test-unit:
+  test:unit:
     desc: "run unit tests with coverage, or selected packages with race detection"
     aliases:
       - test
-    summary: "Usage: task test-unit [-- PACKAGE ...]. Defaults to the full unit suite with coverage."
+    summary: "Usage: task test:unit [-- PACKAGE ...]. Defaults to the full unit suite with coverage."
     preconditions:
       - &package_paths
         sh: |
@@ -101,6 +101,20 @@ tasks:
           | sed -E 's/(coverage: [0-9.]+% of statements) in .*/\1/'
         go tool cover -html=.build/coverage.out -o=.build/coverage.html
         go tool cover -func=.build/coverage.out | grep '^total:'
+
+  test:e2e:
+    desc: "test the compiled CLI in isolated temporary projects"
+    summary: >-
+      Usage: task test:e2e. Builds the CLI once with race detection. Set GO42X_E2E_BINARY to an absolute path and GO42X_E2E_VERSION
+      to test an existing binary instead.
+    cmds:
+      - "go test -count=1 -v -race -timeout=5m ./tests/e2e/..."
+
+  test:release:
+    desc: "verify release artifacts and run E2E tests against the native archive"
+    summary: "Usage: task release:snapshot && task test:release. GO42X_RELEASE_DIST defaults to .build/dist."
+    cmds:
+      - "bash tests/e2e/release.sh"
 
   # ╭────────────────────----------------──────────╮
   # │               General workflow               │
@@ -189,6 +203,9 @@ tasks:
     desc: "run Go and configuration linters"
     cmds:
       - task: lint:go
+      - task: lint:go-security
+      - task: lint:vulnerabilities
+      - task: lint:secrets
       - task: lint:json
       - task: lint:yaml
       - task: lint:toml
@@ -204,6 +221,24 @@ tasks:
         set -- {{.CLI_ARGS}}
         "{{.TOOLS_BIN}}/golangci-lint" config verify --config etc/.golangci.yml
         "{{.TOOLS_BIN}}/golangci-lint" run --config etc/.golangci.yml "$@"
+
+  lint:go-security:
+    desc: "Check handwritten Go code with Gosec"
+    cmds:
+      - '"{{.TOOLS_BIN}}/gosec" -terse -exclude-generated -exclude-dir=.build -exclude-dir=.tools ./...'
+
+  lint:vulnerabilities:
+    desc: "Check CLI vulnerabilities for all release platforms"
+    cmds:
+      - 'CGO_ENABLED=0 GOOS=linux GOARCH=amd64 "{{.TOOLS_BIN}}/govulncheck" .'
+      - 'CGO_ENABLED=0 GOOS=linux GOARCH=arm64 "{{.TOOLS_BIN}}/govulncheck" .'
+      - 'CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 "{{.TOOLS_BIN}}/govulncheck" .'
+      - 'CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 "{{.TOOLS_BIN}}/govulncheck" .'
+
+  lint:secrets:
+    desc: "Scan Git history for secrets with Gitleaks"
+    cmds:
+      - '"{{.TOOLS_BIN}}/gitleaks" git --config etc/gitleaks.toml --no-banner --redact -v'
 
   lint:actions:
     desc: "check GitHub Actions workflows"
@@ -285,19 +320,19 @@ tasks:
   # │                   Release                    │
   # ╰─────────────────────----------------─────────╯
 
-  release-check:
+  release:check:
     desc: "validate GoReleaser configuration"
     cmds:
       - '"{{.TOOLS_BIN}}/goreleaser" check --config etc/.goreleaser.yaml'
 
-  release-snapshot:
+  release:snapshot:
     desc: "build release artifacts without publishing or signing"
     cmds:
       - |
         export PATH="{{.TOOLS_BIN}}:$PATH"
         goreleaser release --config etc/.goreleaser.yaml --snapshot --clean --skip=publish,sign
 
-  release-local:
+  release:local:
     desc: "build and sign a tagged release without publishing"
     cmds:
       - |

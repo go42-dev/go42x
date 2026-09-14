@@ -68,6 +68,7 @@ func (m *indexManager) walkDirectory(ctx context.Context, root, relative string,
 	}
 	directory := filepath.Join(root, relative)
 	patterns := slices.Clone(inherited)
+	// #nosec G304 -- Indexing reads .gitignore files from the caller-selected local project tree.
 	ignoreData, err := os.ReadFile(filepath.Join(directory, ".gitignore"))
 	if err != nil && !os.IsNotExist(err) {
 		return err
@@ -165,6 +166,7 @@ func isGeneratedGo(data []byte) bool {
 }
 
 func readSource(ctx context.Context, path string, limit int) ([]byte, error) {
+	// #nosec G304 -- Only the local indexing walk calls this; remote file requests use root-scoped reads.
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err

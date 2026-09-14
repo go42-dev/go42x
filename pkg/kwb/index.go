@@ -103,6 +103,7 @@ func (m *indexManager) generation() (string, error) {
 }
 
 func readManifest(path string) (*manifest, error) {
+	// #nosec G304 -- The caller selects an index generation inside its trusted local index storage.
 	data, err := os.ReadFile(filepath.Join(path, "manifest.json"))
 	if err != nil {
 		return nil, err
@@ -297,7 +298,7 @@ func (m *indexManager) BuildIndex(ctx context.Context, root string) (report Buil
 	if err := ctx.Err(); err != nil {
 		return report, err
 	}
-	if err := os.MkdirAll(m.settings.IndexPath, 0755); err != nil {
+	if err := os.MkdirAll(m.settings.IndexPath, 0700); err != nil {
 		return report, err
 	}
 	writer := flock.New(filepath.Join(m.settings.IndexPath, "build.lock"))
@@ -516,9 +517,10 @@ func cloneIndex(ctx context.Context, source, destination string, scorch bool) er
 		}
 		target := filepath.Join(destination, relative)
 		if entry.IsDir() {
-			return os.MkdirAll(target, 0755)
+			return os.MkdirAll(target, 0700)
 		}
 		if scorch && filepath.Ext(path) == ".zap" {
+			// #nosec G122 -- Index storage is trusted; the build lock protects these immutable generation segments.
 			if err := os.Link(path, target); err == nil {
 				return nil
 			}
@@ -528,11 +530,13 @@ func cloneIndex(ctx context.Context, source, destination string, scorch bool) er
 }
 
 func copyFile(ctx context.Context, source, target string) (retErr error) {
+	// #nosec G304 -- The source is a file from a trusted local index generation, not a search request path.
 	input, err := os.Open(source)
 	if err != nil {
 		return err
 	}
 	defer input.Close()
+	// #nosec G304 -- The target belongs to our new private index generation; exclusive creation prevents replacement.
 	output, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
 		return err
@@ -559,6 +563,7 @@ func copyFile(ctx context.Context, source, target string) (retErr error) {
 }
 
 func writeSynced(path string, data []byte) (retErr error) {
+	// #nosec G304 -- This is the manifest path in our new private index generation; existing files are rejected.
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
 		return err

@@ -118,7 +118,7 @@ func TestServiceRegistersSubsystemsAndReloadsChecks(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, content := range map[string]string{
-		"go42x.yaml":    "version: '1'\nproject: {name: test}\ncontext: {template: agents.tpl.md}\nproviders: {codex: {enabled: false}}\n",
+		"go42x.yaml":    "version: '1.0'\nproject: {name: test}\ncontext: {template: agents.tpl.md}\nproviders: {codex: {enabled: false}}\n",
 		"agents.tpl.md": "# Test\n",
 	} {
 		if err := os.WriteFile(filepath.Join(root, ".go42x", name), []byte(content), 0600); err != nil {
@@ -160,7 +160,7 @@ func TestMCPChecksDependOnCurrentConfiguration(t *testing.T) {
 	writeConfig := func(tool string) {
 		t.Helper()
 		content := fmt.Sprintf(
-			"version: '1'\nproject: {name: test}\ncontext: {template: agents.tpl.md}\nproviders: {codex: {enabled: false}}\nmcp:\n  test:\n    enabled: true\n    name: test\n    type: http\n    url: %q\n    tools: [%q]\n",
+			"version: '1.0'\nproject: {name: test}\ncontext: {template: agents.tpl.md}\nproviders: {codex: {enabled: false}}\nmcp:\n  test:\n    enabled: true\n    name: test\n    type: http\n    url: %q\n    tools: [%q]\n",
 			remote.URL,
 			tool,
 		)

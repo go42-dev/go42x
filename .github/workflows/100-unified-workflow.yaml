@@ -45,7 +45,7 @@ jobs:
       continue_on_error: false
       timeout_minutes: 10
 
-  # stage 2: unit tests
+  # stage 2: unit and end-to-end tests
 
   unit-tests:
     uses: ./.github/workflows/120-unit-tests.yaml
@@ -58,51 +58,57 @@ jobs:
       continue_on_error: false
       timeout_minutes: 10
 
-  # stage 3: build
+  e2e-tests:
+    uses: ./.github/workflows/120-e2e-tests.yaml
+    permissions:
+      contents: read
+    needs:
+      - lint
+    with:
+      runs_on: ubuntu-latest
+      continue_on_error: false
+      timeout_minutes: 10
 
-  build:
-    name: build (${{ matrix.goos }}/${{ matrix.goarch }})
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+  # stage 3: pre-build security scans
+
+  security:
+    uses: ./.github/workflows/130-security.yaml
     permissions:
       contents: read
     needs:
       - unit-tests
-    strategy:
-      fail-fast: false
-      matrix:
-        goos:
-          - linux
-          - darwin
-        goarch:
-          - amd64
-          - arm64
-    env:
-      CGO_ENABLED: '0'
-      GOOS: ${{ matrix.goos }}
-      GOARCH: ${{ matrix.goarch }}
-      MISE_DEFAULT_CONFIG_FILENAME: etc/mise.toml
-      MISE_DATA_DIR: ${{ github.workspace }}/.tools
-      MISE_CACHE_DIR: ${{ github.workspace }}/.tools/cache
-      MISE_STATE_DIR: ${{ github.workspace }}/.tools/state
-    steps:
-      - name: 'Checkout repository'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: 'Setup Go'
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: 'go.mod'
-      - name: 'Install pinned Task'
-        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
-        with:
-          version: '2026.9.1'
-          install_args: --locked task
-      - name: 'Build CLI'
-        run: task build
+    with:
+      runs_on: ubuntu-latest
+      continue_on_error: false
+      timeout_minutes: 15
 
-  # stage 4: coverage report
+  # stage 4: build artifacts
+
+  release-build:
+    uses: ./.github/workflows/140-release-build.yaml
+    permissions:
+      contents: read
+    needs:
+      - unit-tests
+    with:
+      runs_on: ubuntu-latest
+      continue_on_error: false
+      timeout_minutes: 30
+
+  # stage 5: test release artifacts
+
+  release-tests:
+    uses: ./.github/workflows/150-release-tests.yaml
+    permissions:
+      contents: read
+    needs:
+      - release-build
+    with:
+      artifact_id: ${{ needs.release-build.outputs.artifact_id }}
+      continue_on_error: false
+      timeout_minutes: 15
+
+  # stage 6: coverage report
 
   coverage:
     uses: ./.github/workflows/160-coverage-report.yaml
@@ -117,7 +123,7 @@ jobs:
       continue_on_error: true
       timeout_minutes: 10
 
-  # stage 5: required finish gate
+  # stage 7: required finish gate
 
   gate-finish:
     name: gate-finish
@@ -128,23 +134,35 @@ jobs:
       - gate-start
       - lint
       - unit-tests
-      - build
+      - e2e-tests
+      - security
+      - release-build
+      - release-tests
     steps:
       - name: 'Require all blocking jobs to succeed'
         env:
           GATE_START_RESULT: ${{ needs.gate-start.result }}
           LINT_RESULT: ${{ needs.lint.result }}
           UNIT_TESTS_RESULT: ${{ needs.unit-tests.result }}
-          BUILD_RESULT: ${{ needs.build.result }}
+          E2E_TESTS_RESULT: ${{ needs.e2e-tests.result }}
+          SECURITY_RESULT: ${{ needs.security.result }}
+          RELEASE_BUILD_RESULT: ${{ needs.release-build.result }}
+          RELEASE_TESTS_RESULT: ${{ needs.release-tests.result }}
         run: |-
           echo "gate-start: $GATE_START_RESULT"
           echo "lint: $LINT_RESULT"
           echo "unit-tests: $UNIT_TESTS_RESULT"
-          echo "build: $BUILD_RESULT"
+          echo "e2e-tests: $E2E_TESTS_RESULT"
+          echo "security: $SECURITY_RESULT"
+          echo "release-build: $RELEASE_BUILD_RESULT"
+          echo "release-tests: $RELEASE_TESTS_RESULT"
           if [ "$GATE_START_RESULT" != 'success' ] || \
             [ "$LINT_RESULT" != 'success' ] || \
             [ "$UNIT_TESTS_RESULT" != 'success' ] || \
-            [ "$BUILD_RESULT" != 'success' ]; then
+            [ "$E2E_TESTS_RESULT" != 'success' ] || \
+            [ "$SECURITY_RESULT" != 'success' ] || \
+            [ "$RELEASE_BUILD_RESULT" != 'success' ] || \
+            [ "$RELEASE_TESTS_RESULT" != 'success' ]; then
             echo '::error::One or more blocking CI jobs did not succeed.'
             exit 1
           fi

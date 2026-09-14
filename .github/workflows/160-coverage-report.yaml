@@ -40,6 +40,13 @@ jobs:
         with:
           name: code-coverage
           path: .build
+      - name: 'Merge repeated coverage blocks'
+        shell: bash
+        run: |-
+          awk 'FNR == 1 { next } { hits[$1 " " $2] += $3 }
+            END { print "mode: atomic"; for (block in hits) printf "%s %.0f\n", block, hits[block] }' \
+            .build/coverage.out > .build/coverage-merged.out
+          mv .build/coverage-merged.out .build/coverage.out
       - name: 'Publish coverage summary and annotation'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
@@ -55,7 +62,7 @@ jobs:
               throw new Error('Expected an atomic coverage profile');
             }
 
-            // Count statements in coverage blocks, so repeated hits count only once.
+            // Count statements in merged blocks, so repeated blocks across test packages count only once.
             // Include package-level function literals, which go tool cover -func omits from its total.
             for (const line of lines) {
               const match = line.match(/^(.+):\d+\.\d+,\d+\.\d+\s+(\d+)\s+(\d+)$/);

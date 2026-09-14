@@ -133,7 +133,7 @@ func TestGeneratePrepareEnvInstructions(t *testing.T) {
 	} {
 		t.Setenv(key, value)
 	}
-	templateDir := filepath.Join("..", "template")
+	templateDir := filepath.Join("..", "..", "..", "assets", "agentenv", "template")
 	cfg, err := config.LoadConfig(filepath.Join(templateDir, "go42x.yaml"))
 	if err != nil {
 		t.Fatal(err)
@@ -196,7 +196,8 @@ func TestGeneratePrepareEnvInstructions(t *testing.T) {
 func TestGenerateMCPConfigurations(t *testing.T) {
 	t.Setenv("PATH", "")
 	t.Setenv("GITHUB_ACTIONS", "false")
-	cfg, err := config.LoadConfig(filepath.Join("..", "template", "go42x.yaml"))
+	templateDir := filepath.Join("..", "..", "..", "assets", "agentenv", "template")
+	cfg, err := config.LoadConfig(filepath.Join(templateDir, "go42x.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,7 +234,7 @@ func TestGenerateMCPConfigurations(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := t.TempDir()
-	g := NewGenerator(slog.New(slog.DiscardHandler), cfg, filepath.Join("..", "template"), out)
+	g := NewGenerator(slog.New(slog.DiscardHandler), cfg, templateDir, out)
 	if err := g.Generate(t.Context(), false); err != nil {
 		t.Fatal(err)
 	}

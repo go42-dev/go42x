@@ -120,6 +120,7 @@ func readFile(path string) (*file, error) {
 	if !info.Mode().IsRegular() {
 		return nil, fmt.Errorf("output %s must be a regular file", path)
 	}
+	// #nosec G304 -- The caller selected this project output; generation assumes a trusted project tree.
 	f.previous, err = os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read %s: %w", path, err)
@@ -173,7 +174,7 @@ func (p *Plan) Apply() error {
 }
 
 func (p *Plan) replace(f *file) error {
-	if err := os.MkdirAll(filepath.Dir(f.path), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(f.path), 0700); err != nil {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 	temporary, err := os.CreateTemp(filepath.Dir(f.path), "."+filepath.Base(f.path)+".tmp-*")
