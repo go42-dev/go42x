@@ -52,7 +52,7 @@ func NewCodexProvider(
 	}
 }
 
-func (p *CodexProvider) Prepare(plan *output.Plan, _ map[string]interface{}, providerConfig config.Provider) error {
+func (p *CodexProvider) Prepare(plan *output.Plan, _ map[string]any, providerConfig config.Provider) error {
 	if err := p.prepareConfigFiles(plan, providerConfig); err != nil {
 		return fmt.Errorf("failed to prepare config files: %w", err)
 	}
@@ -82,7 +82,7 @@ func (p *CodexProvider) prepareConfigFiles(plan *output.Plan, providerConfig con
 	if err != nil {
 		return fmt.Errorf("failed to encode codex MCP settings: %w", err)
 	}
-	serverSettings := make(map[string]interface{})
+	serverSettings := make(map[string]any)
 	if err := toml.Unmarshal(serverContent, &serverSettings); err != nil {
 		return fmt.Errorf("failed to normalize codex MCP settings: %w", err)
 	}
@@ -92,7 +92,7 @@ func (p *CodexProvider) prepareConfigFiles(plan *output.Plan, providerConfig con
 	if err != nil {
 		return err
 	}
-	settings := make(map[string]interface{})
+	settings := make(map[string]any)
 	if exists {
 		if err := toml.Unmarshal(previous, &settings); err != nil {
 			return fmt.Errorf("failed to parse %s: %w", path, err)

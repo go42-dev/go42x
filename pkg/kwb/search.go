@@ -419,7 +419,7 @@ func stringValues(value any) []string {
 	switch value := value.(type) {
 	case string:
 		return []string{value}
-	case []interface{}:
+	case []any:
 		result := []string{}
 		for _, v := range value {
 			if text, ok := v.(string); ok {

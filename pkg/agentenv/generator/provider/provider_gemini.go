@@ -76,7 +76,7 @@ func (p *GeminiProvider) InstructionsFileName() string {
 	return GeminiFile
 }
 
-func (p *GeminiProvider) Prepare(plan *output.Plan, _ map[string]interface{}, providerConfig config.Provider) error {
+func (p *GeminiProvider) Prepare(plan *output.Plan, _ map[string]any, providerConfig config.Provider) error {
 	if err := p.prepareConfigFiles(plan, providerConfig); err != nil {
 		return fmt.Errorf("failed to prepare config files: %w", err)
 	}

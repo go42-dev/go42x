@@ -66,7 +66,7 @@ func (p *ClaudeProvider) InstructionsFileName() string {
 
 func (p *ClaudeProvider) Prepare(
 	plan *output.Plan,
-	ctxData map[string]interface{},
+	ctxData map[string]any,
 	providerConfig config.Provider,
 ) error {
 	if err := p.prepareConfigFiles(plan, providerConfig); err != nil {
@@ -150,7 +150,7 @@ func (p *ClaudeProvider) extractMCPServers(allTools *[]string) ([]string, map[st
 func (p *ClaudeProvider) prepareAgents(
 	plan *output.Plan,
 	providerConfig config.Provider,
-	ctxData map[string]interface{},
+	ctxData map[string]any,
 ) error {
 	if len(providerConfig.Agents) == 0 {
 		return nil

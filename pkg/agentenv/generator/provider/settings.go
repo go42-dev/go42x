@@ -12,7 +12,7 @@ import (
 )
 
 // prepareJSONFile replaces the supplied top-level fields, preserving other settings.
-func (p *BaseProvider) prepareJSONFile(plan *output.Plan, path string, data interface{}) error {
+func (p *BaseProvider) prepareJSONFile(plan *output.Plan, path string, data any) error {
 	return p.prepareJSONSettings(plan, path, data, nil, nil)
 }
 
@@ -22,7 +22,7 @@ func (p *BaseProvider) prepareJSONFile(plan *output.Plan, path string, data inte
 func (p *BaseProvider) prepareJSONSettings(
 	plan *output.Plan,
 	path string,
-	data interface{},
+	data any,
 	managed, defaults []string,
 ) error {
 	content, err := json.Marshal(data)
@@ -37,7 +37,7 @@ func (p *BaseProvider) prepareJSONSettings(
 	if err != nil {
 		return err
 	}
-	settings := make(map[string]interface{})
+	settings := make(map[string]any)
 	if exists {
 		settings, err = decodeJSONSettings(previous)
 		if err != nil {
@@ -80,18 +80,18 @@ func (p *BaseProvider) prepareJSONSettings(
 	return plan.Write(path, formatted.Bytes(), output.Settings, false)
 }
 
-func decodeJSONSettings(content []byte) (map[string]interface{}, error) {
+func decodeJSONSettings(content []byte) (map[string]any, error) {
 	decoder := json.NewDecoder(bytes.NewReader(content))
 	// Unknown settings may contain integers too large to round-trip as float64.
 	decoder.UseNumber()
-	var settings map[string]interface{}
+	var settings map[string]any
 	if err := decoder.Decode(&settings); err != nil {
 		return nil, err
 	}
 	if settings == nil {
 		return nil, fmt.Errorf("settings must be a JSON object")
 	}
-	var trailing interface{}
+	var trailing any
 	if err := decoder.Decode(&trailing); err != io.EOF {
 		if err != nil {
 			return nil, err
@@ -101,7 +101,7 @@ func decodeJSONSettings(content []byte) (map[string]interface{}, error) {
 	return settings, nil
 }
 
-func jsonSetting(settings map[string]interface{}, path string) (interface{}, bool) {
+func jsonSetting(settings map[string]any, path string) (any, bool) {
 	parts := strings.Split(path, ".")
 	for i, part := range parts {
 		value, present := settings[part]
@@ -109,7 +109,7 @@ func jsonSetting(settings map[string]interface{}, path string) (interface{}, boo
 			return value, present
 		}
 		var ok bool
-		settings, ok = value.(map[string]interface{})
+		settings, ok = value.(map[string]any)
 		if !ok {
 			return nil, false
 		}
@@ -117,7 +117,7 @@ func jsonSetting(settings map[string]interface{}, path string) (interface{}, boo
 	return nil, false
 }
 
-func setJSONSetting(settings map[string]interface{}, path string, value interface{}, present, onlyMissing bool) error {
+func setJSONSetting(settings map[string]any, path string, value any, present, onlyMissing bool) error {
 	parts := strings.Split(path, ".")
 	for i, part := range parts[:len(parts)-1] {
 		existing, found := settings[part]
@@ -125,12 +125,12 @@ func setJSONSetting(settings map[string]interface{}, path string, value interfac
 			if !present {
 				return nil
 			}
-			child := make(map[string]interface{})
+			child := make(map[string]any)
 			settings[part] = child
 			settings = child
 			continue
 		}
-		child, ok := existing.(map[string]interface{})
+		child, ok := existing.(map[string]any)
 		if !ok {
 			return fmt.Errorf("setting %s must be an object", strings.Join(parts[:i+1], "."))
 		}

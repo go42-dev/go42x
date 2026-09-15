@@ -21,8 +21,8 @@ func NewProjectCollector(cfg *config.Config) *ProjectCollector {
 	}
 }
 
-func (c *ProjectCollector) Collect(_ context.Context) (map[string]interface{}, error) {
-	result := make(map[string]interface{})
+func (c *ProjectCollector) Collect(_ context.Context) (map[string]any, error) {
+	result := make(map[string]any)
 
 	if c.config == nil {
 		return result, nil

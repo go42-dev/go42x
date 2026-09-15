@@ -56,8 +56,8 @@ type githubSubject struct {
 	} `json:"pull_request"`
 }
 
-func (c *GitHubActionsCollector) Collect(_ context.Context) (map[string]interface{}, error) {
-	result := make(map[string]interface{})
+func (c *GitHubActionsCollector) Collect(_ context.Context) (map[string]any, error) {
+	result := make(map[string]any)
 	if os.Getenv("GITHUB_ACTIONS") != "true" {
 		return result, nil
 	}
@@ -66,7 +66,7 @@ func (c *GitHubActionsCollector) Collect(_ context.Context) (map[string]interfac
 
 	payload := readGitHubEvent()
 	repository := cmp.Or(os.Getenv("GITHUB_REPOSITORY"), payload.Repository.FullName)
-	repo := make(map[string]interface{})
+	repo := make(map[string]any)
 	if repository != "" {
 		repo["full_name"] = repository
 	}
@@ -82,7 +82,7 @@ func (c *GitHubActionsCollector) Collect(_ context.Context) (map[string]interfac
 	if len(repo) > 0 {
 		result["repository"] = repo
 	}
-	event := make(map[string]interface{})
+	event := make(map[string]any)
 	for key, value := range map[string]string{
 		"name":   os.Getenv("GITHUB_EVENT_NAME"),
 		"action": payload.Action,
@@ -104,7 +104,7 @@ func (c *GitHubActionsCollector) Collect(_ context.Context) (map[string]interfac
 		isPR = subject.PullRequest != nil
 	}
 	if subject != nil {
-		details := map[string]interface{}{"is_pr": isPR}
+		details := map[string]any{"is_pr": isPR}
 		if number := cmp.Or(subject.Number, payload.Number); number > 0 {
 			details["number"] = number
 		}
@@ -138,7 +138,7 @@ func (c *GitHubActionsCollector) Collect(_ context.Context) (map[string]interfac
 	return result, nil
 }
 
-func (c *GitHubActionsCollector) collectWorkflowContext(result map[string]interface{}) {
+func (c *GitHubActionsCollector) collectWorkflowContext(result map[string]any) {
 	for key, env := range map[string]string{
 		"action":           "GITHUB_ACTION",
 		"action_path":      "GITHUB_ACTION_PATH",
@@ -182,7 +182,7 @@ func (c *GitHubActionsCollector) collectWorkflowContext(result map[string]interf
 			"tool_cache": os.Getenv("RUNNER_TOOL_CACHE"),
 		},
 	} {
-		group := make(map[string]interface{})
+		group := make(map[string]any)
 		for name, value := range fields {
 			if value != "" {
 				group[name] = value

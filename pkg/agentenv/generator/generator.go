@@ -184,7 +184,7 @@ func (g *Generator) buildTemplateContext(ctx context.Context) (*Context, error) 
 	return tplCtx, nil
 }
 
-func (g *Generator) prepareInstructions(plan *output.Plan, ctxData map[string]interface{}, clean bool) error {
+func (g *Generator) prepareInstructions(plan *output.Plan, ctxData map[string]any, clean bool) error {
 	content, err := newTemplateEngine(g.templateDir).Render(g.config.Context, ctxData)
 	if err != nil {
 		return err

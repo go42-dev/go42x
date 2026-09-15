@@ -24,6 +24,6 @@ func (b BaseCollector) Priority() int {
 	return b.priority
 }
 
-func (b BaseCollector) Collect(_ context.Context) (map[string]interface{}, error) {
+func (b BaseCollector) Collect(_ context.Context) (map[string]any, error) {
 	return nil, nil
 }

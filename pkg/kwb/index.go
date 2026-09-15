@@ -181,7 +181,7 @@ func (m *indexManager) refresh(ctx context.Context) error {
 	}
 	index, err := bleve.OpenUsing(
 		filepath.Join(directory, "data"),
-		map[string]interface{}{"read_only": true, "bolt_timeout": "1s"},
+		map[string]any{"read_only": true, "bolt_timeout": "1s"},
 	)
 	if err != nil {
 		_ = lease.Unlock()
@@ -215,7 +215,7 @@ func (m *indexManager) CloseIndex() error {
 
 func createMapping() (mapping.IndexMapping, error) {
 	result := bleve.NewIndexMapping()
-	if err := result.AddCustomAnalyzer("identifier", map[string]interface{}{
+	if err := result.AddCustomAnalyzer("identifier", map[string]any{
 		"type": custom.Name, "tokenizer": unicode.Name, "token_filters": []string{lowercase.Name},
 	}); err != nil {
 		return nil, err
@@ -368,7 +368,7 @@ func (m *indexManager) BuildIndex(ctx context.Context, root string) (report Buil
 			); err != nil {
 				return err
 			}
-			index, err = bleve.OpenUsing(dataPath, map[string]interface{}{"bolt_timeout": "1s"})
+			index, err = bleve.OpenUsing(dataPath, map[string]any{"bolt_timeout": "1s"})
 		} else {
 			indexMapping, mappingErr := createMapping()
 			if mappingErr != nil {

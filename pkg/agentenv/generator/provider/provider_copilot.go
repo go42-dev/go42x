@@ -46,7 +46,7 @@ func NewCopilotProvider(
 	}
 }
 
-func (p *CopilotProvider) Prepare(plan *output.Plan, _ map[string]interface{}, _ config.Provider) error {
+func (p *CopilotProvider) Prepare(plan *output.Plan, _ map[string]any, _ config.Provider) error {
 	if err := p.prepareConfigFiles(plan); err != nil {
 		return fmt.Errorf("failed to prepare config files: %w", err)
 	}
