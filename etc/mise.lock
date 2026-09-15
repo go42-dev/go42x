@@ -96,9 +96,9 @@ backend = "go:github.com/daixiang0/gci"
 specifiers = ["0.14.0"]
 
 [[tools."go:github.com/go42-dev/go42x"]]
-version = "0.28.0"
+version = "0.30.0"
 backend = "go:github.com/go42-dev/go42x"
-specifiers = ["0.28.0"]
+specifiers = ["0.30.0"]
 
 [[tools."go:github.com/google/yamlfmt/cmd/yamlfmt"]]
 version = "0.21.0"

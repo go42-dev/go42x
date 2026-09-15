@@ -87,6 +87,23 @@ tasks:
       - "mise install --locked task goreleaser syft cosign"
       - "go mod download"
 
+  ## bump | set a mise tool dependency to a version
+  bump:
+    desc: "Set a mise tool dependency to a version (writes)"
+    summary: "Usage: task bump TOOL=go:github.com/go42-dev/go42x VERSION=0.23.0"
+    requires:
+      vars:
+        - TOOL
+        - VERSION
+    preconditions:
+      - sh: 'test -n {{.TOOL | shellQuote}} && test -n {{.VERSION | shellQuote}}'
+        msg: "TOOL and VERSION must not be empty."
+      - sh: 'test -z {{.CLI_ARGS | shellQuote}}'
+        msg: "Pass TOOL=... VERSION=... without arguments after --."
+    cmds:
+      - 'mise use --pin -- {{printf "%s@%s" .TOOL .VERSION | shellQuote}}'
+      - 'mise lock -- {{.TOOL | shellQuote}}'
+
   # ╭────────────────────----------------──────────╮
   # │                   Testing                    │
   # ╰─────────────────────----------------─────────╯
