@@ -84,8 +84,8 @@ jobs:
 
   # stage 4: build artifacts
 
-  release-build:
-    uses: ./.github/workflows/140-release-build.yaml
+  build-artifacts:
+    uses: ./.github/workflows/140-build-artifacts.yaml
     permissions:
       contents: read
     needs:
@@ -95,16 +95,16 @@ jobs:
       continue_on_error: false
       timeout_minutes: 30
 
-  # stage 5: test release artifacts
+  # stage 5: test artifacts
 
-  release-tests:
-    uses: ./.github/workflows/150-release-tests.yaml
+  test-artifacts:
+    uses: ./.github/workflows/150-test-artifacts.yaml
     permissions:
       contents: read
     needs:
-      - release-build
+      - build-artifacts
     with:
-      artifact_id: ${{ needs.release-build.outputs.artifact_id }}
+      artifact_id: ${{ needs.build-artifacts.outputs.artifact_id }}
       continue_on_error: false
       timeout_minutes: 15
 
@@ -136,8 +136,8 @@ jobs:
       - unit-tests
       - e2e-tests
       - security
-      - release-build
-      - release-tests
+      - build-artifacts
+      - test-artifacts
     steps:
       - name: 'Require all blocking jobs to succeed'
         env:
@@ -146,23 +146,23 @@ jobs:
           UNIT_TESTS_RESULT: ${{ needs.unit-tests.result }}
           E2E_TESTS_RESULT: ${{ needs.e2e-tests.result }}
           SECURITY_RESULT: ${{ needs.security.result }}
-          RELEASE_BUILD_RESULT: ${{ needs.release-build.result }}
-          RELEASE_TESTS_RESULT: ${{ needs.release-tests.result }}
+          BUILD_ARTIFACTS_RESULT: ${{ needs.build-artifacts.result }}
+          TEST_ARTIFACTS_RESULT: ${{ needs.test-artifacts.result }}
         run: |-
           echo "gate-start: $GATE_START_RESULT"
           echo "lint: $LINT_RESULT"
           echo "unit-tests: $UNIT_TESTS_RESULT"
           echo "e2e-tests: $E2E_TESTS_RESULT"
           echo "security: $SECURITY_RESULT"
-          echo "release-build: $RELEASE_BUILD_RESULT"
-          echo "release-tests: $RELEASE_TESTS_RESULT"
+          echo "build-artifacts: $BUILD_ARTIFACTS_RESULT"
+          echo "test-artifacts: $TEST_ARTIFACTS_RESULT"
           if [ "$GATE_START_RESULT" != 'success' ] || \
             [ "$LINT_RESULT" != 'success' ] || \
             [ "$UNIT_TESTS_RESULT" != 'success' ] || \
             [ "$E2E_TESTS_RESULT" != 'success' ] || \
             [ "$SECURITY_RESULT" != 'success' ] || \
-            [ "$RELEASE_BUILD_RESULT" != 'success' ] || \
-            [ "$RELEASE_TESTS_RESULT" != 'success' ]; then
+            [ "$BUILD_ARTIFACTS_RESULT" != 'success' ] || \
+            [ "$TEST_ARTIFACTS_RESULT" != 'success' ]; then
             echo '::error::One or more blocking CI jobs did not succeed.'
             exit 1
           fi

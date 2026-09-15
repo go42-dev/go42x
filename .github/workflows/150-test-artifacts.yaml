@@ -1,6 +1,6 @@
 ---
 
-name: release-tests
+name: test-artifacts
 
 # Run the existing CLI scenarios against each archive on its native OS and architecture.
 
@@ -21,8 +21,8 @@ on:
 permissions: {}
 
 jobs:
-  release-tests:
-    name: release-tests (${{ matrix.goos }}/${{ matrix.goarch }})
+  test-artifacts:
+    name: test-artifacts (${{ matrix.goos }}/${{ matrix.goarch }})
     runs-on: ${{ matrix.runs_on }}
     continue-on-error: ${{ inputs.continue_on_error }}
     timeout-minutes: ${{ inputs.timeout_minutes }}
@@ -70,7 +70,7 @@ jobs:
         run: |
           test "$(go env GOHOSTOS)" = "$EXPECTED_GOOS"
           test "$(go env GOHOSTARCH)" = "$EXPECTED_GOARCH"
-      - name: 'Download the release snapshot from this build'
+      - name: 'Download artifacts from this build'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           artifact-ids: ${{ inputs.artifact_id }}

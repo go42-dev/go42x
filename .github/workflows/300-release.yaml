@@ -3,7 +3,7 @@
 name: release
 run-name: 'release ${{ inputs.version }}'
 
-# Validate a tested master commit, rerun unit and E2E tests, and publish signed CLI artifacts.
+# Require successful Unified CI for the selected master commit, then build and publish signed CLI artifacts.
 
 on:
   workflow_dispatch:
@@ -147,37 +147,11 @@ jobs:
               .addLink('Successful Unified CI', ciRun.html_url)
               .write();
 
-  unit-tests:
-    needs:
-      - validate-release
-    permissions:
-      contents: read
-    uses: ./.github/workflows/120-unit-tests.yaml
-    with:
-      runs_on: ubuntu-latest
-      continue_on_error: false
-      source_sha: ${{ needs.validate-release.outputs.source_sha }}
-      timeout_minutes: 10
-
-  e2e-tests:
-    needs:
-      - validate-release
-    permissions:
-      contents: read
-    uses: ./.github/workflows/120-e2e-tests.yaml
-    with:
-      runs_on: ubuntu-latest
-      continue_on_error: false
-      source_sha: ${{ needs.validate-release.outputs.source_sha }}
-      timeout_minutes: 10
-
   publish-release:
     name: publish-release
     environment: release
     needs:
       - validate-release
-      - unit-tests
-      - e2e-tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
