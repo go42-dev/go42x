@@ -24,6 +24,7 @@ func TestCollectorMetadata(t *testing.T) {
 	}{
 		{NewProjectCollector(nil), "project", 5}, {NewGitCollector("."), "git", 10},
 		{NewEnvironmentCollector(nil, "."), "environment", 20}, {NewGitHubActionsCollector(), "github_actions", 30},
+		{NewGoCollector(".", nil), "golang", 25},
 	}
 	for _, tt := range collectors {
 		if tt.collector.Name() != tt.name || tt.collector.Priority() != tt.priority {

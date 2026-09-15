@@ -280,7 +280,7 @@ func TestGenerateErrors(t *testing.T) {
 		clean                        bool
 	}{
 		{"missing template", "AGENTS.md", "missing", "generation failed", false},
-		{"clean blocked", "AGENTS.md", "agents.tpl.md", "read instructions AGENTS.md", true},
+		{"clean blocked", "AGENTS.md", "agents.tpl.md", "prepare instructions AGENTS.md", true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := config.Config{

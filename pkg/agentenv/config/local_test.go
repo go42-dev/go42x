@@ -42,6 +42,29 @@ func writeConfigFixture(t *testing.T, shared, local string) string {
 	return path
 }
 
+func TestProjectConfigGoEnv(t *testing.T) {
+	shared := strings.Replace(sharedConfig, "chunks-dir: chunks/", "chunks-dir: chunks/, go-env: [GOFLAGS]", 1)
+	for _, tt := range []struct {
+		name, local string
+		want        []string
+	}{
+		{"shared", "", []string{"GOFLAGS"}},
+		{"override", "context: {go-env: [CC, GOPRIVATE]}", []string{"CC", "GOPRIVATE"}},
+		{"clear", "context: {go-env: []}", nil},
+		{"null", "context: {go-env: null}", nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := LoadProjectConfig(writeConfigFixture(t, shared, tt.local), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Equal(cfg.Context.GoEnv, tt.want) || cfg.Context.Template != "agents.tpl.md" {
+				t.Fatalf("merged context = %+v, want Go env %v and inherited template", cfg.Context, tt.want)
+			}
+		})
+	}
+}
+
 func TestProjectConfigMergeAndSourcePreservation(t *testing.T) {
 	const local = `project: {tags: [], metadata: {change: local}}
 env: []

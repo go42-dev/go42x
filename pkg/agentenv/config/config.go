@@ -15,6 +15,7 @@ import (
 )
 
 var (
+	goEnvNamePattern      = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
 	mcpToolNamePattern    = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,128}$`)
 	mcpCWDVariablePattern = regexp.MustCompile(`\$(?:[A-Za-z_]|\{|\()|%[A-Za-z_][A-Za-z0-9_]*%|^~`)
 )
@@ -46,8 +47,9 @@ type Project struct {
 
 // Context defines the shared instructions rendered to AGENTS.md.
 type Context struct {
-	Template  string `yaml:"template"`
-	ChunksDir string `yaml:"chunks-dir"`
+	Template  string   `yaml:"template"`
+	ChunksDir string   `yaml:"chunks-dir"`
+	GoEnv     []string `yaml:"go-env,omitempty"`
 }
 
 type Provider struct {
@@ -151,6 +153,11 @@ func (c *Config) Validate() error {
 
 	if strings.TrimSpace(c.Context.Template) == "" {
 		return fmt.Errorf("context.template is required; move shared instructions from providers into context")
+	}
+	for _, name := range c.Context.GoEnv {
+		if !goEnvNamePattern.MatchString(name) {
+			return fmt.Errorf("context.go-env: invalid Go environment variable name %q", name)
+		}
 	}
 
 	providers := slices.Sorted(maps.Keys(c.Providers))

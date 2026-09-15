@@ -138,6 +138,37 @@ mcp: {server: {enabled: true, name: server, command: go42x, cwd: src}}`,
 	}
 }
 
+func TestSchemaMatchesGoEnvValidation(t *testing.T) {
+	compiled := compileSchema(t)
+	for _, tt := range []struct {
+		name  string
+		valid bool
+	}{
+		{"GOFLAGS", true}, {"GOPRIVATE", true}, {"CC", true}, {"CGO_ENABLED", true},
+		{"", false}, {"gopath", false}, {"-w", false}, {"GOFLAGS=-x", false}, {"GO FLAGS", false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := validConfig()
+			cfg.Context.GoEnv = []string{tt.name}
+			cfg.MCP = nil
+			if err := cfg.Validate(); (err == nil) != tt.valid {
+				t.Errorf("Validate() = %v, want valid %v", err, tt.valid)
+			}
+			data, err := yaml.Marshal(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var document map[string]any
+			if err := yaml.Unmarshal(data, &document); err != nil {
+				t.Fatal(err)
+			}
+			if err := compiled.Validate(document); (err == nil) != tt.valid {
+				t.Errorf("schema validation = %v, want valid %v", err, tt.valid)
+			}
+		})
+	}
+}
+
 func TestSchemaMatchesSupportedConfigVersions(t *testing.T) {
 	compiled := compileSchema(t)
 	for _, version := range []string{"1.0", "0.9", "1.1", "99.0", "1", "banana", "", " 1.0 "} {

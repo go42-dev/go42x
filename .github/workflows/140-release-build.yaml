@@ -70,6 +70,7 @@ jobs:
             .build/dist/*.apk
             .build/dist/*.json
             .build/dist/checksums.txt
+            .build/dist/homebrew/Casks/go42x.rb
           include-hidden-files: true
           if-no-files-found: error
           compression-level: 0

@@ -118,7 +118,7 @@ func TestTemplateGenerationErrors(t *testing.T) {
 				if err := os.Mkdir(filepath.Join(out, "AGENTS.md"), 0755); err != nil {
 					t.Fatal(err)
 				}
-				want = "read instructions AGENTS.md"
+				want = "prepare instructions AGENTS.md"
 			}
 			if err := os.WriteFile(filepath.Join(dir, "main.tpl.md"), []byte(content), 0600); err != nil {
 				t.Fatal(err)

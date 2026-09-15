@@ -7,8 +7,64 @@ import (
 	"slices"
 	"testing"
 
+	"go.uber.org/mock/gomock"
+
 	"github.com/go42-dev/go42x/pkg/agentenv/config"
+	"github.com/go42-dev/go42x/pkg/agentenv/generator/mocks"
 )
+
+func TestGenerateUsesProviderInstructionsFileName(t *testing.T) {
+	t.Setenv("PATH", "")
+	dir, out := t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "main.tpl.md"), []byte("{{ .project.name }}"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{
+		Version: "1.0", Project: config.Project{Name: "example"},
+		Context:   config.Context{Template: "main.tpl.md"},
+		Providers: map[string]config.Provider{"codex": {}},
+	}
+	g := NewGenerator(slog.New(slog.DiscardHandler), cfg, dir, out)
+	p := mocks.NewMockproviderAccessor(gomock.NewController(t))
+	p.EXPECT().InstructionsFileName().Return("CUSTOM.md")
+	p.EXPECT().Prepare(gomock.Any(), gomock.Any(), cfg.Providers["codex"]).Return(nil)
+	g.providers["codex"] = p
+	if err := g.Generate(t.Context(), false); err != nil {
+		t.Fatal(err)
+	}
+	for path, want := range map[string]string{"AGENTS.md": "example", "CUSTOM.md": "@AGENTS.md\n"} {
+		data, err := os.ReadFile(filepath.Join(out, path))
+		if err != nil || string(data) != instructionsMarker+"\n\n"+want {
+			t.Fatalf("generated %s = %q, %v", path, data, err)
+		}
+	}
+	// Disabling the provider preserves its generated import, including with --clean.
+	disabled := false
+	cfg.Providers["codex"] = config.Provider{Enabled: &disabled}
+	for _, clean := range []bool{false, true} {
+		if err := g.Generate(t.Context(), clean); err != nil {
+			t.Fatal(err)
+		}
+		for path, want := range map[string]string{"AGENTS.md": "example", "CUSTOM.md": "@AGENTS.md\n"} {
+			data, err := os.ReadFile(filepath.Join(out, path))
+			if err != nil || string(data) != instructionsMarker+"\n\n"+want {
+				t.Fatalf("preserved %s = %q, %v", path, data, err)
+			}
+		}
+	}
+	// An unmarked file at the same path belongs to the user and must be preserved.
+	customPath := filepath.Join(out, "CUSTOM.md")
+	if err := os.WriteFile(customPath, []byte("user instructions"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.Generate(t.Context(), true); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(customPath)
+	if err != nil || string(data) != "user instructions" {
+		t.Fatalf("user instructions changed: %q, %v", data, err)
+	}
+}
 
 func TestGenerateProviderToggles(t *testing.T) {
 	t.Setenv("PATH", "")
@@ -73,12 +129,9 @@ func TestGenerateProviderToggles(t *testing.T) {
 				t.Fatalf("generated files = %v, want %v", files, want)
 			}
 
-			// Disabling every provider preserves settings, including with --clean.
+			// Disabling every provider preserves settings and instructions, including with --clean.
 			preserved := make(map[string]string)
 			for _, path := range files {
-				if path == "CLAUDE.md" || path == "GEMINI.md" {
-					continue
-				}
 				data, err := os.ReadFile(filepath.Join(out, path))
 				if err != nil {
 					t.Fatal(err)
@@ -97,11 +150,6 @@ func TestGenerateProviderToggles(t *testing.T) {
 					data, err := os.ReadFile(filepath.Join(out, path))
 					if err != nil || string(data) != want {
 						t.Errorf("preserved %s = %q, %v; want %q", path, data, err, want)
-					}
-				}
-				for _, path := range []string{"CLAUDE.md", "GEMINI.md"} {
-					if _, err := os.Stat(filepath.Join(out, path)); !os.IsNotExist(err) {
-						t.Errorf("disabled provider import %s still exists: %v", path, err)
 					}
 				}
 			}

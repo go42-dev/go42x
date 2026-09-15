@@ -6,6 +6,8 @@ import (
 	"github.com/go42-dev/go42x/pkg/agentenv/config"
 )
 
+const AgentsFile = "AGENTS.md"
+
 type BaseProvider struct {
 	config         *config.Config
 	logger         *slog.Logger
@@ -27,4 +29,9 @@ func NewBaseProvider(
 		outputDir:      outputDir,
 		templateEngine: templateEngine,
 	}
+}
+
+// InstructionsFileName defaults to the shared instructions document.
+func (p *BaseProvider) InstructionsFileName() string {
+	return AgentsFile
 }

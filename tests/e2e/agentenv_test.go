@@ -114,6 +114,8 @@ func TestAgentEnvLifecycle(t *testing.T) {
 	generated := p.snapshot(t)
 	p.run(t, 0, "agentenv", "generate")
 	p.assertUnchanged(t, generated)
+	p.run(t, 0, "agentenv", "generate", "--providers=")
+	p.assertUnchanged(t, generated)
 	p.write(t, ".go42x/agents.tpl.md", "# Updated {{ .project.name }}\n")
 	p.run(t, 0, "agentenv", "generate", "--clean")
 	if !strings.Contains(p.read(t, "AGENTS.md"), "# Updated example-e2e\n") {
@@ -169,6 +171,18 @@ func TestGenerationFailurePreservesProject(t *testing.T) {
 		{"invalid JSON", ".claude/settings.local.json", `{"permissions":`},
 		{"invalid TOML", ".codex/config.toml", "model = ["},
 		{"invalid template", ".go42x/agents.tpl.md", "{{ if }}"},
+		{
+			"invalid generated YAML", ".go42x/agents.tpl.md",
+			`{{ define "context" }}value: [{{ end }}{{ yamlBlock "context" . }}`,
+		},
+		{
+			"duplicate generated YAML keys", ".go42x/agents.tpl.md",
+			"{{ define \"context\" }}value: a\nvalue: b\n{{ end }}{{ yamlBlock \"context\" . }}",
+		},
+		{
+			"multiple generated YAML documents", ".go42x/agents.tpl.md",
+			"{{ define \"context\" }}value: a\n---\nvalue: b\n{{ end }}{{ yamlBlock \"context\" . }}",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

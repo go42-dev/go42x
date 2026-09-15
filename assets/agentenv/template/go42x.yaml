@@ -25,6 +25,10 @@ env: []
 context:
   template: agents.tpl.md
   chunks-dir: 'chunks/'
+  # Extra go env variables, e.g. [GOFLAGS, GOPRIVATE]. Values appear in shared context.
+  # Defaults: GOVERSION, GOTOOLCHAIN, GOROOT, GOPATH, GOBIN, GOCACHE, GOMODCACHE,
+  # GOMOD, GOWORK, GOOS, GOARCH, CGO_ENABLED. Empty values are omitted.
+  go-env: []
 
 # Generation makes all tools from enabled MCP servers available and updates tool approvals.
 # auto-approve-tools configures native tool approvals for Claude, Gemini, and Crush.
@@ -32,7 +36,7 @@ context:
 # Set enabled: false to skip a provider; omitted enabled defaults to true.
 # Keep shared defaults disabled; enable your providers in ignored go42x.local.yaml.
 # --providers or GO42X_PROVIDERS selects an exact list for generate and doctor.
-# Disabling preserves existing settings and removes generated CLAUDE.md/GEMINI.md imports.
+# Disabling preserves existing settings and instruction files, including with --clean.
 # Shared AGENTS.md is still generated when all providers are disabled.
 providers:
   # -------------------------

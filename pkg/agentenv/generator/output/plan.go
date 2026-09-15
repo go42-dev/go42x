@@ -40,7 +40,11 @@ type Plan struct {
 }
 
 func NewPlan(logger *slog.Logger, outputDir string) *Plan {
-	return &Plan{logger: logger, outputDir: outputDir, files: make(map[string]*file)}
+	return &Plan{
+		logger:    logger,
+		outputDir: outputDir,
+		files:     make(map[string]*file),
+	}
 }
 
 // Read snapshots an output once. Later reads return the same original content.

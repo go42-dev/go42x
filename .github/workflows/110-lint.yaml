@@ -76,14 +76,14 @@ jobs:
             ${{ steps.lint-cache.outputs.go-mod }}
             ${{ env.GOLANGCI_LINT_CACHE }}
           # Refresh per commit; reuse compatible entries after dependency/config changes.
-          key: ${{ env.LINT_CACHE_PREFIX }}-${{ hashFiles('etc/.golangci.yml', 'go.mod', 'go.sum') }}-${{ github.sha }}
+          key: ${{ env.LINT_CACHE_PREFIX }}-${{ hashFiles('etc/golangci.yml', 'go.mod', 'go.sum') }}-${{ github.sha }}
           restore-keys: |-
-            ${{ env.LINT_CACHE_PREFIX }}-${{ hashFiles('etc/.golangci.yml', 'go.mod', 'go.sum') }}-
+            ${{ env.LINT_CACHE_PREFIX }}-${{ hashFiles('etc/golangci.yml', 'go.mod', 'go.sum') }}-
             ${{ env.LINT_CACHE_PREFIX }}-
       - name: 'Validate golangci-lint configuration'
-        run: golangci-lint config verify --config etc/.golangci.yml
+        run: golangci-lint config verify --config etc/golangci.yml
       - name: 'Run golangci-lint'
-        run: golangci-lint run --config etc/.golangci.yml --verbose
+        run: golangci-lint run --config etc/golangci.yml --verbose
 
   # JSON, YAML, and TOML formatting and lint rules.
   # @see https://github.com/caarlos0/jsonfmt

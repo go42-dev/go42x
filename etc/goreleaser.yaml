@@ -47,6 +47,30 @@ archives:
       - LICENSE
       - README.md
 
+homebrew_casks:
+  - name: go42x
+    ids:
+      - go42x
+    binaries:
+      - go42x
+    homepage: https://github.com/go42-dev/go42x
+    description: Helper tool for go42 project
+    skip_upload: auto
+    repository:
+      owner: go42-dev
+      name: homebrew-go42x
+      token: '{{ .Env.HOMEBREW_GITHUB_TOKEN }}'
+    commit_author:
+      use_github_app_token: true
+    hooks:
+      post:
+        # Release checksums are signed with Sigstore; macOS binaries are not Apple-notarized.
+        # Limit quarantine removal to the installed executable.
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/go42x"]
+          end
+
 nfpms:
   - id: go42x-packages
     package_name: go42x

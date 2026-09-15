@@ -17,8 +17,9 @@ const chunksPlaceholder = "{{ .chunks }}"
 
 func defaultTemplateOps() template.FuncMap {
 	return template.FuncMap{
-		"mcpTool":    provider.MCPToolName,
 		"hasMCPTool": hasMCPTool,
+		"yamlValue":  yamlValue,
+		"mcpTool":    provider.MCPToolName,
 		"lower":      strings.ToLower,
 		"upper":      strings.ToUpper,
 		"trim":       strings.TrimSpace,
@@ -89,8 +90,9 @@ func (e *templateEngine) loadTemplates(dir string) ([]string, error) {
 }
 
 func (e *templateEngine) Process(content string, ctxData map[string]any) (string, error) {
-	tmpl, err := template.New("main").Funcs(e.functions).Parse(content)
-	if err != nil {
+	tmpl := template.New("main").Funcs(e.functions)
+	tmpl.Funcs(template.FuncMap{"yamlBlock": yamlBlockFunc(tmpl)})
+	if _, err := tmpl.Parse(content); err != nil {
 		return "", fmt.Errorf("failed to parse template: %w", err)
 	}
 

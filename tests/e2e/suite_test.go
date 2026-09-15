@@ -25,6 +25,13 @@ func TestMain(m *testing.M) {
 }
 
 func runTests(m *testing.M) int {
+	if dist := os.Getenv("GO42X_RELEASE_DIST"); dist != "" {
+		if os.Getenv("GO42X_E2E_BINARY") != "" || os.Getenv("GO42X_E2E_VERSION") != "" {
+			fmt.Fprintln(os.Stderr, "GO42X_RELEASE_DIST cannot be combined with GO42X_E2E_BINARY or GO42X_E2E_VERSION")
+			return 1
+		}
+		return runReleaseTests(m, dist)
+	}
 	if path := os.Getenv("GO42X_E2E_BINARY"); path != "" {
 		// Release tests must use the supplied binary; never silently rebuild it.
 		if !filepath.IsAbs(path) || os.Getenv("GO42X_E2E_VERSION") == "" {

@@ -19,6 +19,36 @@ import (
 	"github.com/go42-dev/go42x/pkg/agentenv/generator/provider"
 )
 
+func TestGeneratorGoContextWithoutExecutable(t *testing.T) {
+	t.Setenv("PATH", "")
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example\ngo 1.27\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	template := "{{.golang.go_version}}\n"
+	if err := os.WriteFile(filepath.Join(root, "agents.tpl.md"), []byte(template), 0600); err != nil {
+		t.Fatal(err)
+	}
+	disabled := false
+	cfg := &config.Config{
+		Version: "1.0", Project: config.Project{Name: "example"},
+		Context:   config.Context{Template: "agents.tpl.md"},
+		Providers: map[string]config.Provider{"codex": {Enabled: &disabled}},
+	}
+	g := NewGenerator(slog.New(slog.DiscardHandler), cfg, root, root)
+	plan, err := g.Prepare(t.Context(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := plan.Apply(); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "AGENTS.md"))
+	if err != nil || !strings.Contains(string(data), "\n1.27\n") {
+		t.Fatalf("missing Go context: %q, %v", data, err)
+	}
+}
+
 func TestGeneratorContextAndProviderErrors(t *testing.T) {
 	t.Setenv("PATH", "")
 	t.Setenv("GITHUB_ACTIONS", "false")
@@ -39,6 +69,7 @@ func TestGeneratorContextAndProviderErrors(t *testing.T) {
 	failures := []error{errors.New("claude failed"), errors.New("gemini failed")}
 	for i, name := range []string{"claude", "gemini"} {
 		p := mocks.NewMockproviderAccessor(ctrl)
+		p.EXPECT().InstructionsFileName().Return(name + ".md")
 		p.EXPECT().
 			Prepare(gomock.Any(), gomock.Any(), cfg.Providers[name]).
 			DoAndReturn(func(_ *output.Plan, data map[string]any, _ config.Provider) error {
@@ -140,27 +171,10 @@ func TestGeneratePrepareEnvInstructions(t *testing.T) {
 	}
 	for _, tt := range []struct {
 		name, ci, actions, ref string
-		want, absent           []string
 	}{
-		{
-			name: "action variables", ci: "true", actions: "true",
-			want: []string{
-				"CI: true", `CI environment value: "true"`, "Repository: org/repo", "Actor: developer",
-				"Event: issue_comment", "Action: created", "Checkout ref: main", "Commit: checkout-sha",
-				"Run: https://github.example/org/repo/actions/runs/42", "### Pull request #7",
-				"Fix the PR", "PR description", "URL: https://github.example/org/repo/pull/7",
-				"### Requested task", "@agent fix this",
-			},
-			absent: []string{"### Issue", "Source branch:"},
-		},
-		{
-			name: "full ref available", ci: "true", actions: "true", ref: "refs/heads/main",
-			want: []string{"Checkout ref: refs/heads/main"}, absent: []string{"Checkout ref: main"},
-		},
-		{
-			name: "local generation", actions: "false",
-			want: []string{"CI: false", `CI environment value: ""`}, absent: []string{"## GitHub Actions"},
-		},
+		{name: "action variables", ci: "true", actions: "true"},
+		{name: "full ref available", ci: "true", actions: "true", ref: "refs/heads/main"},
+		{name: "local generation", actions: "false"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("CI", tt.ci)
@@ -176,15 +190,36 @@ func TestGeneratePrepareEnvInstructions(t *testing.T) {
 				t.Fatal(err)
 			}
 			content := string(data)
-			for _, want := range tt.want {
-				if !strings.Contains(content, want) {
-					t.Errorf("generated instructions missing %q", want)
-				}
+			context, _ := decodeContextBlock(t, content)
+			environment := context["environment"].(map[string]any)
+			if environment["is_ci"] != (tt.ci == "true") {
+				t.Errorf("incorrect CI flag: %+v", environment)
 			}
-			for _, absent := range tt.absent {
-				if strings.Contains(content, absent) {
-					t.Errorf("generated instructions contain unexpected %q", absent)
+			if tt.ci != "" && environment["ci_mode"] != tt.ci {
+				t.Errorf("incorrect raw CI value: %+v", environment)
+			}
+			if tt.actions == "true" {
+				ref := tt.ref
+				if ref == "" {
+					ref = "main"
 				}
+				want := map[string]any{
+					"repository": map[string]any{"full_name": "org/repo"},
+					"actor":      map[string]any{"login": "developer"},
+					"event":      map[string]any{"name": "issue_comment", "action": "created"},
+					"ref":        ref, "sha": "checkout-sha",
+					"build_url": "https://github.example/org/repo/actions/runs/42",
+					"pull_request": map[string]any{
+						"number": 7, "title": "Fix the PR", "body": "PR description",
+						"url": "https://github.example/org/repo/pull/7",
+					},
+					"user_request": "@agent fix this",
+				}
+				if !reflect.DeepEqual(context["github_actions"], want) {
+					t.Errorf("GitHub context = %+v, want %+v", context["github_actions"], want)
+				}
+			} else if _, exists := context["github_actions"]; exists {
+				t.Error("local context includes GitHub Actions")
 			}
 			if strings.Contains(content, "{{") || strings.Contains(content, "<no value>") {
 				t.Error("generated instructions contain unresolved template values")

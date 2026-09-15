@@ -109,6 +109,20 @@ func (m *MockproviderAccessor) EXPECT() *MockproviderAccessorMockRecorder {
 	return m.recorder
 }
 
+// InstructionsFileName mocks base method.
+func (m *MockproviderAccessor) InstructionsFileName() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "InstructionsFileName")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// InstructionsFileName indicates an expected call of InstructionsFileName.
+func (mr *MockproviderAccessorMockRecorder) InstructionsFileName() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InstructionsFileName", reflect.TypeOf((*MockproviderAccessor)(nil).InstructionsFileName))
+}
+
 // Prepare mocks base method.
 func (m *MockproviderAccessor) Prepare(plan *output.Plan, ctxData map[string]any, cfg config.Provider) error {
 	m.ctrl.T.Helper()

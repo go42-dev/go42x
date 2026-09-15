@@ -12,10 +12,10 @@ import (
 type collectorAccessor interface {
 	Name() string
 	Priority() int
-	// Collect may return partial data alongside an error for optional information.
-	Collect(ctx context.Context) (map[string]interface{}, error)
+	Collect(ctx context.Context) (map[string]any, error)
 }
 
 type providerAccessor interface {
-	Prepare(plan *output.Plan, ctxData map[string]interface{}, cfg config.Provider) error
+	InstructionsFileName() string
+	Prepare(plan *output.Plan, ctxData map[string]any, cfg config.Provider) error
 }

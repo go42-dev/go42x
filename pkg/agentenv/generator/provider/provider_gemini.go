@@ -12,6 +12,7 @@ import (
 
 const (
 	Gemini                 = "gemini"
+	GeminiFile             = "GEMINI.md"
 	geminiSettingsDir      = ".gemini"
 	geminiSettingsFile     = "settings.json"
 	mcpDefaultTimeout      = 30000 // in milliseconds
@@ -69,6 +70,10 @@ func NewGeminiProvider(
 	return &GeminiProvider{
 		BaseProvider: NewBaseProvider(logger, cfg, templateEngine, templateDir, outputDir),
 	}
+}
+
+func (p *GeminiProvider) InstructionsFileName() string {
+	return GeminiFile
 }
 
 func (p *GeminiProvider) Prepare(plan *output.Plan, _ map[string]interface{}, providerConfig config.Provider) error {

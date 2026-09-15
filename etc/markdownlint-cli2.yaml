@@ -4,6 +4,9 @@ config:
   default: true
   MD034: false
 
+  MD060:
+    style: aligned
+
   # Keep a visible H1 alongside front matter for readers in a checkout.
   MD025:
     front_matter_title: ""

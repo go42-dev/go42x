@@ -139,9 +139,13 @@ tasks:
 
   test:release:
     desc: "verify release artifacts and run E2E tests against the native archive"
-    summary: "Usage: task release:snapshot && task test:release. GO42X_RELEASE_DIST defaults to .build/dist."
+    summary: >-
+      Usage: task release:snapshot && task test:release. GO42X_RELEASE_DIST defaults to .build/dist; relative paths resolve
+      from the repository root. Do not combine it with GO42X_E2E_BINARY or GO42X_E2E_VERSION.
+    env:
+      GO42X_RELEASE_DIST: '{{.GO42X_RELEASE_DIST | default ".build/dist"}}'
     cmds:
-      - "bash tests/e2e/release.sh"
+      - "go test -count=1 -v -race -timeout=5m ./tests/e2e/..."
 
   # ╭────────────────────----------------──────────╮
   # │               General workflow               │
@@ -186,7 +190,7 @@ tasks:
     cmds:
       - |
         set -- {{.CLI_ARGS}}
-        "{{.TOOLS_BIN}}/golangci-lint" fmt --config etc/.golangci.yml "$@"
+        "{{.TOOLS_BIN}}/golangci-lint" fmt --config etc/golangci.yml "$@"
 
   fmt:yaml:
     desc: "Format explicit plain YAML files (writes)"
@@ -195,7 +199,7 @@ tasks:
     cmds:
       - |
         set -- {{.CLI_ARGS}}
-        "{{.TOOLS_BIN}}/yamlfmt" -conf etc/.yamlfmt.yaml "$@"
+        "{{.TOOLS_BIN}}/yamlfmt" -conf etc/yamlfmt.yaml "$@"
 
   fmt:json:
     desc: "Format explicit JSON files (writes)"
@@ -247,8 +251,8 @@ tasks:
     cmds:
       - |
         set -- {{.CLI_ARGS}}
-        "{{.TOOLS_BIN}}/golangci-lint" config verify --config etc/.golangci.yml
-        "{{.TOOLS_BIN}}/golangci-lint" run --config etc/.golangci.yml "$@"
+        "{{.TOOLS_BIN}}/golangci-lint" config verify --config etc/golangci.yml
+        "{{.TOOLS_BIN}}/golangci-lint" run --config etc/golangci.yml "$@"
 
   lint:go-security:
     desc: "Check handwritten Go code with Gosec"
@@ -291,7 +295,7 @@ tasks:
         set -- {{if .CLI_ARGS}}{{.CLI_ARGS}}{{else}}{{range splitList "\x00" .SOURCE_FILES}}{{if .}}{{. | shellQuote}} {{end}}{{end}}{{end}}
         for file do
           if [ -f "$file" ]; then
-            "{{.TOOLS_BIN}}/yamlfmt" -conf etc/.yamlfmt.yaml -lint "$file"
+            "{{.TOOLS_BIN}}/yamlfmt" -conf etc/yamlfmt.yaml -lint "$file"
           fi
         done
 
@@ -393,21 +397,21 @@ tasks:
   release:check:
     desc: "validate GoReleaser configuration"
     cmds:
-      - '"{{.TOOLS_BIN}}/goreleaser" check --config etc/.goreleaser.yaml'
+      - '"{{.TOOLS_BIN}}/goreleaser" check --config etc/goreleaser.yaml'
 
   release:snapshot:
     desc: "build release artifacts without publishing or signing"
     cmds:
       - |
         export PATH="{{.TOOLS_BIN}}:$PATH"
-        goreleaser release --config etc/.goreleaser.yaml --snapshot --clean --skip=publish,sign
+        goreleaser release --config etc/goreleaser.yaml --snapshot --clean --skip=publish,sign
 
   release:local:
     desc: "build and sign a tagged release without publishing"
     cmds:
       - |
         export PATH="{{.TOOLS_BIN}}:$PATH"
-        goreleaser release --config etc/.goreleaser.yaml --clean --skip=publish
+        goreleaser release --config etc/goreleaser.yaml --clean --skip=publish
 
   release:
     desc: "build, sign, and publish the validated release (CI only)"
@@ -417,4 +421,4 @@ tasks:
     cmds:
       - |-
         export PATH="{{.TOOLS_BIN}}:$PATH"
-        goreleaser release --config etc/.goreleaser.yaml --clean
+        goreleaser release --config etc/goreleaser.yaml --clean

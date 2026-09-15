@@ -10,6 +10,7 @@ import (
 
 	"github.com/go42-dev/go42x/pkg/agentenv/config"
 	"github.com/go42-dev/go42x/pkg/agentenv/generator"
+	"github.com/go42-dev/go42x/pkg/agentenv/generator/provider"
 )
 
 const (
@@ -113,11 +114,11 @@ var ignoreFiles = []string{
 	".go42x/backups/",
 	".mcp.json",
 	".claude/",
-	"CLAUDE.md",
+	provider.ClaudeFile,
 	".codex/",
-	"AGENTS.md",
+	provider.AgentsFile,
 	".gemini/",
-	"GEMINI.md",
+	provider.GeminiFile,
 	".crush/",
 	".crush.json",
 }

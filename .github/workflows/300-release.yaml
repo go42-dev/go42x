@@ -16,7 +16,8 @@ on:
 permissions: {}
 
 concurrency:
-  group: release-${{ inputs.version }}
+  # Stable releases share one Homebrew cask, so publication must be serialized.
+  group: release
   cancel-in-progress: false
 
 jobs:
@@ -231,19 +232,49 @@ jobs:
             echo '::error::Release App slug does not match RELEASE_APP_NAME.'
             exit 1
           fi
+      - name: 'Generate tap-scoped release App token'
+        if: needs.validate-release.outputs.is_prerelease == 'false'
+        id: homebrew-app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: go42-dev
+          repositories: homebrew-go42x
+          permission-contents: write
+      - name: 'Validate Homebrew publishing access'
+        if: needs.validate-release.outputs.is_prerelease == 'false'
+        env:
+          GH_TOKEN: ${{ steps.homebrew-app.outputs.token }}
+          ACTUAL_APP_SLUG: ${{ steps.homebrew-app.outputs.app-slug }}
+          EXPECTED_APP_SLUG: ${{ vars.RELEASE_APP_NAME }}
+        run: |
+          if [ -z "$EXPECTED_APP_SLUG" ] || [ "$ACTUAL_APP_SLUG" != "$EXPECTED_APP_SLUG" ]; then
+            echo '::error::Homebrew App slug does not match RELEASE_APP_NAME.'
+            exit 1
+          fi
+          gh api repos/go42-dev/homebrew-go42x --jq '
+            if .private or .archived then error("The Homebrew tap must be public and active") else .full_name end
+          '
       - name: 'Build, sign, and publish release'
         run: task release
         env:
           GITHUB_TOKEN: ${{ steps.release-app.outputs.token }}
+          HOMEBREW_GITHUB_TOKEN: ${{ steps.homebrew-app.outputs.token }}
       - name: 'Summarize release'
         env:
           RELEASE_VERSION: ${{ needs.validate-release.outputs.release_version }}
           SOURCE_SHA: ${{ needs.validate-release.outputs.source_sha }}
           CI_URL: ${{ needs.validate-release.outputs.ci_url }}
+          IS_PRERELEASE: ${{ needs.validate-release.outputs.is_prerelease }}
         run: |-
           {
             echo "## Published $RELEASE_VERSION"
             echo "Source commit: $SOURCE_SHA"
             echo "[Successful Unified CI]($CI_URL)"
             echo "[GitHub release]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$RELEASE_VERSION)"
+            if [ "$IS_PRERELEASE" = 'false' ]; then
+              echo '[Homebrew tap](https://github.com/go42-dev/homebrew-go42x)'
+              echo 'Install with: brew install --cask go42-dev/go42x/go42x'
+            fi
           } >> "$GITHUB_STEP_SUMMARY"

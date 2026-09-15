@@ -14,6 +14,7 @@ import (
 
 const (
 	Claude             = "claude"
+	ClaudeFile         = "CLAUDE.md"
 	claudeSettingsDir  = ".claude"
 	claudeSettingsFile = "settings.local.json"
 	claudeMCPFile      = ".mcp.json"
@@ -57,6 +58,10 @@ func NewClaudeProvider(
 	return &ClaudeProvider{
 		BaseProvider: NewBaseProvider(logger, cfg, templateEngine, templateDir, outputDir),
 	}
+}
+
+func (p *ClaudeProvider) InstructionsFileName() string {
+	return ClaudeFile
 }
 
 func (p *ClaudeProvider) Prepare(
