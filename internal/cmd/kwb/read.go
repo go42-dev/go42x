@@ -15,7 +15,9 @@ import (
 
 func newSearchCommand(f *cmdutil.Factory) *cobra.Command {
 	cmd := &cobra.Command{
-		Use: "search QUERY", Short: "Search indexed source and documentation", Args: cobra.ExactArgs(1),
+		Use:         "search QUERY",
+		Short:       "Search indexed source and documentation",
+		Args:        cobra.ExactArgs(1),
 		Annotations: map[string]string{"result-output": "true"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			settings := &kwb.SearchSettings{
@@ -49,7 +51,9 @@ func newSearchCommand(f *cmdutil.Factory) *cobra.Command {
 
 func newReadCommand(f *cmdutil.Factory) *cobra.Command {
 	cmd := &cobra.Command{
-		Use: "read PATH", Short: "Read current project source lines", Args: cobra.ExactArgs(1),
+		Use:         "read PATH",
+		Short:       "Read current project source lines",
+		Args:        cobra.ExactArgs(1),
 		Annotations: map[string]string{"result-output": "true"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			settings := &kwb.ReadSettings{
@@ -78,7 +82,9 @@ func newReadCommand(f *cmdutil.Factory) *cobra.Command {
 
 func newStatsCommand(f *cmdutil.Factory) *cobra.Command {
 	cmd := &cobra.Command{
-		Use: "stats", Short: "Show index counts and project root", Args: cobra.NoArgs,
+		Use:         "stats",
+		Short:       "Show index counts and project root",
+		Args:        cobra.NoArgs,
 		Annotations: map[string]string{"result-output": "true"},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			settings := &kwb.StatsSettings{KnowledgeBase: queryKnowledgeBaseSettings(cmd), JSON: viper.GetBool("json")}

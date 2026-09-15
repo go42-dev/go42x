@@ -14,8 +14,6 @@ func newInitCommand(f *cmdutil.Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Initialise ai agent configuration",
-		Long: `Initialise agent configuration in .go42x.
-Install missing configuration and templates, preserve existing edits, and refresh the configuration schema.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			settings := &agentenv.Settings{}
 			if err := settings.Validate(); err != nil {

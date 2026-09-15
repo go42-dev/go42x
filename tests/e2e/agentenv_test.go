@@ -203,3 +203,83 @@ func TestGenerationFailurePreservesProject(t *testing.T) {
 		})
 	}
 }
+
+func TestAgentEnvUpdate(t *testing.T) {
+	t.Parallel()
+	p := newProject(t)
+	p.configure(t)
+	p.write(t, ".go42x/go42x.local.yaml", "project: {name: local-project}\nproviders: {claude: {enabled: true}}\n")
+	p.write(t, ".go42x/chunks/900-custom.tpl.md", "Additional project instructions")
+	p.write(t, "AGENTS.md", "Original instructions")
+	p.write(t, "GEMINI.md", "Disabled provider instructions")
+	p.write(t, ".go42x/chunks/100-operation.tpl.md", "Customized bundled chunk")
+	originalConfig := p.read(t, ".go42x/go42x.yaml")
+	result := p.run(t, 0, "agentenv", "update")
+	if !strings.Contains(result.stdout, "Backup: ") || !strings.Contains(result.stdout, "regenerated") {
+		t.Fatalf("missing update summary: %s", result.stdout)
+	}
+	backups, err := filepath.Glob(filepath.Join(p.root, ".go42x/backups/updates/*"))
+	if err != nil || len(backups) != 1 {
+		t.Fatalf("update backup = %v, %v", backups, err)
+	}
+	for path, want := range map[string]string{
+		"AGENTS.md":                          "Original instructions",
+		".go42x/go42x.yaml":                  originalConfig,
+		".go42x/chunks/100-operation.tpl.md": "Customized bundled chunk",
+	} {
+		got, err := os.ReadFile(filepath.Join(backups[0], "files", filepath.FromSlash(path)))
+		if err != nil || string(got) != want {
+			t.Errorf("backup %s = %q, %v", path, got, err)
+		}
+	}
+	if p.read(t, ".go42x/go42x.yaml") == originalConfig {
+		t.Fatal("project configuration was not replaced")
+	}
+	instructions := p.read(t, "AGENTS.md")
+	if !strings.Contains(instructions, "local-project") ||
+		!strings.Contains(instructions, "Additional project instructions") {
+		t.Fatalf("update did not regenerate instructions: %s", instructions)
+	}
+	if !strings.Contains(p.read(t, "CLAUDE.md"), "@AGENTS.md") {
+		t.Fatal("update did not regenerate provider instructions")
+	}
+	if p.read(t, "GEMINI.md") != "Disabled provider instructions" {
+		t.Fatal("update changed disabled-provider instructions")
+	}
+	p.run(t, 0, "agentenv", "update")
+	backups, err = filepath.Glob(filepath.Join(p.root, ".go42x/backups/updates/*"))
+	if err != nil || len(backups) != 2 {
+		t.Fatalf("repeated update did not create another backup: %v, %v", backups, err)
+	}
+}
+
+func TestAgentEnvUpdateFailureBeforeApplication(t *testing.T) {
+	t.Parallel()
+	for _, scenario := range []struct{ name, path, content string }{
+		{"invalid local configuration", ".go42x/go42x.local.yaml", "version: ["},
+		{"invalid provider settings", ".claude/settings.local.json", "{"},
+		{"backup failure", ".go42x/backups/updates", "blocked"},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			p := newProject(t)
+			p.configure(t)
+			p.write(t, ".go42x/go42x.local.yaml", "providers: {claude: {enabled: true}}\n")
+			p.write(t, "AGENTS.md", "Original instructions")
+			p.write(t, scenario.path, scenario.content)
+			before := p.snapshot(t)
+			p.run(t, 1, "agentenv", "update")
+			p.assertUnchanged(t, before)
+		})
+	}
+}
+
+func TestAgentEnvUpdateUsage(t *testing.T) {
+	t.Parallel()
+	p := newProject(t)
+	for _, option := range []string{"--dry-run", "--no-generate", "--keep", "--replace", "unexpected-argument"} {
+		before := p.snapshot(t)
+		p.run(t, 2, "agentenv", "update", option)
+		p.assertUnchanged(t, before)
+	}
+	p.run(t, 1, "agentenv", "update")
+}

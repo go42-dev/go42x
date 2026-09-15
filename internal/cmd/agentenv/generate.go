@@ -15,7 +15,6 @@ func newGenerateCommand(f *cmdutil.Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "generate",
 		Short: "Generate ai agent configuration",
-		Long:  `Generate ai agent configuration`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			providers, err := cmdutil.ProviderSelection(cmd)
 			if err != nil {

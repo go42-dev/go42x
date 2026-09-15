@@ -2,6 +2,7 @@ package agentenv
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"log/slog"
@@ -308,5 +309,148 @@ func TestGenerateErrors(t *testing.T) {
 	writeFile(t, filepath.Join(dir, ".go42x/go42x.yaml"), "invalid: [")
 	if err := s.Generate(t.Context()); err == nil || !strings.Contains(err.Error(), "failed to load config") {
 		t.Fatalf("malformed config = %v", err)
+	}
+}
+
+func TestUpdateReplacesBundledSourcesAndRegenerates(t *testing.T) {
+	t.Setenv("PATH", "")
+	t.Setenv("GITHUB_ACTIONS", "false")
+	dir := t.TempDir()
+	service := testService(t, dir, false)
+	if err := service.Init(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	local := "project:\n  name: local-project\nproviders:\n  claude:\n    enabled: true\n" +
+		"    agents: [agents/reviewer.tpl.md]\n"
+	writeFile(t, filepath.Join(dir, ".go42x", config.LocalConfigFile), local)
+	customChunk := "Custom project instructions."
+	writeFile(t, filepath.Join(dir, ".go42x/chunks/900-custom.tpl.md"), customChunk)
+	writeFile(t, filepath.Join(dir, ".go42x/agents/reviewer.tpl.md"), "Review {{ .project.name }}")
+	writeFile(t, filepath.Join(dir, "GEMINI.md"), "disabled provider")
+	originals := map[string]string{
+		".go42x/go42x.yaml":                  "invalid old configuration: [",
+		".go42x/agents.tpl.md":               "{{ if }}",
+		".go42x/chunks/100-operation.tpl.md": "old operation instructions",
+		".go42x/go42x.schema.json":           "old schema",
+		"AGENTS.md":                          "old shared instructions",
+		".claude/settings.local.json":        "{\"user_setting\":\"preserved\"}",
+	}
+	for path, content := range originals {
+		writeFile(t, filepath.Join(dir, filepath.FromSlash(path)), content)
+	}
+	result, err := service.Update(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Sources != 5 || result.Outputs == 0 || result.Applied != result.Sources+result.Outputs {
+		t.Fatalf("update result = %+v", result)
+	}
+	for path, want := range originals {
+		got := string(readFile(t, filepath.Join(result.BackupDir, "files", filepath.FromSlash(path))))
+		if got != want {
+			t.Errorf("backup %s = %q, want %q", path, got, want)
+		}
+	}
+	bundle, err := assets.AgentEnvTemplates()
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = fs.WalkDir(bundle, ".", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
+			return err
+		}
+		want, err := fs.ReadFile(bundle, path)
+		if err != nil {
+			return err
+		}
+		if got := readFile(t, filepath.Join(dir, ".go42x", filepath.FromSlash(path))); string(got) != string(want) {
+			t.Errorf("bundled source was not replaced: %s", path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(readFile(t, filepath.Join(dir, ".go42x/go42x.schema.json"))) != config.Schema() {
+		t.Fatal("schema was not refreshed")
+	}
+	instructions := string(readFile(t, filepath.Join(dir, "AGENTS.md")))
+	if !strings.Contains(instructions, "local-project") || !strings.Contains(instructions, customChunk) ||
+		strings.Contains(instructions, "agentenv-update-") {
+		t.Fatalf("instructions did not use the candidate sources and real project context: %s", instructions)
+	}
+	for path, want := range map[string]string{
+		".go42x/go42x.local.yaml":         local,
+		".go42x/chunks/900-custom.tpl.md": customChunk,
+		".claude/agents/reviewer.md":      "Review local-project",
+		"GEMINI.md":                       "disabled provider",
+	} {
+		if got := string(readFile(t, filepath.Join(dir, filepath.FromSlash(path)))); got != want {
+			t.Errorf("%s = %q, want %q", path, got, want)
+		}
+	}
+	if !strings.Contains(string(readFile(t, filepath.Join(dir, "CLAUDE.md"))), "@AGENTS.md") {
+		t.Fatal("provider instructions were not generated")
+	}
+	settingsPath := filepath.Join(dir, ".claude/settings.local.json")
+	settings := readFile(t, settingsPath)
+	var decoded map[string]any
+	if err := json.Unmarshal(settings, &decoded); err != nil || decoded["user_setting"] != "preserved" {
+		t.Fatalf("provider settings merge changed: %s, %v", settings, err)
+	}
+	oldInfo, err := os.Stat(settingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repeated, err := service.Update(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	newInfo, err := os.Stat(settingsPath)
+	if err != nil || os.SameFile(oldInfo, newInfo) {
+		t.Fatalf("unchanged provider settings were not replaced: %v", err)
+	}
+	if repeated.BackupDir == result.BackupDir {
+		t.Fatal("repeated update reused an earlier backup")
+	}
+	if got := readFile(
+		t,
+		filepath.Join(repeated.BackupDir, "files/.claude/settings.local.json"),
+	); string(
+		got,
+	) != string(
+		settings,
+	) {
+		t.Fatal("repeated update did not back up unchanged settings")
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".build")); !os.IsNotExist(err) {
+		t.Fatalf("temporary staging artifacts remain: %v", err)
+	}
+}
+
+func TestUpdatePreservesExternalTemplateReferences(t *testing.T) {
+	t.Setenv("PATH", "")
+	dir := t.TempDir()
+	service := testService(t, dir, false)
+	if err := service.Init(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(dir, "shared/main.tpl.md"), "External {{ .project.name }}\n{{ .chunks }}")
+	writeFile(t, filepath.Join(dir, "shared/chunks/custom.tpl.md"), "External chunk")
+	writeFile(t, filepath.Join(dir, ".go42x/go42x.local.yaml"),
+		"context:\n  template: ../shared/main.tpl.md\n  chunks-dir: ../shared/chunks\n")
+	if _, err := service.Update(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	got := string(readFile(t, filepath.Join(dir, "AGENTS.md")))
+	if !strings.Contains(got, "External go42") || !strings.Contains(got, "External chunk") {
+		t.Fatalf("external paths resolved against staging: %s", got)
+	}
+}
+
+func TestUpdateRequiresInitialization(t *testing.T) {
+	service := testService(t, t.TempDir(), false)
+	if _, err := service.Update(t.Context()); err == nil || !strings.Contains(err.Error(), "agentenv init") {
+		t.Fatalf("update without init = %v", err)
 	}
 }

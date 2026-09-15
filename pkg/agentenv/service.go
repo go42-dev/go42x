@@ -4,12 +4,16 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
 
+	"github.com/go42-dev/go42x/assets"
+	"github.com/go42-dev/go42x/internal/version"
 	"github.com/go42-dev/go42x/pkg/agentenv/config"
 	"github.com/go42-dev/go42x/pkg/agentenv/generator"
+	"github.com/go42-dev/go42x/pkg/agentenv/generator/output"
 	"github.com/go42-dev/go42x/pkg/agentenv/generator/provider"
 )
 
@@ -79,6 +83,87 @@ func (s *Service) Init(_ context.Context) error {
 	return nil
 }
 
+// Update replaces bundled sources and regenerates enabled-provider outputs.
+// Every existing destination is backed up before any replacement, even if its
+// contents are identical. Local configuration and additional sources are kept.
+func (s *Service) Update(ctx context.Context) (*output.UpdateResult, error) {
+	root, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+	templateDir := filepath.Join(root, agentEnvDir)
+	info, err := os.Lstat(templateDir)
+	if os.IsNotExist(err) {
+		return nil, fmt.Errorf("agentenv is not initialized; run go42x agentenv init")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read agentenv directory: %w", err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("agentenv source must be a directory: %s", templateDir)
+	}
+	stage, cleanup, err := newUpdateStage(root)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+
+	plan := output.NewPlan(s.logger, root)
+	if err := copyUpdateSources(ctx, plan, templateDir, stage); err != nil {
+		return nil, fmt.Errorf("stage project sources: %w", err)
+	}
+	bundle, err := assets.AgentEnvTemplates()
+	if err != nil {
+		return nil, err
+	}
+	err = fs.WalkDir(bundle, ".", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		data, err := fs.ReadFile(bundle, path)
+		if err != nil {
+			return err
+		}
+		return stageUpdateSource(plan, templateDir, stage, filepath.FromSlash(path), data)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("prepare bundled sources: %w", err)
+	}
+	if err := stageUpdateSource(plan, templateDir, stage, schemaFile, []byte(config.Schema())); err != nil {
+		return nil, fmt.Errorf("prepare configuration schema: %w", err)
+	}
+	cfg, err := config.LoadProjectConfig(filepath.Join(stage, configFile), s.settings.Providers)
+	if err != nil {
+		return nil, fmt.Errorf("validate updated configuration: %w", err)
+	}
+	if err := rebaseUpdateTemplates(cfg, templateDir, stage); err != nil {
+		return nil, err
+	}
+	gen := generator.NewGenerator(s.logger.With("component", "generator"), cfg, stage, root)
+	generated, err := gen.Prepare(ctx, false)
+	if err != nil {
+		return nil, fmt.Errorf("prepare updated outputs: %w", err)
+	}
+	if err := plan.Merge(generated); err != nil {
+		return nil, err
+	}
+	result, err := plan.ApplyUpdate(ctx, version.GetVersion())
+	if err != nil {
+		if result != nil {
+			return result, fmt.Errorf("update stopped after %d replacements; recovery backup: %s: %w",
+				result.Applied, result.BackupDir, err)
+		}
+		return nil, fmt.Errorf("update failed before application: %w", err)
+	}
+	return result, nil
+}
+
 // Generate generates the agent environment configuration in the current directory.
 func (s *Service) Generate(ctx context.Context) error {
 	workingDir, err := os.Getwd()
@@ -105,6 +190,105 @@ func (s *Service) Generate(ctx context.Context) error {
 
 	s.logger.Info("Generation completed")
 
+	return nil
+}
+
+func newUpdateStage(root string) (string, func(), error) {
+	buildDir := filepath.Join(root, ".build")
+	_, err := os.Lstat(buildDir)
+	created := os.IsNotExist(err)
+	if err != nil && !created {
+		return "", nil, err
+	}
+	if err := os.MkdirAll(buildDir, 0700); err != nil {
+		return "", nil, fmt.Errorf("create update staging directory: %w", err)
+	}
+	stage, err := os.MkdirTemp(buildDir, "agentenv-update-*")
+	cleanup := func() {
+		if stage != "" {
+			_ = os.RemoveAll(stage)
+		}
+		if created {
+			// Remove only an empty directory; other build artifacts are preserved.
+			_ = os.Remove(buildDir)
+		}
+	}
+	if err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("create update staging directory: %w", err)
+	}
+	return stage, cleanup, nil
+}
+
+func copyUpdateSources(ctx context.Context, plan *output.Plan, source, stage string) error {
+	return filepath.WalkDir(source, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		relative, err := filepath.Rel(source, path)
+		if err != nil {
+			return err
+		}
+		if relative == "backups" || relative == "kwb" {
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if entry.IsDir() {
+			return os.MkdirAll(filepath.Join(stage, relative), 0700)
+		}
+		data, _, err := plan.Read(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(filepath.Join(stage, relative), data, 0600)
+	})
+}
+
+func stageUpdateSource(plan *output.Plan, source, stage, path string, data []byte) error {
+	if err := plan.Write(filepath.Join(source, path), data, output.Sources, true); err != nil {
+		return err
+	}
+	target := filepath.Join(stage, path)
+	if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+		return err
+	}
+	return os.WriteFile(target, data, 0600)
+}
+
+// References outside .go42x must still resolve against the real project while
+// bundled and additional files inside it are read from the candidate directory.
+func rebaseUpdateTemplates(cfg *config.Config, source, stage string) error {
+	rebase := func(path string) (string, error) {
+		if path == "" {
+			return path, nil
+		}
+		target := filepath.Join(source, path)
+		relative, err := filepath.Rel(source, target)
+		if err != nil || filepath.IsLocal(relative) {
+			return path, err
+		}
+		return filepath.Rel(stage, target)
+	}
+	var err error
+	if cfg.Context.Template, err = rebase(cfg.Context.Template); err != nil {
+		return err
+	}
+	if cfg.Context.ChunksDir, err = rebase(cfg.Context.ChunksDir); err != nil {
+		return err
+	}
+	for name, provider := range cfg.Providers {
+		for i, path := range provider.Agents {
+			if provider.Agents[i], err = rebase(path); err != nil {
+				return err
+			}
+		}
+		cfg.Providers[name] = provider
+	}
 	return nil
 }
 

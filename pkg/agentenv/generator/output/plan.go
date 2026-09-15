@@ -16,6 +16,7 @@ type Kind string
 const (
 	Instructions Kind = "instructions"
 	Settings     Kind = "settings"
+	Sources      Kind = "sources"
 )
 
 type file struct {
@@ -30,8 +31,8 @@ type file struct {
 	force    bool
 }
 
-// Plan retains the original files while instructions and settings are prepared.
-// Only Apply writes to disk. A plan is intended for a single generation.
+// Plan retains originals while sources, instructions, and settings are prepared.
+// Apply and ApplyUpdate write to disk. A plan is intended for a single operation.
 type Plan struct {
 	logger    *slog.Logger
 	outputDir string
@@ -168,7 +169,7 @@ func (p *Plan) Apply() error {
 			}
 			p.logger.Info("Removed generated output", "file", f.path)
 		case f.write && (f.force || !f.exists || !bytes.Equal(f.previous, f.content)):
-			if err := p.replace(f); err != nil {
+			if err := p.replace(f, true); err != nil {
 				return err
 			}
 			p.logger.Info("Generated output", "file", f.path)
@@ -177,7 +178,7 @@ func (p *Plan) Apply() error {
 	return nil
 }
 
-func (p *Plan) replace(f *file) error {
+func (p *Plan) replace(f *file, backupOriginal bool) error {
 	if err := os.MkdirAll(filepath.Dir(f.path), 0700); err != nil {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
@@ -201,7 +202,7 @@ func (p *Plan) replace(f *file) error {
 	if err := temporary.Close(); err != nil {
 		return fmt.Errorf("failed to close temporary output: %w", err)
 	}
-	if f.exists {
+	if backupOriginal && f.exists {
 		if err := p.backup(f); err != nil {
 			return err
 		}
