@@ -5,11 +5,11 @@ go 1.27
 require (
 	github.com/blevesearch/bleve/v2 v2.6.1
 	github.com/go-git/go-git/v5 v5.19.2
-	github.com/gofrs/flock v0.12.1
-	github.com/lmittmann/tint v1.1.2
+	github.com/gofrs/flock v0.13.1
+	github.com/lmittmann/tint v1.2.0
 	github.com/mark3labs/mcp-go v1.0.0
-	github.com/pelletier/go-toml/v2 v2.2.4
-	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
+	github.com/pelletier/go-toml/v2 v2.4.3
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
 	github.com/yuin/goldmark v1.8.6
@@ -59,9 +59,9 @@ require (
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	go.etcd.io/bbolt v1.4.0 // indirect
-	go.yaml.in/yaml/v3 v3.0.4 // indirect
+	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/net v0.56.0 // indirect
-	golang.org/x/sys v0.46.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.39.0 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
