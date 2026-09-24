@@ -17,7 +17,7 @@ func NewDoctorCommand(f *cmdutil.Factory) *cobra.Command {
 	defaults := doctor.NewSettings()
 	cmd := &cobra.Command{
 		Use:         "doctor",
-		Short:       "Inspect configuration, generated outputs, MCP servers, and the index",
+		Short:       "Troubleshoot go42x systems",
 		Args:        cobra.NoArgs,
 		Annotations: map[string]string{"result-output": "true"},
 		RunE: func(cmd *cobra.Command, _ []string) error {

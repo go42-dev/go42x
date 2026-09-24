@@ -9,8 +9,8 @@ import (
 func NewAgentEnvCommand(f *cmdutil.Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "agentenv",
-		Short: "AI environment configuration",
-		Long:  `AI environment configuration`,
+		Short: "Agentic environment setup",
+		Long:  `Agentic environment setup`,
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
