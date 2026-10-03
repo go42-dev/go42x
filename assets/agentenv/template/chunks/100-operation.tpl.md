@@ -5,7 +5,7 @@
 
 ### Intermediate storage
 
-Use `.build` directory for intermediate storage of files, artifacts, reports, and other outputs generated during
+Use `{{ .context.TempDir }}` directory for intermediate storage of files, artifacts, reports, and other outputs generated during
 the operation.
 
 ### Side effect protection in interactive sessions

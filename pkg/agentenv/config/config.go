@@ -26,6 +26,7 @@ const (
 	MCPServerTypeHTTP  = "http"
 	MCPServerTypeSSE   = "sse"
 	LocalConfigFile    = "go42x.local.yaml"
+	DefaultTempDir     = ".build"
 )
 
 type Config struct {
@@ -49,7 +50,16 @@ type Project struct {
 type Context struct {
 	Template  string   `yaml:"template"`
 	ChunksDir string   `yaml:"chunks-dir"`
+	TempDir   string   `yaml:"temp-dir,omitempty"`
 	GoEnv     []string `yaml:"go-env,omitempty"`
+}
+
+// WithDefaults returns a copy with defaults applied to unset context settings.
+func (c Context) WithDefaults() Context {
+	if c.TempDir == "" {
+		c.TempDir = DefaultTempDir
+	}
+	return c
 }
 
 type Provider struct {
@@ -153,6 +163,10 @@ func (c *Config) Validate() error {
 
 	if strings.TrimSpace(c.Context.Template) == "" {
 		return fmt.Errorf("context.template is required; move shared instructions from providers into context")
+	}
+	if c.Context.TempDir != "" &&
+		(strings.TrimSpace(c.Context.TempDir) == "" || strings.ContainsRune(c.Context.TempDir, '\x00')) {
+		return fmt.Errorf("context.temp-dir must be a nonblank path without NUL characters")
 	}
 	for _, name := range c.Context.GoEnv {
 		if !goEnvNamePattern.MatchString(name) {

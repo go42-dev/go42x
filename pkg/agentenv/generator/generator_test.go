@@ -19,6 +19,65 @@ import (
 	"github.com/go42-dev/go42x/pkg/agentenv/generator/provider"
 )
 
+func TestGenerateTempDirectory(t *testing.T) {
+	t.Setenv("PATH", "")
+	t.Setenv("GITHUB_ACTIONS", "false")
+	for name, templateDir := range map[string]string{
+		"bundled": filepath.Join("..", "..", "..", "assets", "agentenv", "template"),
+		"project": filepath.Join("..", "..", "..", ".go42x"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			for _, tt := range []struct{ name, shared, local, want string }{
+				{"omitted", "", "", ".build"},
+				{"empty", ", temp-dir: ''", "", ".build"},
+				{"relative", ", temp-dir: .scratch", "", ".scratch"},
+				{"absolute", ", temp-dir: /tmp/agent-output", "", "/tmp/agent-output"},
+				{"local override", ", temp-dir: .scratch", "context: {temp-dir: .local}", ".local"},
+				{"local clear", ", temp-dir: .scratch", "context: {temp-dir: null}", ".build"},
+			} {
+				t.Run(tt.name, func(t *testing.T) {
+					dir, out := t.TempDir(), t.TempDir()
+					path := filepath.Join(dir, "go42x.yaml")
+					shared := "version: '1.0'\nproject: {name: example}\n" +
+						"context: {template: agents.tpl.md, chunks-dir: chunks" + tt.shared + "}\n" +
+						"providers: {codex: {enabled: false}}\n"
+					if err := os.WriteFile(path, []byte(shared), 0600); err != nil {
+						t.Fatal(err)
+					}
+					if tt.local != "" {
+						if err := os.WriteFile(
+							filepath.Join(dir, config.LocalConfigFile),
+							[]byte(tt.local),
+							0600,
+						); err != nil {
+							t.Fatal(err)
+						}
+					}
+					cfg, err := config.LoadProjectConfig(path, nil)
+					if err != nil {
+						t.Fatal(err)
+					}
+					g := NewGenerator(slog.New(slog.DiscardHandler), cfg, templateDir, out)
+					if err := g.Generate(t.Context(), false); err != nil {
+						t.Fatal(err)
+					}
+					data, err := os.ReadFile(filepath.Join(out, "AGENTS.md"))
+					if err != nil {
+						t.Fatal(err)
+					}
+					want := "Use `" + tt.want + "` directory for intermediate storage"
+					if !strings.Contains(string(data), want) {
+						t.Fatalf("generated instructions missing %q:\n%s", want, data)
+					}
+					if strings.Contains(string(data), "{{") || strings.Contains(string(data), "<no value>") {
+						t.Fatal("generated instructions contain unresolved template values")
+					}
+				})
+			}
+		})
+	}
+}
+
 func TestGeneratorGoContextWithoutExecutable(t *testing.T) {
 	t.Setenv("PATH", "")
 	root := t.TempDir()

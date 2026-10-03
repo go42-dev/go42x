@@ -169,6 +169,40 @@ func TestSchemaMatchesGoEnvValidation(t *testing.T) {
 	}
 }
 
+func TestSchemaMatchesTempDirectoryValidation(t *testing.T) {
+	compiled := compileSchema(t)
+	for _, tt := range []struct {
+		name, path string
+		valid      bool
+	}{
+		{"empty", "", true},
+		{"default", ".build", true},
+		{"relative", "tmp/agent outputs", true},
+		{"absolute", "/tmp/agent-output", true},
+		{"blank", " \t ", false},
+		{"NUL", "tmp\x00outputs", false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			data := fmt.Appendf(nil, "version: '1.0'\nproject: {name: example}\n"+
+				"context: {template: agents.tpl.md, temp-dir: %q}\nproviders: {codex: {}}\n", tt.path)
+			var document map[string]any
+			if err := yaml.Unmarshal(data, &document); err != nil {
+				t.Fatal(err)
+			}
+			if err := compiled.Validate(document); (err == nil) != tt.valid {
+				t.Errorf("schema validation = %v, want valid %v", err, tt.valid)
+			}
+			path := filepath.Join(t.TempDir(), "go42x.yaml")
+			if err := os.WriteFile(path, data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := LoadConfig(path); (err == nil) != tt.valid {
+				t.Errorf("LoadConfig() = %v, want valid %v", err, tt.valid)
+			}
+		})
+	}
+}
+
 func TestSchemaMatchesSupportedConfigVersions(t *testing.T) {
 	compiled := compileSchema(t)
 	for _, version := range []string{"1.0", "0.9", "1.1", "99.0", "1", "banana", "", " 1.0 "} {

@@ -178,6 +178,15 @@
           "type": "string",
           "description": "Chunk directory relative to .go42x; immediate *.tpl.md files load in filename order. Omit to include no chunks."
         },
+        "temp-dir": {
+          "type": "string",
+          "description": "Directory for intermediate agent outputs in generated instructions, available as .context.TempDir. Relative paths use the project root. Omit or leave empty to use .build.",
+          "default": ".build",
+          "pattern": "^$|\\S",
+          "not": {
+            "pattern": "\u0000"
+          }
+        },
         "go-env": {
           "type": "array",
           "description": "Additional go env variables published under golang.env, beyond GOVERSION, GOTOOLCHAIN, GOROOT, GOPATH, GOBIN, GOCACHE, GOMODCACHE, GOMOD, GOWORK, GOOS, GOARCH, CGO_ENABLED. Empty values are omitted.",

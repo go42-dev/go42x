@@ -181,6 +181,8 @@ func (g *Generator) buildTemplateContext(ctx context.Context) (*Context, error) 
 
 	tplCtx.Set("mcp", servers)
 
+	tplCtx.Set("context", g.config.Context.WithDefaults())
+
 	return tplCtx, nil
 }
 
