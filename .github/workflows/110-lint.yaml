@@ -151,7 +151,7 @@ jobs:
           install_args: --locked task
       - name: 'Set up documentation tools'
         run: task setup:docs
-      - name: 'Check Markdown and prose'
+      - name: 'Check Markdown'
         run: task docs:check
 
   # Ensure generated files and Go module metadata are committed and up to date.

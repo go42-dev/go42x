@@ -312,28 +312,3 @@ checksum = "sha256:a4a79dca35dcaa9bc535eef05ebd164829023977f97ba4e3b88f63468d9d6
 url = "https://github.com/tombi-toml/tombi/releases/download/v1.5.4/tombi-cli-1.5.4-x86_64-apple-darwin.tar.gz"
 url_api = "https://api.github.com/repos/tombi-toml/tombi/releases/assets/552962825"
 provenance = "github-attestations"
-
-[[tools.vale]]
-version = "3.18.0"
-backend = "aqua:vale-cli/vale"
-specifiers = ["3.18.0"]
-
-[tools.vale."platforms.linux-arm64"]
-checksum = "sha256:228325a79f3e6d8b4798d82901f8ed36f6d12b7ff0bad2cc83512dde0c84fbcc"
-url = "https://github.com/vale-cli/vale/releases/download/v3.18.0/vale_3.18.0_Linux_arm64.tar.gz"
-url_api = "https://api.github.com/repos/vale-cli/vale/releases/assets/522705129"
-
-[tools.vale."platforms.linux-x64"]
-checksum = "sha256:a6f71a75a12fe689345b754f2412b90367fe33648abb7d200fa19eaadc2dbf6d"
-url = "https://github.com/vale-cli/vale/releases/download/v3.18.0/vale_3.18.0_Linux_64-bit.tar.gz"
-url_api = "https://api.github.com/repos/vale-cli/vale/releases/assets/522705132"
-
-[tools.vale."platforms.macos-arm64"]
-checksum = "sha256:4d7de9bda8379da14cd45048500199c549413187526d0913383ad822866ad43d"
-url = "https://github.com/vale-cli/vale/releases/download/v3.18.0/vale_3.18.0_macOS_arm64.tar.gz"
-url_api = "https://api.github.com/repos/vale-cli/vale/releases/assets/522705131"
-
-[tools.vale."platforms.macos-x64"]
-checksum = "sha256:7ec47dad588bf1421e12f72f15219dcc96e3adf7204918ee86ea81fe8cddab8d"
-url = "https://github.com/vale-cli/vale/releases/download/v3.18.0/vale_3.18.0_macOS_64-bit.tar.gz"
-url_api = "https://api.github.com/repos/vale-cli/vale/releases/assets/522705130"

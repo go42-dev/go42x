@@ -71,15 +71,13 @@ tasks:
     desc: "install dependencies"
     cmds:
       - "mise install --locked"
-      - '"{{.TOOLS_BIN}}/vale" --config etc/vale.ini sync'
       - "go mod download"
 
   ## setup:docs | install dependencies for documentation checks
   setup:docs:
-    desc: "Install pinned documentation tools and Vale styles"
+    desc: "Install pinned documentation tools"
     cmds:
-      - "mise install --locked task node markdownlint-cli2 vale"
-      - '"{{.TOOLS_BIN}}/vale" --config etc/vale.ini sync'
+      - "mise install --locked task node markdownlint-cli2"
 
   setup:release:
     desc: "install release dependencies"
@@ -380,30 +378,15 @@ tasks:
           "{{.TOOLS_BIN}}/markdownlint-cli2" --config etc/markdownlint-cli2.yaml --no-globs "$@"
         fi
 
-  ## lint:prose | check documentation prose
-  lint:prose:
-    desc: "Check documentation prose, or explicit files (read only)"
-    summary: "Usage: task lint:prose [-- FILE.md ...]; defaults to docs/."
-    preconditions:
-      - *file_paths
-    cmds:
-      - |
-        set -- {{.CLI_ARGS}}
-        if [ "$#" -eq 0 ]; then set -- docs/; fi
-        "{{.TOOLS_BIN}}/vale" --config etc/vale.ini "$@"
-
   # ╭────────────────────----------------──────────╮
   # │                Documentation                 │
   # ╰─────────────────────----------------─────────╯
 
   ## docs:check | validate documentation
   docs:check:
-    desc: "Lint documentation Markdown and prose"
+    desc: "Lint documentation Markdown"
     cmds:
       - task: lint:markdown
-        vars:
-          CLI_ARGS: ""
-      - task: lint:prose
         vars:
           CLI_ARGS: ""
 
