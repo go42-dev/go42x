@@ -7,9 +7,9 @@ func MCPToolName(providerName, serverName, toolName string) string {
 	switch providerName {
 	case Claude, Codex:
 		return fmt.Sprintf("mcp__%s__%s", serverName, toolName)
-	case Crush, Gemini:
+	case Crush:
 		return fmt.Sprintf("mcp_%s_%s", serverName, toolName)
-	case Copilot:
+	case Copilot, Antigravity:
 		return serverName + "/" + toolName
 	default:
 		return toolName

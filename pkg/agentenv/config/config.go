@@ -97,6 +97,38 @@ func (s MCPServer) Transport() string {
 	return s.Type
 }
 
+// ParseProviders parses a comma-separated, exact provider selection. An empty
+// value explicitly selects no providers, unlike an absent selection (nil).
+func ParseProviders(value string) ([]string, error) {
+	providers := []string{}
+	if strings.TrimSpace(value) != "" {
+		for name := range strings.SplitSeq(value, ",") {
+			providers = append(providers, strings.TrimSpace(name))
+		}
+	}
+	if err := ValidateProviders(providers); err != nil {
+		return nil, err
+	}
+	return providers, nil
+}
+
+// ValidateProviders rejects unknown names, empty entries, and duplicate choices.
+func ValidateProviders(providers []string) error {
+	seen := make(map[string]bool, len(providers))
+	for _, name := range providers {
+		switch name {
+		case "claude", "codex", "antigravity", "crush", "copilot":
+		default:
+			return fmt.Errorf("unknown provider %q; use claude, codex, antigravity, crush, or copilot", name)
+		}
+		if seen[name] {
+			return fmt.Errorf("duplicate provider %q", name)
+		}
+		seen[name] = true
+	}
+	return nil
+}
+
 func LoadConfig(path string) (*Config, error) {
 	data, err := readConfig(path)
 	if err != nil {
@@ -175,12 +207,10 @@ func (c *Config) Validate() error {
 	}
 
 	providers := slices.Sorted(maps.Keys(c.Providers))
+	if err := ValidateProviders(providers); err != nil {
+		return err
+	}
 	for _, name := range providers {
-		switch name {
-		case "claude", "codex", "gemini", "crush", "copilot":
-		default:
-			return fmt.Errorf("unknown provider %q", name)
-		}
 		if err := c.Providers[name].validate(name); err != nil {
 			return fmt.Errorf("providers.%s: %w", name, err)
 		}
@@ -210,8 +240,8 @@ func (p Provider) validate(name string) error {
 	if p.Agents != nil && name != "claude" {
 		return fmt.Errorf("agents is only supported by claude")
 	}
-	if p.AutoApproveTools != nil && name != "claude" && name != "gemini" && name != "crush" {
-		return fmt.Errorf("auto-approve-tools is only supported by claude, gemini, and crush")
+	if p.AutoApproveTools != nil && name != "claude" && name != "crush" {
+		return fmt.Errorf("auto-approve-tools is only supported by claude and crush")
 	}
 	for i, tool := range p.AutoApproveTools {
 		if strings.TrimSpace(tool) == "" {

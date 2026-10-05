@@ -301,8 +301,7 @@ var ignoreFiles = []string{
 	provider.ClaudeFile,
 	".codex/",
 	provider.AgentsFile,
-	".gemini/",
-	provider.GeminiFile,
+	provider.AntigravityPluginDir + "/",
 	".crush/",
 	".crush.json",
 }

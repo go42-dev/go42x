@@ -114,7 +114,7 @@ func TestProjectConfigExactProviderSelection(t *testing.T) {
 	}{
 		{"configuration fallback", nil, []string{"claude", "codex"}},
 		{"override local and project", []string{"codex"}, []string{"codex"}},
-		{"supported but unconfigured", []string{"gemini"}, []string{"gemini"}},
+		{"supported but unconfigured", []string{"antigravity"}, []string{"antigravity"}},
 		{"multiple", []string{"codex", "copilot"}, []string{"codex", "copilot"}},
 		{"explicit none", []string{}, []string{}},
 	} {
@@ -123,7 +123,7 @@ func TestProjectConfigExactProviderSelection(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			for _, name := range []string{"claude", "codex", "gemini", "crush", "copilot"} {
+			for _, name := range []string{"claude", "codex", "antigravity", "crush", "copilot"} {
 				if cfg.ProviderEnabled(name) != slices.Contains(tt.want, name) {
 					t.Errorf("provider %s enabled = %v; selection %v", name, cfg.ProviderEnabled(name), tt.selection)
 				}
@@ -176,6 +176,7 @@ func TestProjectConfigMissingAndInvalidFiles(t *testing.T) {
 		{"duplicate keys", "env: []\nenv: []", "already defined"},
 		{"extra document", "providers: {}\n---\n", "exactly one YAML document"},
 		{"unknown provider", "providers: {typo: {enabled: false}}", "unknown provider"},
+		{"retired provider", "providers: {gemini: {enabled: false}}", "unknown provider \"gemini\""},
 		{"invalid effective value", "providers: {codex: {approval-policy: invalid}}", "invalid approval-policy"},
 		{"clear required field", "context: {template: null}", "context.template is required"},
 	} {
@@ -193,31 +194,5 @@ func TestProjectConfigMissingAndInvalidFiles(t *testing.T) {
 	path = writeConfigFixture(t, sharedConfig+"mistake: true\n", "mistake: null\n")
 	if _, err := LoadProjectConfig(path, nil); err == nil || !strings.Contains(err.Error(), "project configuration") {
 		t.Fatalf("local file hid a shared configuration error: %v", err)
-	}
-}
-
-func TestParseProviders(t *testing.T) {
-	for _, tt := range []struct {
-		value   string
-		want    []string
-		invalid bool
-	}{
-		{"", []string{}, false},
-		{" \t ", []string{}, false},
-		{"codex", []string{"codex"}, false},
-		{" codex, gemini ", []string{"codex", "gemini"}, false},
-		{"codex,", nil, true},
-		{",codex", nil, true},
-		{"codex,,claude", nil, true},
-		{"codex,codex", nil, true},
-		{"Codex", nil, true},
-		{"typo", nil, true},
-	} {
-		t.Run(tt.value, func(t *testing.T) {
-			got, err := ParseProviders(tt.value)
-			if (err != nil) != tt.invalid || !reflect.DeepEqual(got, tt.want) {
-				t.Fatalf("ParseProviders(%q) = %#v, %v; want %#v, invalid=%v", tt.value, got, err, tt.want, tt.invalid)
-			}
-		})
 	}
 }

@@ -21,7 +21,7 @@ func TestGeneratedDirectoriesArePrivate(t *testing.T) {
 	p.configure(t)
 	p.run(t, 0, "agentenv", "generate")
 	p.run(t, 0, "kwb", "build")
-	for _, path := range []string{".claude", ".codex", ".gemini", ".go42x/kwb/index"} {
+	for _, path := range []string{".claude", ".codex", ".agents", ".agents/plugins", ".agents/plugins/project-tools", ".go42x/kwb/index"} {
 		info, err := os.Stat(filepath.Join(p.root, filepath.FromSlash(path)))
 		if err != nil {
 			t.Fatal(err)
@@ -42,16 +42,26 @@ func TestAgentEnvLifecycle(t *testing.T) {
 	}
 	p.write(t, ".go42x/custom.md", "User instructions\n")
 	p.write(t, ".claude/agents/custom.md", "User agent\n")
+	preserved := map[string]string{
+		"GEMINI.md":                         "Legacy user instructions",
+		".gemini/settings.json":             "Legacy settings left untouched",
+		".agents/plugins/other/plugin.json": `{"name":"other","description":"User plugin"}`,
+		".agents/plugins/project-tools/skills/custom/SKILL.md": "User skill",
+	}
+	for path, content := range preserved {
+		p.write(t, path, content)
+	}
 	beforeInit := p.snapshot(t)
 	p.run(t, 0, "agentenv", "init")
 	p.assertUnchanged(t, beforeInit)
 
 	settings := map[string]string{
-		".claude/settings.local.json": `{"user_setting":{"theme":"dark"},"permissions":{"deny":["Read(private)"]}}`,
-		".gemini/settings.json":       `{"user_setting":{"theme":"dark"},"privacy":{"usageStatisticsEnabled":true}}`,
-		".crush.json":                 `{"user_setting":{"theme":"dark"},"lsp":{"go":{"command":"custom-gopls"}}}`,
-		".mcp.json":                   `{"user_setting":{"theme":"dark"}}`,
-		".codex/config.toml":          "model = 'custom-model'\nsandbox_mode = 'read-only'\napproval_policy = 'on-request'\n",
+		".claude/settings.local.json":                   `{"user_setting":{"theme":"dark"},"permissions":{"deny":["Read(private)"]}}`,
+		".agents/plugins/project-tools/plugin.json":     `{"name":"old-name","description":"Old metadata","$schema":"old-schema"}`,
+		".agents/plugins/project-tools/mcp_config.json": `{"user_setting":{"theme":"dark"},"mcpServers":{"stale":{"command":"old"}}}`,
+		".crush.json":        `{"user_setting":{"theme":"dark"},"lsp":{"go":{"command":"custom-gopls"}}}`,
+		".mcp.json":          `{"user_setting":{"theme":"dark"}}`,
+		".codex/config.toml": "model = 'custom-model'\nsandbox_mode = 'read-only'\napproval_policy = 'on-request'\n",
 	}
 	for path, content := range settings {
 		p.write(t, path, content)
@@ -60,9 +70,12 @@ func TestAgentEnvLifecycle(t *testing.T) {
 	if !strings.Contains(p.read(t, "AGENTS.md"), "# example-e2e\n") {
 		t.Fatal("generate did not render the project's instructions")
 	}
-	for _, path := range []string{"CLAUDE.md", "GEMINI.md"} {
-		if !strings.Contains(p.read(t, path), "@AGENTS.md") {
-			t.Errorf("%s does not import shared instructions", path)
+	if !strings.Contains(p.read(t, "CLAUDE.md"), "@AGENTS.md") {
+		t.Error("CLAUDE.md does not import shared instructions")
+	}
+	for path, content := range preserved {
+		if p.read(t, path) != content {
+			t.Errorf("generation changed %s", path)
 		}
 	}
 	for path := range settings {
@@ -82,7 +95,9 @@ func TestAgentEnvLifecycle(t *testing.T) {
 			if err := json.Unmarshal(content, &values); err != nil {
 				t.Fatal(err)
 			}
-			assertSetting(t, values, "user_setting.theme", "dark")
+			if path != ".agents/plugins/project-tools/plugin.json" {
+				assertSetting(t, values, "user_setting.theme", "dark")
+			}
 			switch path {
 			case ".claude/settings.local.json":
 				assertSetting(t, values, "permissions.deny", []any{"Read(private)"})
@@ -90,9 +105,14 @@ func TestAgentEnvLifecycle(t *testing.T) {
 			case ".crush.json":
 				assertSetting(t, values, "lsp.go.command", "custom-gopls")
 				assertSetting(t, values, "mcp.local.command", "go42x")
-			case ".gemini/settings.json":
-				assertSetting(t, values, "privacy.usageStatisticsEnabled", true)
+			case ".agents/plugins/project-tools/plugin.json":
+				assertSetting(t, values, "name", "project-tools")
+				assertSetting(t, values, "$schema", "https://antigravity.google/schemas/v1/plugin.json")
+			case ".agents/plugins/project-tools/mcp_config.json":
 				assertSetting(t, values, "mcpServers.local.command", "go42x")
+				if len(values["mcpServers"].(map[string]any)) != 1 {
+					t.Error("Antigravity retained stale MCP servers")
+				}
 			case ".mcp.json":
 				assertSetting(t, values, "mcpServers.local.command", "go42x")
 			}
@@ -134,6 +154,21 @@ func TestAgentEnvLifecycle(t *testing.T) {
 	if p.read(t, ".go42x/agents.tpl.md") != "# Updated {{ .project.name }}\n" {
 		t.Fatal("clean changed the source template")
 	}
+	// Disabling the last server must clear the generated MCP set while retaining the plugin.
+	p.write(t, ".go42x/go42x.local.yaml", "mcp: {local: {enabled: false}}\n")
+	p.run(t, 0, "agentenv", "generate")
+	var mcp map[string]any
+	if err := json.Unmarshal([]byte(p.read(t, ".agents/plugins/project-tools/mcp_config.json")), &mcp); err != nil {
+		t.Fatal(err)
+	}
+	if len(mcp["mcpServers"].(map[string]any)) != 0 {
+		t.Fatal("Antigravity retained a disabled server")
+	}
+	for path, content := range preserved {
+		if p.read(t, path) != content {
+			t.Errorf("cleanup changed %s", path)
+		}
+	}
 }
 
 func assertSetting(t *testing.T, settings map[string]any, path string, want any) {
@@ -169,6 +204,8 @@ func TestGenerationFailurePreservesProject(t *testing.T) {
 		{"multiple YAML documents", ".go42x/go42x.yaml", validConfig + "\n---\nproject: {name: ignored}\n"},
 		{"malformed trailing YAML", ".go42x/go42x.yaml", validConfig + "\n---\nversion: [\n"},
 		{"invalid JSON", ".claude/settings.local.json", `{"permissions":`},
+		{"invalid Antigravity manifest", ".agents/plugins/project-tools/plugin.json", `{"name":`},
+		{"invalid Antigravity MCP config", ".agents/plugins/project-tools/mcp_config.json", `{"mcpServers":`},
 		{"invalid TOML", ".codex/config.toml", "model = ["},
 		{"invalid template", ".go42x/agents.tpl.md", "{{ if }}"},
 		{
@@ -211,7 +248,7 @@ func TestAgentEnvUpdate(t *testing.T) {
 	p.write(t, ".go42x/go42x.local.yaml", "project: {name: local-project}\nproviders: {claude: {enabled: true}}\n")
 	p.write(t, ".go42x/chunks/900-custom.tpl.md", "Additional project instructions")
 	p.write(t, "AGENTS.md", "Original instructions")
-	p.write(t, "GEMINI.md", "Disabled provider instructions")
+	p.write(t, ".agents/plugins/project-tools/plugin.json", "Disabled provider plugin")
 	p.write(t, ".go42x/chunks/100-operation.tpl.md", "Customized bundled chunk")
 	originalConfig := p.read(t, ".go42x/go42x.yaml")
 	result := p.run(t, 0, "agentenv", "update")
@@ -243,8 +280,8 @@ func TestAgentEnvUpdate(t *testing.T) {
 	if !strings.Contains(p.read(t, "CLAUDE.md"), "@AGENTS.md") {
 		t.Fatal("update did not regenerate provider instructions")
 	}
-	if p.read(t, "GEMINI.md") != "Disabled provider instructions" {
-		t.Fatal("update changed disabled-provider instructions")
+	if p.read(t, ".agents/plugins/project-tools/plugin.json") != "Disabled provider plugin" {
+		t.Fatal("update changed the disabled provider's plugin")
 	}
 	p.run(t, 0, "agentenv", "update")
 	backups, err = filepath.Glob(filepath.Join(p.root, ".go42x/backups/updates/*"))

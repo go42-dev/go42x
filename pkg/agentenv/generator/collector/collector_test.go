@@ -51,7 +51,7 @@ func TestProjectCollector(t *testing.T) {
 			Tags:        []string{"cli"},
 			Metadata:    map[string]string{"repository": "example/repo"},
 		},
-		Providers: map[string]config.Provider{"claude": {}, "gemini": {}},
+		Providers: map[string]config.Provider{"claude": {}, "antigravity": {}},
 		MCP: map[string]config.MCPServer{
 			"enabled": {Enabled: true, Command: "go42x"}, "disabled": {Command: "hidden"},
 		},

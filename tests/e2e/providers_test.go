@@ -29,8 +29,8 @@ func TestProviderSelectionPrecedence(t *testing.T) {
 	}{
 		{name: "shared defaults", want: []string{"claude"}},
 		{name: "local overrides", local: true, want: []string{"codex"}},
-		{name: "environment overrides local", local: true, env: new("claude,gemini"), want: []string{"claude", "gemini"}},
-		{name: "flag overrides invalid environment", local: true, env: new("typo"), flags: []string{"--providers=gemini"}, want: []string{"gemini"}},
+		{name: "environment overrides local", local: true, env: new("claude,antigravity"), want: []string{"antigravity", "claude"}},
+		{name: "flag overrides invalid environment", local: true, env: new("typo"), flags: []string{"--providers=antigravity"}, want: []string{"antigravity"}},
 		{name: "empty flag", local: true, env: new("claude"), flags: []string{"--providers="}},
 		{name: "empty environment", local: true, env: new("")},
 	} {
@@ -48,7 +48,7 @@ func TestProviderSelectionPrecedence(t *testing.T) {
 			before := p.snapshot(t)
 			p.run(t, 0, append([]string{"agentenv", "generate"}, tc.flags...)...)
 			for provider, path := range map[string]string{
-				"claude": ".claude/settings.local.json", "codex": ".codex/config.toml", "gemini": ".gemini/settings.json",
+				"claude": ".claude/settings.local.json", "codex": ".codex/config.toml", "antigravity": ".agents/plugins/project-tools/mcp_config.json",
 			} {
 				_, err := os.Stat(filepath.Join(p.root, filepath.FromSlash(path)))
 				if want := slices.Contains(tc.want, provider); want && err != nil || !want && !os.IsNotExist(err) {
@@ -95,7 +95,7 @@ func TestProviderSelectionPrecedence(t *testing.T) {
 
 func TestProviderSelectionRejectsInvalidNamesWithoutWrites(t *testing.T) {
 	t.Parallel()
-	for _, value := range []string{"typo", "codex,codex", "codex,", ",codex"} {
+	for _, value := range []string{"typo", "gemini", "codex,codex", "codex,", ",codex"} {
 		t.Run(value, func(t *testing.T) {
 			t.Parallel()
 			p := newProject(t)

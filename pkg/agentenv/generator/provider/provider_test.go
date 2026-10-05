@@ -32,8 +32,8 @@ func makeProvider(
 	switch name {
 	case Claude:
 		return NewClaudeProvider(logger, cfg, engine, dir, out)
-	case Gemini:
-		return NewGeminiProvider(logger, cfg, engine, dir, out)
+	case Antigravity:
+		return NewAntigravityProvider(logger, cfg, engine, dir, out)
 	case Crush:
 		return NewCrushProvider(logger, cfg, engine, dir, out)
 	case Copilot:
@@ -55,10 +55,10 @@ func writeTestFile(t *testing.T, path, content string) {
 }
 
 func TestProviderGenerationErrors(t *testing.T) {
-	for _, name := range []string{Claude, Gemini, Crush, Copilot} {
+	for _, name := range []string{Claude, Antigravity, Crush, Copilot} {
 		t.Run(name, func(t *testing.T) {
 			dir, out := t.TempDir(), t.TempDir()
-			path := map[string]string{Claude: ".claude/settings.local.json", Gemini: ".gemini/settings.json", Crush: ".crush.json", Copilot: ".mcp.json"}[name]
+			path := map[string]string{Claude: ".claude/settings.local.json", Antigravity: ".agents/plugins/project-tools/mcp_config.json", Crush: ".crush.json", Copilot: ".mcp.json"}[name]
 			if err := os.MkdirAll(filepath.Join(out, path), 0755); err != nil {
 				t.Fatal(err)
 			}
@@ -76,7 +76,7 @@ func TestProviderGenerationErrors(t *testing.T) {
 }
 
 func TestProviderJSONWriting(t *testing.T) {
-	for _, name := range []string{Claude, Gemini, Crush, Copilot} {
+	for _, name := range []string{Claude, Antigravity, Crush, Copilot} {
 		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
 			p := makeProvider(t, name, &config.Config{}, nil, dir, dir)

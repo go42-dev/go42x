@@ -67,6 +67,12 @@ context: {template: agents.tpl.md}
 		{"missing providers", "", true},
 		{"empty providers", "providers: {}", true},
 		{"unknown provider", "providers: {unknown: {}}", true},
+		{"retired Gemini provider", "providers: {gemini: {}}", true},
+		{"Antigravity provider", "providers: {antigravity: {}}", false},
+		{"disabled Antigravity", "providers: {antigravity: {enabled: false}}", false},
+		{"Antigravity legacy tool approvals", "providers: {antigravity: {auto-approve-tools: []}}", true},
+		{"Antigravity approval policy", "providers: {antigravity: {approval-policy: never}}", true},
+		{"Antigravity MCP approvals", "providers: {antigravity: {mcp-approval: auto}}", true},
 		{"unsupported provider option", "providers: {copilot: {approval-policy: never}}", true},
 		{"invalid approval policy", "providers: {codex: {approval-policy: invalid}}", true},
 		{

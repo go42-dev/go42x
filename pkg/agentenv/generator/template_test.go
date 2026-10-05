@@ -18,7 +18,7 @@ func TestTemplateProcessing(t *testing.T) {
 		{"context", "Hello {{ .name }}", "Hello World"},
 		{"functions", `{{ lower .name }} {{ upper "go" }} {{ trim " x " }} {{ join .items "," }}`, "world GO x a,b"},
 		{"MCP Claude", `{{ mcpTool "claude" "go42x" "kwb_search" }}`, "mcp__go42x__kwb_search"},
-		{"MCP Gemini", `{{ mcpTool "gemini" "go42x" "kwb_search" }}`, "mcp_go42x_kwb_search"},
+		{"MCP Antigravity", `{{ mcpTool "antigravity" "go42x" "kwb_search" }}`, "go42x/kwb_search"},
 		{"MCP Crush", `{{ mcpTool "crush" "go42x" "kwb_search" }}`, "mcp_go42x_kwb_search"},
 		{"MCP Copilot", `{{ mcpTool "copilot" "go42x" "kwb_search" }}`, "go42x/kwb_search"},
 	} {

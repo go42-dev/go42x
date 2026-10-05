@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -39,6 +40,11 @@ func TestValidate(t *testing.T) {
 		{"missing providers", func(c *Config) { c.Providers = nil }, "at least one provider"},
 		{"unknown provider", func(c *Config) { c.Providers = map[string]Provider{"typo": {}} }, "unknown provider"},
 		{
+			"retired provider",
+			func(c *Config) { c.Providers = map[string]Provider{"gemini": {}} },
+			"unknown provider \"gemini\"",
+		},
+		{
 			"missing template",
 			func(c *Config) { c.Context.Template = "" },
 			"context.template is required",
@@ -68,6 +74,33 @@ func TestValidate(t *testing.T) {
 	var cfg *Config
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("nil config accepted")
+	}
+}
+
+func TestParseProviders(t *testing.T) {
+	for _, tt := range []struct {
+		value   string
+		want    []string
+		invalid bool
+	}{
+		{"", []string{}, false},
+		{" \t ", []string{}, false},
+		{"codex", []string{"codex"}, false},
+		{" codex, antigravity ", []string{"codex", "antigravity"}, false},
+		{"codex,", nil, true},
+		{",codex", nil, true},
+		{"codex,,claude", nil, true},
+		{"codex,codex", nil, true},
+		{"Codex", nil, true},
+		{"typo", nil, true},
+		{"gemini", nil, true},
+	} {
+		t.Run(tt.value, func(t *testing.T) {
+			got, err := ParseProviders(tt.value)
+			if (err != nil) != tt.invalid || !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("ParseProviders(%q) = %#v, %v; want %#v, invalid=%v", tt.value, got, err, tt.want, tt.invalid)
+			}
+		})
 	}
 }
 
@@ -249,7 +282,7 @@ func TestLoadConfigProviderEnabled(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "go42x.yaml")
 			data := "version: '1.0'\nproject: {name: example}\ncontext: {template: agents.tpl.md}\nproviders:\n"
-			for _, name := range []string{"claude", "codex", "gemini", "crush", "copilot"} {
+			for _, name := range []string{"claude", "codex", "antigravity", "crush", "copilot"} {
 				data += "  " + name + ": " + tt.entry + "\n"
 			}
 			if err := os.WriteFile(path, []byte(data), 0600); err != nil {

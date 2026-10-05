@@ -228,7 +228,7 @@ func TestGenerateAndCleanPreserveSources(t *testing.T) {
 	if err := s.Generate(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{"AGENTS.md", "CLAUDE.md", "GEMINI.md"} {
+	for _, path := range []string{"AGENTS.md", "CLAUDE.md"} {
 		if len(readFile(t, filepath.Join(dir, path))) == 0 {
 			t.Errorf("empty output %s", path)
 		}
@@ -237,7 +237,7 @@ func TestGenerateAndCleanPreserveSources(t *testing.T) {
 	if err := s.Generate(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{"AGENTS.md", "CLAUDE.md", "GEMINI.md"} {
+	for _, path := range []string{"AGENTS.md", "CLAUDE.md"} {
 		if string(readFile(t, filepath.Join(dir, path))) == "stale" {
 			t.Errorf("stale output %s", path)
 		}
@@ -246,7 +246,7 @@ func TestGenerateAndCleanPreserveSources(t *testing.T) {
 		string(readFile(t, asset)) != "preserve agent" {
 		t.Fatal("clean removed or changed user sources")
 	}
-	for _, path := range []string{".claude/settings.local.json", ".mcp.json", ".gemini/settings.json", ".crush.json"} {
+	for _, path := range []string{".claude/settings.local.json", ".mcp.json", ".agents/plugins/project-tools/plugin.json", ".agents/plugins/project-tools/mcp_config.json", ".crush.json"} {
 		if len(readFile(t, filepath.Join(dir, path))) == 0 {
 			t.Errorf("missing generated settings %s", path)
 		}
@@ -326,7 +326,7 @@ func TestUpdateReplacesBundledSourcesAndRegenerates(t *testing.T) {
 	customChunk := "Custom project instructions."
 	writeFile(t, filepath.Join(dir, ".go42x/chunks/900-custom.tpl.md"), customChunk)
 	writeFile(t, filepath.Join(dir, ".go42x/agents/reviewer.tpl.md"), "Review {{ .project.name }}")
-	writeFile(t, filepath.Join(dir, "GEMINI.md"), "disabled provider")
+	writeFile(t, filepath.Join(dir, ".agents/plugins/project-tools/plugin.json"), "disabled provider")
 	originals := map[string]string{
 		".go42x/go42x.yaml":                  "invalid old configuration: [",
 		".go42x/agents.tpl.md":               "{{ if }}",
@@ -380,10 +380,10 @@ func TestUpdateReplacesBundledSourcesAndRegenerates(t *testing.T) {
 		t.Fatalf("instructions did not use the candidate sources and real project context: %s", instructions)
 	}
 	for path, want := range map[string]string{
-		".go42x/go42x.local.yaml":         local,
-		".go42x/chunks/900-custom.tpl.md": customChunk,
-		".claude/agents/reviewer.md":      "Review local-project",
-		"GEMINI.md":                       "disabled provider",
+		".go42x/go42x.local.yaml":                   local,
+		".go42x/chunks/900-custom.tpl.md":           customChunk,
+		".claude/agents/reviewer.md":                "Review local-project",
+		".agents/plugins/project-tools/plugin.json": "disabled provider",
 	} {
 		if got := string(readFile(t, filepath.Join(dir, filepath.FromSlash(path)))); got != want {
 			t.Errorf("%s = %q, want %q", path, got, want)

@@ -58,8 +58,8 @@ func (g *Generator) registerProviders() {
 		g.logger.With("provider", provider.Codex),
 		g.config, templateEngine, g.templateDir, g.outputDir)
 
-	g.providers[provider.Gemini] = provider.NewGeminiProvider(
-		g.logger.With("provider", provider.Gemini),
+	g.providers[provider.Antigravity] = provider.NewAntigravityProvider(
+		g.logger.With("provider", provider.Antigravity),
 		g.config, templateEngine, g.templateDir, g.outputDir)
 
 	g.providers[provider.Crush] = provider.NewCrushProvider(

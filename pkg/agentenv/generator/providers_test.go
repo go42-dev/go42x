@@ -70,13 +70,13 @@ func TestGenerateProviderToggles(t *testing.T) {
 	t.Setenv("PATH", "")
 	t.Setenv("GITHUB_ACTIONS", "false")
 	settingsFiles := map[string]string{
-		"claude":  ".claude/settings.local.json",
-		"codex":   ".codex/config.toml",
-		"gemini":  ".gemini/settings.json",
-		"crush":   ".crush.json",
-		"copilot": ".mcp.json",
+		"claude":      ".claude/settings.local.json",
+		"codex":       ".codex/config.toml",
+		"antigravity": ".agents/plugins/project-tools/mcp_config.json",
+		"crush":       ".crush.json",
+		"copilot":     ".mcp.json",
 	}
-	for _, name := range []string{"claude", "codex", "gemini", "crush", "copilot"} {
+	for _, name := range []string{"claude", "codex", "antigravity", "crush", "copilot"} {
 		t.Run(name, func(t *testing.T) {
 			enabled, disabled := true, false
 			cfg := &config.Config{
@@ -109,8 +109,13 @@ func TestGenerateProviderToggles(t *testing.T) {
 			if name == "claude" {
 				want = append(want, "CLAUDE.md", ".mcp.json")
 			}
-			if name == "gemini" {
-				want = append(want, "GEMINI.md")
+			if name == "antigravity" {
+				want = append(want, ".agents/plugins/project-tools/plugin.json")
+				settings := readJSON[map[string]any](t, out, settingsFiles[name])
+				server := settings["mcpServers"].(map[string]any)["example"].(map[string]any)
+				if server["cwd"] != filepath.Join(out, "src") {
+					t.Errorf("Antigravity cwd = %v, want project-relative absolute path", server["cwd"])
+				}
 			}
 			var files []string
 			if err := filepath.WalkDir(out, func(path string, entry os.DirEntry, err error) error {

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -87,36 +86,4 @@ func mergeConfigMaps(base, local map[string]any) {
 			base[key] = value
 		}
 	}
-}
-
-// ParseProviders parses a comma-separated, exact provider selection. An empty
-// value explicitly selects no providers, unlike an absent selection (nil).
-func ParseProviders(value string) ([]string, error) {
-	providers := []string{}
-	if strings.TrimSpace(value) != "" {
-		for name := range strings.SplitSeq(value, ",") {
-			providers = append(providers, strings.TrimSpace(name))
-		}
-	}
-	if err := ValidateProviders(providers); err != nil {
-		return nil, err
-	}
-	return providers, nil
-}
-
-// ValidateProviders rejects unknown names, empty entries, and duplicate choices.
-func ValidateProviders(providers []string) error {
-	seen := make(map[string]bool, len(providers))
-	for _, name := range providers {
-		switch name {
-		case "claude", "codex", "gemini", "crush", "copilot":
-		default:
-			return fmt.Errorf("unknown provider %q; use claude, codex, gemini, crush, or copilot", name)
-		}
-		if seen[name] {
-			return fmt.Errorf("duplicate provider %q", name)
-		}
-		seen[name] = true
-	}
-	return nil
 }

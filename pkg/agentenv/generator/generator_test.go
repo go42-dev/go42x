@@ -117,7 +117,7 @@ func TestGeneratorContextAndProviderErrors(t *testing.T) {
 		Project:   config.Project{Name: "example"},
 		EnvVars:   []string{"AGENTENV_TEST_CONTEXT"},
 		Context:   config.Context{Template: "main.tpl.md"},
-		Providers: map[string]config.Provider{"claude": {}, "gemini": {}},
+		Providers: map[string]config.Provider{"claude": {}, "antigravity": {}},
 	}
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "main.tpl.md"), []byte("{{ .project.name }}"), 0600); err != nil {
@@ -125,8 +125,8 @@ func TestGeneratorContextAndProviderErrors(t *testing.T) {
 	}
 	g := NewGenerator(slog.New(slog.DiscardHandler), cfg, dir, t.TempDir())
 	ctrl := gomock.NewController(t)
-	failures := []error{errors.New("claude failed"), errors.New("gemini failed")}
-	for i, name := range []string{"claude", "gemini"} {
+	failures := []error{errors.New("claude failed"), errors.New("antigravity failed")}
+	for i, name := range []string{"claude", "antigravity"} {
 		p := mocks.NewMockproviderAccessor(ctrl)
 		p.EXPECT().InstructionsFileName().Return(name + ".md")
 		p.EXPECT().
@@ -176,7 +176,7 @@ func TestGeneratorPreservesOutputsAfterProviderFailure(t *testing.T) {
 		Project: config.Project{Name: "example"},
 		Context: config.Context{Template: "valid.tpl.md"},
 		Providers: map[string]config.Provider{
-			"claude": {}, "gemini": {},
+			"claude": {}, "antigravity": {},
 		},
 	}
 	if err := os.MkdirAll(filepath.Join(out, ".claude/settings.local.json"), 0755); err != nil {
@@ -186,7 +186,7 @@ func TestGeneratorPreservesOutputsAfterProviderFailure(t *testing.T) {
 	if err := g.Generate(t.Context(), false); err == nil || !strings.Contains(err.Error(), "provider claude") {
 		t.Fatalf("Generate() = %v", err)
 	}
-	for _, path := range []string{"AGENTS.md", "CLAUDE.md", "GEMINI.md", ".gemini/settings.json"} {
+	for _, path := range []string{"AGENTS.md", "CLAUDE.md", ".agents/plugins/project-tools/plugin.json", ".agents/plugins/project-tools/mcp_config.json"} {
 		if _, err := os.Stat(filepath.Join(out, path)); !os.IsNotExist(err) {
 			t.Fatalf("output %s changed despite preparation failure: %v", path, err)
 		}
@@ -334,10 +334,15 @@ func TestGenerateMCPConfigurations(t *testing.T) {
 	}
 	claude := readJSON[provider.ClaudeSettings](t, out, ".claude/settings.local.json")
 	claudeMCP := readJSON[provider.ClaudeMCPConfig](t, out, ".mcp.json")
-	gemini := readJSON[provider.GeminiSettings](t, out, ".gemini/settings.json")
+	antigravity := readJSON[provider.AntigravityMCPConfig](t, out, ".agents/plugins/project-tools/mcp_config.json")
+	manifest := readJSON[provider.AntigravityPluginManifest](t, out, ".agents/plugins/project-tools/plugin.json")
+	if manifest.Name != "project-tools" || manifest.Schema != "https://antigravity.google/schemas/v1/plugin.json" ||
+		manifest.Description == "" {
+		t.Fatalf("invalid Antigravity plugin manifest: %+v", manifest)
+	}
 	crush := readJSON[provider.CrushConfig](t, out, ".crush.json")
 	copilot := readJSON[provider.CopilotMCPConfig](t, out, ".mcp.json")
-	if len(claudeMCP.MCPServers) != 9 || len(gemini.MCPServers) != 9 || len(copilot.MCPServers) != 9 ||
+	if len(claudeMCP.MCPServers) != 9 || len(antigravity.MCPServers) != 9 || len(copilot.MCPServers) != 9 ||
 		len(crush.MCP) != 9 {
 		t.Fatal("enabled server set does not match generated configurations")
 	}
@@ -354,7 +359,7 @@ func TestGenerateMCPConfigurations(t *testing.T) {
 		if !slices.Equal(copilot.MCPServers[name].Tools, []string{"*"}) {
 			t.Errorf("Copilot must make all tools available for %s", name)
 		}
-		if !slices.Contains(claude.EnabledMCPServers, name) || !slices.Contains(gemini.MCP.Allowed, name) {
+		if _, ok := antigravity.MCPServers[name]; !ok || !slices.Contains(claude.EnabledMCPServers, name) {
 			t.Errorf("missing enabled server %s", name)
 		}
 		for _, tool := range s.Tools {
@@ -372,20 +377,14 @@ func TestGenerateMCPConfigurations(t *testing.T) {
 	if crush.LSP["go"].Command != "gopls" {
 		t.Error("Crush Go LSP missing")
 	}
-	if !slices.Equal(gemini.Tools.Allowed, cfg.Providers["gemini"].AutoApproveTools) {
-		t.Error("Gemini built-ins mixed with MCP tools")
+	if antigravity.MCPServers["jira"].ServerURL != "https://mcp.atlassian.com/v2/mcp" {
+		t.Error("Antigravity HTTP endpoint must use serverUrl")
 	}
-	if !gemini.General.Checkpointing.Enabled || gemini.Privacy.UsageStatisticsEnabled {
-		t.Error("Gemini checkpointing/privacy settings lost")
+	if antigravity.MCPServers["sse"].ServerURL != "https://example.com/sse" {
+		t.Error("Antigravity SSE endpoint must use serverUrl")
 	}
-	if gemini.MCPServers["jira"].HttpUrl != "https://mcp.atlassian.com/v2/mcp" || gemini.MCPServers["jira"].URL != "" {
-		t.Error("HTTP endpoint must use httpUrl")
-	}
-	if gemini.MCPServers["sse"].URL != "https://example.com/sse" || gemini.MCPServers["sse"].HttpUrl != "" {
-		t.Error("SSE endpoint must use url")
-	}
-	if gemini.MCPServers["sse"].Headers["Authorization"] != "Bearer ${API_KEY}" {
-		t.Error("Gemini header changed")
+	if antigravity.MCPServers["sse"].Headers["Authorization"] != "Bearer ${API_KEY}" {
+		t.Error("Antigravity header changed")
 	}
 	if copilot.MCPServers["sse"].Headers["Authorization"] != "Bearer ${API_KEY}" {
 		t.Error("Copilot header reference changed")
@@ -399,10 +398,26 @@ func TestGenerateMCPConfigurations(t *testing.T) {
 		local.Args[0] != "--token=$TOKEN" {
 		t.Fatalf("Copilot environment references changed = %+v", local)
 	}
-	raw := readJSON[map[string]any](t, out, ".gemini/settings.json")
-	for _, old := range []string{"coreTools", "excludeTools", "autoAccept", "allowMCPServers", "maxSessionTurns", "maxSessionDuration", "checkpointing", "usageStatisticsEnabled"} {
-		if _, ok := raw[old]; ok {
-			t.Errorf("obsolete Gemini key %s", old)
+	antigravityLocal := antigravity.MCPServers["local"]
+	if antigravityLocal.Command != "example" || antigravityLocal.ServerURL != "" ||
+		!reflect.DeepEqual(antigravityLocal.Env, cfg.MCP["local"].Env) ||
+		!slices.Equal(antigravityLocal.Args, cfg.MCP["local"].Args) {
+		t.Fatalf("Antigravity stdio configuration changed = %+v", antigravityLocal)
+	}
+	raw := readJSON[map[string]any](t, out, ".agents/plugins/project-tools/mcp_config.json")
+	if len(raw) != 1 {
+		t.Errorf("unexpected Antigravity preferences: %v", raw)
+	}
+	for name, entry := range raw["mcpServers"].(map[string]any) {
+		for _, field := range []string{"url", "httpUrl", "timeout", "trust", "tools", "disabledTools"} {
+			if _, ok := entry.(map[string]any)[field]; ok {
+				t.Errorf("unexpected Antigravity server field %s.%s", name, field)
+			}
+		}
+	}
+	for _, legacy := range []string{"GEMINI.md", ".gemini/settings.json"} {
+		if _, err := os.Stat(filepath.Join(out, legacy)); !os.IsNotExist(err) {
+			t.Errorf("legacy Gemini output %s was generated: %v", legacy, err)
 		}
 	}
 	data, err := os.ReadFile(filepath.Join(out, "AGENTS.md"))
@@ -426,7 +441,7 @@ func TestGenerateMCPConfigurations(t *testing.T) {
 		t.Fatal("generation mutated shared config")
 	}
 	before := map[string]any{}
-	for _, path := range []string{".claude/settings.local.json", ".mcp.json", ".gemini/settings.json", ".crush.json"} {
+	for _, path := range []string{".claude/settings.local.json", ".mcp.json", ".agents/plugins/project-tools/plugin.json", ".agents/plugins/project-tools/mcp_config.json", ".crush.json"} {
 		before[path] = readJSON[any](t, out, path)
 	}
 	if err := g.Generate(t.Context(), false); err != nil {

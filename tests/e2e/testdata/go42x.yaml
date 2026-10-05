@@ -10,7 +10,7 @@ providers:
     enabled: true
   codex:
     enabled: true
-  gemini:
+  antigravity:
     enabled: true
   crush:
     enabled: true
