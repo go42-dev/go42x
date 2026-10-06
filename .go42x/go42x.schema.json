@@ -342,7 +342,7 @@
           },
           "headers": {
             "type": "object",
-            "description": "HTTP headers (for http/sse types)",
+            "description": "HTTP headers (for http/sse types). Antigravity resolves $NAME and ${NAME} from the generation environment and stores the values in its local plugin output. Missing or empty variables fail generation.",
             "additionalProperties": {
               "type": "string"
             }

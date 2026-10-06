@@ -289,6 +289,9 @@ func TestGeneratePrepareEnvInstructions(t *testing.T) {
 func TestGenerateMCPConfigurations(t *testing.T) {
 	t.Setenv("PATH", "")
 	t.Setenv("GITHUB_ACTIONS", "false")
+	t.Setenv("API_KEY", "test-api-key")
+	t.Setenv("CONTEXT7_API_KEY", "test-context7-key")
+	t.Setenv("GITHUB_PERSONAL_ACCESS_TOKEN", "test-github-token")
 	templateDir := filepath.Join("..", "..", "..", "assets", "agentenv", "template")
 	cfg, err := config.LoadConfig(filepath.Join(templateDir, "go42x.yaml"))
 	if err != nil {
@@ -382,8 +385,12 @@ func TestGenerateMCPConfigurations(t *testing.T) {
 	if antigravity.MCPServers["sse"].ServerURL != "https://example.com/sse" {
 		t.Error("Antigravity SSE endpoint must use serverUrl")
 	}
-	if antigravity.MCPServers["sse"].Headers["Authorization"] != "Bearer ${API_KEY}" {
-		t.Error("Antigravity header changed")
+	if antigravity.MCPServers["sse"].Headers["Authorization"] != "Bearer test-api-key" {
+		t.Error("Antigravity SSE header was not resolved")
+	}
+	if antigravity.MCPServers["github"].Headers["Authorization"] != "Bearer test-github-token" ||
+		antigravity.MCPServers["github"].Headers["X-MCP-Toolsets"] != "all" {
+		t.Error("Antigravity GitHub headers were not resolved")
 	}
 	if copilot.MCPServers["sse"].Headers["Authorization"] != "Bearer ${API_KEY}" {
 		t.Error("Copilot header reference changed")

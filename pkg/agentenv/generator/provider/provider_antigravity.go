@@ -3,7 +3,11 @@ package provider
 import (
 	"fmt"
 	"log/slog"
+	"maps"
+	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 
 	"github.com/go42-dev/go42x/pkg/agentenv/config"
 	"github.com/go42-dev/go42x/pkg/agentenv/generator/output"
@@ -13,6 +17,8 @@ const (
 	Antigravity          = "antigravity"
 	AntigravityPluginDir = ".agents/plugins/project-tools"
 )
+
+var antigravityEnvNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 // AntigravityPluginManifest identifies the generated workspace plugin.
 // @see https://antigravity.google/docs/plugins
@@ -72,7 +78,8 @@ func (p *AntigravityProvider) prepareConfigFiles(plan *output.Plan) error {
 	}
 
 	servers := make(map[string]AntigravityMCPServer)
-	for name, server := range p.config.MCP {
+	for _, name := range slices.Sorted(maps.Keys(p.config.MCP)) {
+		server := p.config.MCP[name]
 		if !server.Enabled {
 			continue
 		}
@@ -84,7 +91,11 @@ func (p *AntigravityProvider) prepareConfigFiles(plan *output.Plan) error {
 			entry.CWD = server.CWD
 		} else {
 			entry.ServerURL = server.URL
-			entry.Headers = server.Headers
+			headers, err := resolveAntigravityHeaders(server.Headers)
+			if err != nil {
+				return fmt.Errorf("MCP server %s: %w", name, err)
+			}
+			entry.Headers = headers
 		}
 		servers[name] = entry
 	}
@@ -95,4 +106,31 @@ func (p *AntigravityProvider) prepareConfigFiles(plan *output.Plan) error {
 	}
 
 	return nil
+}
+
+// Antigravity sends header values literally, so resolve references before writing
+// its local configuration. Never include header values in expansion errors.
+func resolveAntigravityHeaders(headers map[string]string) (map[string]string, error) {
+	resolved := make(map[string]string, len(headers))
+	for _, key := range slices.Sorted(maps.Keys(headers)) {
+		var expansionErr error
+		resolved[key] = os.Expand(headers[key], func(name string) string {
+			if expansionErr != nil {
+				return ""
+			}
+			if !antigravityEnvNamePattern.MatchString(name) {
+				expansionErr = fmt.Errorf("unsupported environment reference syntax; use $NAME or ${NAME}")
+				return ""
+			}
+			value, exists := os.LookupEnv(name)
+			if !exists || value == "" {
+				expansionErr = fmt.Errorf("environment variable %q is unset or empty", name)
+			}
+			return value
+		})
+		if expansionErr != nil {
+			return nil, fmt.Errorf("header %s: %w", key, expansionErr)
+		}
+	}
+	return resolved, nil
 }

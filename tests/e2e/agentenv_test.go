@@ -188,6 +188,55 @@ func assertSetting(t *testing.T, settings map[string]any, path string, want any)
 	}
 }
 
+func TestAntigravityHeaderEnvironment(t *testing.T) {
+	t.Parallel()
+	p := newProject(t)
+	p.configure(t)
+	const local = `mcp:
+  github:
+    enabled: true
+    name: github
+    type: http
+    url: https://api.githubcopilot.com/mcp/
+    headers:
+      Authorization: "Bearer ${AGY_TEST_TOKEN}"
+      X-Label: "$AGY_TEST_LABEL"
+      X-MCP-Toolsets: all
+`
+	p.write(t, ".go42x/go42x.local.yaml", local)
+	p.env = append(p.env, "AGY_TEST_LABEL=example", "AGY_TEST_TOKEN=")
+	before := p.snapshot(t)
+	result := p.run(t, 1, "agentenv", "generate")
+	if !strings.Contains(result.stderr, `environment variable "AGY_TEST_TOKEN" is unset or empty`) {
+		t.Fatalf("missing variable error: %s", result.stderr)
+	}
+	p.assertUnchanged(t, before)
+	for _, token := range []string{"test-token-one", "test-token-two"} {
+		p.env[len(p.env)-1] = "AGY_TEST_TOKEN=" + token
+		p.run(t, 0, "agentenv", "generate")
+		var native, copilot map[string]any
+		if err := json.Unmarshal(
+			[]byte(p.read(t, ".agents/plugins/project-tools/mcp_config.json")),
+			&native,
+		); err != nil {
+			t.Fatal(err)
+		}
+		assertSetting(t, native, "mcpServers.github.headers.Authorization", "Bearer "+token)
+		assertSetting(t, native, "mcpServers.github.headers.X-Label", "example")
+		assertSetting(t, native, "mcpServers.github.headers.X-MCP-Toolsets", "all")
+		if err := json.Unmarshal([]byte(p.read(t, ".mcp.json")), &copilot); err != nil {
+			t.Fatal(err)
+		}
+		assertSetting(t, copilot, "mcpServers.github.headers.Authorization", "Bearer ${AGY_TEST_TOKEN}")
+		if p.read(t, ".go42x/go42x.local.yaml") != local {
+			t.Fatal("generation changed the authored header references")
+		}
+		generated := p.snapshot(t)
+		p.run(t, 0, "agentenv", "generate")
+		p.assertUnchanged(t, generated)
+	}
+}
+
 func TestGenerationFailurePreservesProject(t *testing.T) {
 	t.Parallel()
 	fixture, err := os.ReadFile("testdata/go42x.yaml")
@@ -208,6 +257,14 @@ func TestGenerationFailurePreservesProject(t *testing.T) {
 		{"invalid JSON", ".claude/settings.local.json", `{"permissions":`},
 		{"invalid Antigravity manifest", ".agents/plugins/project-tools/plugin.json", `{"name":`},
 		{"invalid Antigravity MCP config", ".agents/plugins/project-tools/mcp_config.json", `{"mcpServers":`},
+		{
+			"missing Antigravity header variable", ".go42x/go42x.local.yaml",
+			`mcp: {remote: {enabled: true, name: remote, type: http, url: "https://example.com/mcp", headers: {Authorization: "Bearer private-header-prefix ${AGY_TEST_MISSING_TOKEN}"}}}`,
+		},
+		{
+			"unsupported Antigravity header reference", ".go42x/go42x.local.yaml",
+			`mcp: {remote: {enabled: true, name: remote, type: http, url: "https://example.com/mcp", headers: {Authorization: "Bearer ${AGY_TEST_TOKEN:-private-header-prefix}"}}}`,
+		},
 		{"invalid TOML", ".codex/config.toml", "model = ["},
 		{"invalid template", ".go42x/agents.tpl.md", "{{ if }}"},
 		{
@@ -236,6 +293,9 @@ func TestGenerationFailurePreservesProject(t *testing.T) {
 				result := p.run(t, 1, args...)
 				if !strings.Contains(result.stderr, "Error:") {
 					t.Errorf("failure did not report an error on stderr: %q", result.stderr)
+				}
+				if strings.Contains(result.stderr, "private-header-prefix") {
+					t.Error("generation error exposed a header value")
 				}
 				p.assertUnchanged(t, before)
 			}
