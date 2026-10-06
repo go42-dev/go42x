@@ -13,7 +13,7 @@
   "definitions": {
     "providerEnabled": {
       "type": "boolean",
-      "description": "Whether to generate configuration for this provider. Disabling preserves existing settings and instruction files, including with --clean. Shared AGENTS.md is always generated.",
+      "description": "Whether to generate configuration for this provider. Disabling preserves existing settings, including with --clean. Shared AGENTS.md is always generated.",
       "default": true
     },
     "autoApproveTools": {

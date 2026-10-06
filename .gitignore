@@ -16,7 +16,6 @@
 .go42x/backups/
 .mcp.json
 .claude/
-CLAUDE.md
 .codex/
 AGENTS.md
 .agents/plugins/project-tools/

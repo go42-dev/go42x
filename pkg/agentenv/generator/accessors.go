@@ -16,6 +16,5 @@ type collectorAccessor interface {
 }
 
 type providerAccessor interface {
-	InstructionsFileName() string
 	Prepare(plan *output.Plan, ctxData map[string]any, cfg config.Provider) error
 }

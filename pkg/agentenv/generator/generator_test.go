@@ -128,7 +128,6 @@ func TestGeneratorContextAndProviderErrors(t *testing.T) {
 	failures := []error{errors.New("claude failed"), errors.New("antigravity failed")}
 	for i, name := range []string{"claude", "antigravity"} {
 		p := mocks.NewMockproviderAccessor(ctrl)
-		p.EXPECT().InstructionsFileName().Return(name + ".md")
 		p.EXPECT().
 			Prepare(gomock.Any(), gomock.Any(), cfg.Providers[name]).
 			DoAndReturn(func(_ *output.Plan, data map[string]any, _ config.Provider) error {

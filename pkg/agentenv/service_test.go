@@ -228,23 +228,28 @@ func TestGenerateAndCleanPreserveSources(t *testing.T) {
 	if err := s.Generate(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{"AGENTS.md", "CLAUDE.md"} {
-		if len(readFile(t, filepath.Join(dir, path))) == 0 {
-			t.Errorf("empty output %s", path)
-		}
-		writeFile(t, filepath.Join(dir, path), "stale")
+	instructionsPath := filepath.Join(dir, "AGENTS.md")
+	if len(readFile(t, instructionsPath)) == 0 {
+		t.Error("empty shared instructions")
 	}
+	claudePath := filepath.Join(dir, "CLAUDE.md")
+	if _, err := os.Stat(claudePath); !os.IsNotExist(err) {
+		t.Fatalf("generated obsolete Claude wrapper: %v", err)
+	}
+	writeFile(t, claudePath, "User Claude instructions")
+	writeFile(t, instructionsPath, "stale")
 	if err := s.Generate(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{"AGENTS.md", "CLAUDE.md"} {
-		if string(readFile(t, filepath.Join(dir, path))) == "stale" {
-			t.Errorf("stale output %s", path)
-		}
+	if string(readFile(t, instructionsPath)) == "stale" {
+		t.Error("stale shared instructions")
 	}
 	if !bytes.Equal(before, readFile(t, configPath)) || string(readFile(t, custom)) != "preserve this" ||
 		string(readFile(t, asset)) != "preserve agent" {
 		t.Fatal("clean removed or changed user sources")
+	}
+	if string(readFile(t, claudePath)) != "User Claude instructions" {
+		t.Fatal("clean changed user Claude instructions")
 	}
 	for _, path := range []string{".claude/settings.local.json", ".mcp.json", ".agents/plugins/project-tools/plugin.json", ".agents/plugins/project-tools/mcp_config.json", ".crush.json"} {
 		if len(readFile(t, filepath.Join(dir, path))) == 0 {
@@ -389,8 +394,8 @@ func TestUpdateReplacesBundledSourcesAndRegenerates(t *testing.T) {
 			t.Errorf("%s = %q, want %q", path, got, want)
 		}
 	}
-	if !strings.Contains(string(readFile(t, filepath.Join(dir, "CLAUDE.md"))), "@AGENTS.md") {
-		t.Fatal("provider instructions were not generated")
+	if _, err := os.Stat(filepath.Join(dir, "CLAUDE.md")); !os.IsNotExist(err) {
+		t.Fatalf("update generated obsolete Claude wrapper: %v", err)
 	}
 	settingsPath := filepath.Join(dir, ".claude/settings.local.json")
 	settings := readFile(t, settingsPath)

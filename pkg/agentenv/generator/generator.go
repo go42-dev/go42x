@@ -192,22 +192,10 @@ func (g *Generator) prepareInstructions(plan *output.Plan, ctxData map[string]an
 		return err
 	}
 
-	outputs := map[string]string{provider.AgentsFile: content}
-	for name, p := range g.providers {
-		if !g.config.ProviderEnabled(name) {
-			continue
-		}
-		if path := p.InstructionsFileName(); path != provider.AgentsFile {
-			outputs[path] = "@" + provider.AgentsFile + "\n"
-		}
-	}
-
-	for _, path := range slices.Sorted(maps.Keys(outputs)) {
-		fullPath := filepath.Join(g.outputDir, path)
-		if err := plan.Write(fullPath, []byte(instructionsMarker+"\n\n"+outputs[path]),
-			output.Instructions, clean); err != nil {
-			return fmt.Errorf("prepare instructions %s: %w", path, err)
-		}
+	fullPath := filepath.Join(g.outputDir, provider.AgentsFile)
+	if err := plan.Write(fullPath, []byte(instructionsMarker+"\n\n"+content),
+		output.Instructions, clean); err != nil {
+		return fmt.Errorf("prepare instructions %s: %w", provider.AgentsFile, err)
 	}
 
 	return nil

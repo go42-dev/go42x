@@ -70,8 +70,8 @@ func TestAgentEnvLifecycle(t *testing.T) {
 	if !strings.Contains(p.read(t, "AGENTS.md"), "# example-e2e\n") {
 		t.Fatal("generate did not render the project's instructions")
 	}
-	if !strings.Contains(p.read(t, "CLAUDE.md"), "@AGENTS.md") {
-		t.Error("CLAUDE.md does not import shared instructions")
+	if _, err := os.Stat(filepath.Join(p.root, "CLAUDE.md")); !os.IsNotExist(err) {
+		t.Fatalf("generated obsolete Claude wrapper: %v", err)
 	}
 	for path, content := range preserved {
 		if p.read(t, path) != content {
@@ -131,6 +131,8 @@ func TestAgentEnvLifecycle(t *testing.T) {
 		}
 	}
 
+	preserved["CLAUDE.md"] = "User Claude instructions"
+	p.write(t, "CLAUDE.md", preserved["CLAUDE.md"])
 	generated := p.snapshot(t)
 	p.run(t, 0, "agentenv", "generate")
 	p.assertUnchanged(t, generated)
@@ -277,8 +279,8 @@ func TestAgentEnvUpdate(t *testing.T) {
 		!strings.Contains(instructions, "Additional project instructions") {
 		t.Fatalf("update did not regenerate instructions: %s", instructions)
 	}
-	if !strings.Contains(p.read(t, "CLAUDE.md"), "@AGENTS.md") {
-		t.Fatal("update did not regenerate provider instructions")
+	if _, err := os.Stat(filepath.Join(p.root, "CLAUDE.md")); !os.IsNotExist(err) {
+		t.Fatalf("update generated obsolete Claude wrapper: %v", err)
 	}
 	if p.read(t, ".agents/plugins/project-tools/plugin.json") != "Disabled provider plugin" {
 		t.Fatal("update changed the disabled provider's plugin")

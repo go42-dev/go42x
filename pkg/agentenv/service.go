@@ -298,7 +298,6 @@ var ignoreFiles = []string{
 	".go42x/backups/",
 	".mcp.json",
 	".claude/",
-	provider.ClaudeFile,
 	".codex/",
 	provider.AgentsFile,
 	provider.AntigravityPluginDir + "/",

@@ -30,8 +30,3 @@ func NewBaseProvider(
 		templateEngine: templateEngine,
 	}
 }
-
-// InstructionsFileName defaults to the shared instructions document.
-func (p *BaseProvider) InstructionsFileName() string {
-	return AgentsFile
-}
