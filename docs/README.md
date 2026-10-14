@@ -18,7 +18,6 @@ see the [project overview](../README.md).
 | [Writing documentation](handbook/documentation.md) | Writing rules, document metadata, index maintenance, and checks  |
 | [CLI codestyle](handbook/cli-codestyle.md)         | CLI code composition, organization, and style guidelines         |
 | [CLI output](handbook/cli-output.md)               | Output streams, logging, result formats, errors, and exit status |
-| [GitHub Actions](handbook/github-actions.md)       | Shared preparation actions and repository-local copies           |
 
 ## Maintaining the index
 
