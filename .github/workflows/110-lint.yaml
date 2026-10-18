@@ -178,7 +178,7 @@ jobs:
         uses: ./.github/actions/setup-tools
         with:
           install-task: 'true'
-          install-args: --locked node actionlint github:github/gh-aw go:github.com/go42-dev/go42x
+          install-args: --locked node actionlint github:github/gh-aw
       - name: 'Generate and compile agentic workflows'
         env:
           GH_TOKEN: ${{ github.token }}

@@ -78,7 +78,18 @@ jobs:
           install-task: 'true'
       - name: 'Download Go modules'
         run: go mod download
-      - name: 'Run integration tests with race detector'
+      - name: 'Run integration tests with coverage and race detector'
         run: task test:integration
         env:
           CGO_ENABLED: 1 # needed for -race
+      - name: 'Upload coverage reports'
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: integration-coverage
+          path: |-
+            .build/coverage-integration.out
+            .build/coverage-integration.html
+          include-hidden-files: true
+          if-no-files-found: error

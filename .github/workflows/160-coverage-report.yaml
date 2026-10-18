@@ -2,7 +2,7 @@
 
 name: report
 
-# Publishes unit-test coverage summaries, downloadable reports, and pull request comparisons.
+# Combines unit, integration, and end-to-end coverage for summaries, reports, and pull request comparisons.
 
 on:
   workflow_call:
@@ -35,18 +35,24 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: 'Setup Go'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: 'go.mod'
       - name: 'Download coverage reports'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: code-coverage
+          pattern: '*-coverage'
           path: .build
-      - name: 'Merge repeated coverage blocks'
+      - name: 'Merge unit, integration, and end-to-end coverage'
         shell: bash
         run: |-
           awk 'FNR == 1 { next } { hits[$1 " " $2] += $3 }
             END { print "mode: atomic"; for (block in hits) printf "%s %.0f\n", block, hits[block] }' \
-            .build/coverage.out > .build/coverage-merged.out
-          mv .build/coverage-merged.out .build/coverage.out
+            .build/code-coverage/coverage.out \
+            .build/integration-coverage/coverage-integration.out \
+            .build/e2e-coverage/coverage-e2e.out > .build/coverage.out
+          go tool cover -html=.build/coverage.out -o=.build/coverage.html
       - name: 'Publish coverage summary and annotation'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
@@ -62,7 +68,7 @@ jobs:
               throw new Error('Expected an atomic coverage profile');
             }
 
-            // Count statements in merged blocks, so repeated blocks across test packages count only once.
+            // Count statements in merged blocks, so repeated hits across test suites count only once.
             // Include package-level function literals, which go tool cover -func omits from its total.
             for (const line of lines) {
               const match = line.match(/^(.+):\d+\.\d+,\d+\.\d+\s+(\d+)\s+(\d+)$/);
@@ -87,8 +93,8 @@ jobs:
             const rows = [...packages].sort((a, b) => ratio(a[1]) - ratio(b[1]) || a[0].localeCompare(b[0]));
             let summary = '## Test coverage\n\n';
             summary += `**Total: ${percent(total)}** — ${total.covered} / ${total.statements} statements covered.\n\n`;
-            summary += 'Unit tests.\n';
-            summary += 'Mocks and test packages are excluded by the unit-test task.\n\n';
+            summary += 'Combined unit, integration, and end-to-end tests.\n';
+            summary += 'Mocks and test packages are excluded by the test tasks.\n\n';
             summary += '### Coverage by package\n\n';
             summary += 'Packages with the lowest coverage appear first. Total coverage is weighted by statement count.\n\n';
             summary += '| Package | Coverage | Covered / Total statements |\n';

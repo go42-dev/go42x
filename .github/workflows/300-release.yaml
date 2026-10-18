@@ -275,7 +275,6 @@ jobs:
       runs_on: ubuntu-24.04
       continue_on_error: false
       image_reference: ${{ needs.publish-docker.outputs.image_reference }}
-      platforms: linux/amd64,linux/arm64
       timeout_minutes: 30
 
   promote-docker:

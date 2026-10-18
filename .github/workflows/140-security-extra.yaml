@@ -19,10 +19,6 @@ on:
       image_reference:
         required: true
         type: string
-      platforms:
-        description: Comma-separated Linux platforms to scan.
-        required: true
-        type: string
       timeout_minutes:
         required: false
         type: number
@@ -31,42 +27,7 @@ on:
 permissions: {}
 
 jobs:
-  configure:
-    name: scan-inputs
-    runs-on: ${{ inputs.runs_on }}
-    timeout-minutes: 5
-    outputs:
-      matrix: ${{ steps.platforms.outputs.matrix }}
-    steps:
-      - name: 'Validate image reference and select platforms'
-        id: platforms
-        env:
-          IMAGE_REFERENCE: ${{ inputs.image_reference }}
-          PLATFORMS: ${{ inputs.platforms }}
-        run: |
-          python3 - <<'PY'
-          import json
-          import os
-          import re
-          import sys
-
-          if not re.fullmatch(r"ghcr\.io/[a-z0-9._/-]+@sha256:[0-9a-f]{64}", os.environ["IMAGE_REFERENCE"]):
-              sys.exit("image_reference must be an immutable GHCR digest reference")
-          platforms = [platform.strip() for platform in os.environ["PLATFORMS"].split(",")]
-          supported = {"linux/amd64", "linux/arm64"}
-          if not platforms or any(platform not in supported for platform in platforms):
-              sys.exit("platforms must contain linux/amd64, linux/arm64, or both")
-          if len(platforms) != len(set(platforms)):
-              sys.exit("platforms must not contain duplicates")
-          matrix = {"include": [
-              {"platform": platform, "arch": platform.split("/")[1]} for platform in platforms
-          ]}
-          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
-              output.write("matrix=" + json.dumps(matrix, separators=(",", ":")) + "\n")
-          PY
-
   trivy:
-    needs: configure
     name: trivy-${{ matrix.arch }}
     runs-on: ${{ inputs.runs_on }}
     continue-on-error: ${{ inputs.continue_on_error }}
@@ -76,12 +37,24 @@ jobs:
       packages: read
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.configure.outputs.matrix) }}
+      matrix:
+        arch:
+          - amd64
+          - arm64
     env:
-      TRIVY_PLATFORM: ${{ matrix.platform }}
+      TRIVY_PLATFORM: linux/${{ matrix.arch }}
       TRIVY_IMAGE_SRC: remote
     # ----
     steps:
+      - name: 'Validate image reference'
+        env:
+          IMAGE_REFERENCE: ${{ inputs.image_reference }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$IMAGE_REFERENCE" =~ ^ghcr\.io/[a-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]]; then
+            echo 'image_reference must be an immutable GHCR digest reference' >&2
+            exit 1
+          fi
       # Registry authentication from the build job is not shared with this job.
       - name: 'Log in to GitHub Container Registry'
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0

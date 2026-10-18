@@ -154,7 +154,6 @@ jobs:
       runs_on: ubuntu-24.04
       continue_on_error: false
       image_reference: ${{ needs.docker-build.outputs.image_reference }}
-      platforms: linux/amd64,linux/arm64
       timeout_minutes: 30
 
   # stage 5: test artifacts
@@ -180,6 +179,8 @@ jobs:
       pull-requests: write
     needs:
       - unit-tests
+      - integration-tests
+      - e2e-tests
     with:
       runs_on: ubuntu-latest
       continue_on_error: true

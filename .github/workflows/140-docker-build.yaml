@@ -52,15 +52,29 @@ on:
 permissions: {}
 
 jobs:
-  configure:
-    name: docker-inputs
+  # Publication is shared; callers scan the digest and own cleanup or promotion.
+  docker-build:
+    name: docker-build
     runs-on: ${{ inputs.runs_on }}
-    timeout-minutes: 5
-    permissions: {}
+    continue-on-error: ${{ inputs.continue_on_error }}
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+      attestations: write
+      id-token: write
     outputs:
-      platforms: ${{ steps.platforms.outputs.platforms }}
+      image_digest: ${{ steps.validate-digest.outputs.image_digest }}
+      image_reference: ${{ steps.validate-digest.outputs.image_reference }}
+    env:
+      MISE_DEFAULT_CONFIG_FILENAME: etc/mise.toml
+      MISE_DATA_DIR: ${{ github.workspace }}/.tools
+      MISE_CACHE_DIR: ${{ github.workspace }}/.tools/cache
+      MISE_STATE_DIR: ${{ github.workspace }}/.tools/state
+    # ----
     steps:
-      - name: Validate options and select platforms
+      - name: 'Validate options and select platforms'
         id: platforms
         env:
           PLATFORMS: ${{ inputs.platforms }}
@@ -83,30 +97,6 @@ jobs:
           with open(os.environ["GITHUB_OUTPUT"], "a") as output:
               output.write("platforms=" + ",".join(platforms) + "\n")
           PY
-
-  # Publication is shared; callers scan the digest and own cleanup or promotion.
-  docker-build:
-    needs: configure
-    name: docker-build
-    runs-on: ${{ inputs.runs_on }}
-    continue-on-error: ${{ inputs.continue_on_error }}
-    timeout-minutes: ${{ inputs.timeout_minutes }}
-    permissions:
-      contents: read
-      actions: read
-      packages: write
-      attestations: write
-      id-token: write
-    outputs:
-      image_digest: ${{ steps.validate-digest.outputs.image_digest }}
-      image_reference: ${{ steps.validate-digest.outputs.image_reference }}
-    env:
-      MISE_DEFAULT_CONFIG_FILENAME: etc/mise.toml
-      MISE_DATA_DIR: ${{ github.workspace }}/.tools
-      MISE_CACHE_DIR: ${{ github.workspace }}/.tools/cache
-      MISE_STATE_DIR: ${{ github.workspace }}/.tools/state
-    # ----
-    steps:
       - name: 'Validate image publication target'
         env:
           CALLER_WORKFLOW_REF: ${{ github.workflow_ref }}
@@ -198,7 +188,7 @@ jobs:
       # ----
       - name: 'Extract tool versions and cache platform key'
         env:
-          PLATFORMS: ${{ needs.configure.outputs.platforms }}
+          PLATFORMS: ${{ steps.platforms.outputs.platforms }}
         run: |
           {
             echo "gopls_version=$(sed -n 's/^"go:golang.org\/x\/tools\/gopls" = "\(.*\)"$/\1/p' etc/mise.toml)"
@@ -256,7 +246,7 @@ jobs:
       - name: 'Determine annotation levels'
         id: annotations-levels
         env:
-          PLATFORMS: ${{ needs.configure.outputs.platforms }}
+          PLATFORMS: ${{ steps.platforms.outputs.platforms }}
         run: |
           if [[ "$PLATFORMS" == *,* ]]; then
             echo "levels=manifest,index" >> "$GITHUB_OUTPUT"
@@ -290,7 +280,7 @@ jobs:
           builder: ${{ steps.buildx.outputs.name }}
           context: ${{ github.workspace }}/
           file: ${{ github.workspace }}/Dockerfile
-          platforms: ${{ needs.configure.outputs.platforms }}
+          platforms: ${{ steps.platforms.outputs.platforms }}
           cache-from: type=gha,scope=docker-build
           # Cache export is an optimization, not a publication requirement.
           # A cache-service write failure must not cancel the image push.

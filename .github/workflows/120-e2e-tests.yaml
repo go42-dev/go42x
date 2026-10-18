@@ -78,7 +78,18 @@ jobs:
           install-task: 'true'
       - name: 'Download Go modules'
         run: go mod download
-      - name: 'Run end-to-end tests with race detector'
+      - name: 'Run end-to-end tests with coverage and race detector'
         run: task test:e2e
         env:
           CGO_ENABLED: 1 # needed for the test runner and CLI -race builds
+      - name: 'Upload coverage reports'
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-coverage
+          path: |-
+            .build/coverage-e2e.out
+            .build/coverage-e2e.html
+          include-hidden-files: true
+          if-no-files-found: error

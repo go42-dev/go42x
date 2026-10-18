@@ -15,6 +15,8 @@ import (
 	"time"
 )
 
+const e2eCoverDirEnv = "GO42X_E2E_COVERDIR"
+
 var (
 	binaryPath    string
 	binaryVersion = "dev"
@@ -69,13 +71,34 @@ func runTests(m *testing.M) int {
 	// Build once for the entire suite. The child CLI also gets race detection.
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
-	build := exec.CommandContext(ctx, "go", "build", "-mod=readonly", "-race", "-trimpath", "-buildvcs=false",
-		"-o", binaryPath, ".")
+	coverDir := os.Getenv(e2eCoverDirEnv)
+	buildArgs := []string{"build", "-mod=readonly", "-race", "-trimpath", "-buildvcs=false"}
+	if len(coverDir) > 0 {
+		buildArgs = append(buildArgs, "-cover", "-covermode=atomic")
+	}
+	buildArgs = append(buildArgs, "-o", binaryPath, ".")
+	build := exec.CommandContext(ctx, "go", buildArgs...)
 	build.Dir = filepath.Join("..", "..")
 	build.Stdout, build.Stderr = os.Stderr, os.Stderr
 	if err := build.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "build E2E binary:", err)
 		return 1
+	}
+
+	if len(coverDir) > 0 {
+		// Write shared coverage metadata before parallel CLI processes start.
+		prime := exec.CommandContext(ctx, binaryPath, "version")
+		prime.Dir = dir
+		prime.Env = []string{
+			"GOCOVERDIR=" + coverDir,
+			"GORACE=halt_on_error=1 atexit_sleep_ms=0",
+			"SYSTEMROOT=" + os.Getenv("SYSTEMROOT"),
+		}
+		prime.Stderr = os.Stderr
+		if err := prime.Run(); err != nil {
+			fmt.Fprintln(os.Stderr, "initialize E2E coverage:", err)
+			return 1
+		}
 	}
 	return m.Run()
 }
@@ -88,7 +111,7 @@ type project struct {
 func newProject(t *testing.T) *project {
 	t.Helper()
 	root, userDir, tempDir := t.TempDir(), t.TempDir(), t.TempDir()
-	return &project{
+	p := &project{
 		root: root,
 		// Do not inherit developer credentials, GO42X flags, CI metadata, or tools.
 		env: []string{
@@ -106,6 +129,10 @@ func newProject(t *testing.T) *project {
 			"GORACE=halt_on_error=1 atexit_sleep_ms=0",
 		},
 	}
+	if coverDir := os.Getenv(e2eCoverDirEnv); len(coverDir) > 0 {
+		p.env = append(p.env, "GOCOVERDIR="+coverDir)
+	}
+	return p
 }
 
 func (p *project) command(ctx context.Context, args ...string) *exec.Cmd {

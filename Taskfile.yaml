@@ -139,31 +139,73 @@ tasks:
         if [ "$#" -gt 0 ]; then
           exec go test -count=1 -race -skip '^Fuzz' "$@"
         fi
+
         mkdir -p .build
+
         unit_packages=$(go list ./...)
         unit_exclude_pattern=$(printf '%s\n' mocks tests | paste -sd '|' -)
         unit_packages=$(printf '%s\n' "$unit_packages" | grep -vE "/($unit_exclude_pattern)(/|$)")
+
         # go list returns separate package names; preserve word splitting here.
         # shellcheck disable=SC2086
         go test -count=1 -v -race -skip '^Fuzz' -covermode=atomic \
           -coverpkg="$(printf '%s\n' "$unit_packages" | paste -sd, -)" \
           -coverprofile=.build/coverage.out $unit_packages \
           | sed -E 's/(coverage: [0-9.]+% of statements) in .*/\1/'
+
         go tool cover -html=.build/coverage.out -o=.build/coverage.html
         go tool cover -func=.build/coverage.out | grep '^total:'
 
   test:integration:
-    desc: "test services and source adapters together with local HTTP and Git fixtures"
+    desc: "test services and source adapters with race detection and coverage"
     cmds:
-      - "go test -count=1 -v -race -timeout=5m ./tests/integration/..."
+      - |
+        set -eo pipefail
+        mkdir -p .build
+
+        coverage_packages=$(go list -deps -test -f '{{`{{if .Module}}{{if .Module.Main}}{{.ImportPath}}{{end}}{{end}}`}}' ./tests/integration/...)
+        coverage_exclude_pattern=$(printf '%s\n' mocks tests | paste -sd '|' -)
+        coverage_packages=$(printf '%s\n' "$coverage_packages" | grep -vE "/($coverage_exclude_pattern)(/|$)" | paste -sd, -)
+
+        go test -count=1 -v -race -timeout=5m -covermode=atomic -coverpkg="$coverage_packages" \
+          -coverprofile=.build/coverage-integration.out ./tests/integration/... \
+          | sed -E 's/(coverage: [0-9.]+% of statements) in .*/\1/'
+
+        go tool cover -html=.build/coverage-integration.out -o=.build/coverage-integration.html
+        go tool cover -func=.build/coverage-integration.out | grep '^total:'
 
   test:e2e:
     desc: "test the compiled CLI in isolated temporary projects"
     summary: >-
-      Usage: task test:e2e. Builds the CLI once with race detection. Set GO42X_E2E_BINARY to an absolute path and GO42X_E2E_VERSION
-      to test an existing binary instead.
+      Usage: task test:e2e. Builds the CLI once with race detection and coverage.
+      Set GO42X_E2E_BINARY to an absolute path and GO42X_E2E_VERSION to test an existing binary without collecting coverage.
     cmds:
-      - "go test -count=1 -v -race -timeout=5m ./tests/e2e/..."
+      - |
+        set -eo pipefail
+        if [ -n "${GO42X_E2E_BINARY:-}" ] || [ -n "${GO42X_E2E_VERSION:-}" ] || [ -n "${GO42X_RELEASE_DIST:-}" ]; then
+          exec go test -count=1 -v -race -timeout=5m ./tests/e2e/...
+        fi
+
+        rm -rf .build/coverage-e2e{.out,.out.tmp,.html,-tests,-app}
+        mkdir -p .build/coverage-e2e-{tests,app}
+
+        coverage_packages=$(go list -deps -test -f '{{`{{if .Module}}{{if .Module.Main}}{{.ImportPath}}{{end}}{{end}}`}}' ./tests/e2e/...)
+        coverage_exclude_pattern=$(printf '%s\n' mocks tests | paste -sd '|' -)
+        coverage_packages=$(printf '%s\n' "$coverage_packages" | grep -vE "/($coverage_exclude_pattern)(/|$)" | paste -sd, -)
+
+        export GO42X_E2E_COVERDIR="${PWD}/.build/coverage-e2e-app"
+        go test -count=1 -v -race -timeout=5m -cover -covermode=atomic -coverpkg="$coverage_packages" ./tests/e2e/... \
+          -args -test.gocoverdir="${PWD}/.build/coverage-e2e-tests" \
+          | sed -E 's/(coverage: [0-9.]+% of statements) in .*/\1/'
+
+        ls .build/coverage-e2e-{tests,app}/cov{meta,counters}.* > /dev/null
+        go tool covdata textfmt \
+          -i=.build/coverage-e2e-tests,.build/coverage-e2e-app \
+          -o=.build/coverage-e2e.out.tmp
+        mv .build/coverage-e2e.out.tmp .build/coverage-e2e.out
+
+        go tool cover -html=.build/coverage-e2e.out -o=.build/coverage-e2e.html
+        go tool cover -func=.build/coverage-e2e.out | grep '^total:'
 
   test:release:
     desc: "verify release artifacts and run E2E tests against the native archive"
@@ -506,7 +548,7 @@ tasks:
   agentic:generate:
     desc: "Generate agent instructions and gh-aw MCP declarations"
     cmds:
-      - task: x
+      - task: x:source
         vars:
           CLI_ARGS: 'agentenv generate --providers=gh-aw'
 
