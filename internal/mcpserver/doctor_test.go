@@ -15,17 +15,23 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
-	"github.com/go42-dev/go42x/internal/config"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider"
 	"github.com/go42-dev/go42x/internal/doctor/check"
 )
 
 func TestDoctorCheckUsesCurrentEnabledServers(t *testing.T) {
-	servers := map[string]config.MCPServer{
-		"zeta":     {Enabled: true, Type: config.MCPServerTypeHTTP},
-		"alpha":    {Enabled: true, Type: config.MCPServerTypeHTTP},
+	servers := map[string]provider.MCPServer{
+		"zeta": {
+			Enabled: true,
+			Type:    provider.MCPServerTypeHTTP,
+		},
+		"alpha": {
+			Enabled: true,
+			Type:    provider.MCPServerTypeHTTP,
+		},
 		"disabled": {Command: "unavailable"},
 	}
-	group := DoctorCheck(t.TempDir(), func() map[string]config.MCPServer { return servers }, DoctorOptions{})
+	group := DoctorCheck(t.TempDir(), func() map[string]provider.MCPServer { return servers }, DoctorOptions{})
 	result := group.Run(t.Context())
 	var ids []string
 	var statuses []check.Status
@@ -49,7 +55,7 @@ func TestMCPProbe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := config.MCPServer{
+	server := provider.MCPServer{
 		Command: exe,
 		Args:    []string{"-test.run=^TestDoctorMCPHelper$"},
 		CWD:     t.TempDir(),
@@ -82,7 +88,7 @@ func TestMCPProbe(t *testing.T) {
 	}
 }
 
-func TestDoctorMCPHelper(t *testing.T) {
+func TestDoctorMCPHelper(_ *testing.T) {
 	mode := os.Getenv("GO42X_DOCTOR_HELPER")
 	if mode == "" {
 		return
@@ -138,7 +144,7 @@ func TestDoctorMCPHelper(t *testing.T) {
 }
 
 func TestMCPRemoteProbe(t *testing.T) {
-	for _, protocol := range []string{config.MCPServerTypeHTTP, config.MCPServerTypeSSE} {
+	for _, protocol := range []string{provider.MCPServerTypeHTTP, provider.MCPServerTypeSSE} {
 		t.Run(protocol, func(t *testing.T) {
 			runtime := server.NewMCPServer("fixture", "1", server.WithToolCapabilities(false))
 			runtime.AddTool(
@@ -149,7 +155,7 @@ func TestMCPRemoteProbe(t *testing.T) {
 				},
 			)
 			var handler http.Handler
-			if protocol == config.MCPServerTypeHTTP {
+			if protocol == provider.MCPServerTypeHTTP {
 				handler = server.NewStreamableHTTPServer(runtime)
 			} else {
 				handler = server.NewSSEServer(runtime)
@@ -157,12 +163,16 @@ func TestMCPRemoteProbe(t *testing.T) {
 			remote := httptest.NewServer(handler)
 			defer remote.Close()
 			url := remote.URL
-			if protocol == config.MCPServerTypeSSE {
+			if protocol == provider.MCPServerTypeSSE {
 				url += "/sse"
 			}
 			result := probeMCP(
 				t.Context(),
-				config.MCPServer{Type: protocol, URL: url, Tools: []string{"known"}},
+				provider.MCPServer{
+					Type:  protocol,
+					URL:   url,
+					Tools: []string{"known"},
+				},
 				2*time.Second,
 			)
 			if result.Status != check.Pass {

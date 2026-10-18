@@ -50,10 +50,10 @@ jobs:
         with:
           go-version-file: 'go.mod'
       - name: 'Install pinned packaging tools'
-        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        uses: ./.github/actions/setup-tools
         with:
-          version: '2026.9.1'
-          install_args: --locked task goreleaser syft
+          install-task: 'true'
+          install-args: --locked goreleaser syft
       - name: 'Validate GoReleaser configuration'
         run: task release:check
       - name: 'Build snapshot artifacts'

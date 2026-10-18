@@ -1,4 +1,4 @@
-package provider
+package codex
 
 import (
 	"bytes"
@@ -12,19 +12,19 @@ import (
 
 	"github.com/pelletier/go-toml/v2"
 
-	"github.com/go42-dev/go42x/internal/config"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider"
 	"github.com/go42-dev/go42x/internal/fspatch"
 )
 
 const (
-	Codex             = "codex"
+	Name              = "codex"
 	codexSettingsDir  = ".codex"
 	codexSettingsFile = "config.toml"
 )
 
-// CodexMCPServer represents a server in .codex/config.toml.
+// MCPServer represents a server in .codex/config.toml.
 // @see https://developers.openai.com/codex/mcp
-type CodexMCPServer struct {
+type MCPServer struct {
 	Command                  string            `toml:"command,omitempty"`
 	Args                     []string          `toml:"args,omitempty"`
 	Env                      map[string]string `toml:"env,omitempty"`
@@ -37,33 +37,39 @@ type CodexMCPServer struct {
 	DefaultToolsApprovalMode string            `toml:"default_tools_approval_mode,omitempty"`
 }
 
-type CodexProvider struct {
-	*BaseProvider
+// Settings contains the inputs needed to generate this provider's files.
+type Settings struct {
+	OutputDir      string
+	MCPServers     map[string]provider.MCPServer
+	ApprovalPolicy *string
+	MCPApproval    *string
 }
 
-func NewCodexProvider(
-	logger *slog.Logger,
-	cfg *config.Config,
-	templateEngine TemplateEngineAccessor,
-	templateDir, outputDir string,
-) *CodexProvider {
-	return &CodexProvider{
-		BaseProvider: NewBaseProvider(logger, cfg, templateEngine, templateDir, outputDir),
-	}
+type Provider struct {
+	settings Settings
 }
 
-func (p *CodexProvider) Prepare(plan *fspatch.Plan, _ map[string]any, providerConfig config.Provider) error {
-	if err := p.prepareConfigFiles(plan, providerConfig); err != nil {
+func New(
+	_ *slog.Logger,
+	settings Settings,
+	_ provider.TemplateEngineAccessor,
+	_ string,
+) *Provider {
+	return &Provider{settings: settings}
+}
+
+func (p *Provider) Prepare(plan *fspatch.Plan, _ map[string]any) error {
+	if err := p.prepareConfigFiles(plan); err != nil {
 		return fmt.Errorf("failed to prepare config files: %w", err)
 	}
 
 	return nil
 }
 
-func (p *CodexProvider) prepareConfigFiles(plan *fspatch.Plan, providerConfig config.Provider) error {
-	servers := make(map[string]CodexMCPServer)
-	for _, name := range slices.Sorted(maps.Keys(p.config.MCP)) {
-		server := p.config.MCP[name]
+func (p *Provider) prepareConfigFiles(plan *fspatch.Plan) error {
+	servers := make(map[string]MCPServer)
+	for _, name := range slices.Sorted(maps.Keys(p.settings.MCPServers)) {
+		server := p.settings.MCPServers[name]
 		if !server.Enabled {
 			continue
 		}
@@ -71,8 +77,8 @@ func (p *CodexProvider) prepareConfigFiles(plan *fspatch.Plan, providerConfig co
 		if err != nil {
 			return fmt.Errorf("MCP server %s: %w", name, err)
 		}
-		if providerConfig.MCPApproval != nil {
-			entry.DefaultToolsApprovalMode = *providerConfig.MCPApproval
+		if p.settings.MCPApproval != nil {
+			entry.DefaultToolsApprovalMode = *p.settings.MCPApproval
 		}
 		servers[name] = entry
 	}
@@ -87,7 +93,7 @@ func (p *CodexProvider) prepareConfigFiles(plan *fspatch.Plan, providerConfig co
 		return fmt.Errorf("failed to normalize codex MCP settings: %w", err)
 	}
 
-	path := filepath.Join(p.outputDir, codexSettingsDir, codexSettingsFile)
+	path := filepath.Join(p.settings.OutputDir, codexSettingsDir, codexSettingsFile)
 	previous, exists, err := plan.Read(path)
 	if err != nil {
 		return err
@@ -104,8 +110,8 @@ func (p *CodexProvider) prepareConfigFiles(plan *fspatch.Plan, providerConfig co
 	}
 	// Agentenv owns the MCP section; retain the user's other Codex settings.
 	settings["mcp_servers"] = serverSettings
-	if providerConfig.ApprovalPolicy != nil {
-		settings["approval_policy"] = *providerConfig.ApprovalPolicy
+	if p.settings.ApprovalPolicy != nil {
+		settings["approval_policy"] = *p.settings.ApprovalPolicy
 	}
 	content, err := toml.Marshal(settings)
 	if err != nil {
@@ -120,10 +126,10 @@ func (p *CodexProvider) prepareConfigFiles(plan *fspatch.Plan, providerConfig co
 	return nil
 }
 
-func codexMCPServer(server config.MCPServer) (CodexMCPServer, error) {
-	var entry CodexMCPServer
+func codexMCPServer(server provider.MCPServer) (MCPServer, error) {
+	var entry MCPServer
 	switch server.Transport() {
-	case config.MCPServerTypeStdio:
+	case provider.MCPServerTypeStdio:
 		if codexEnvExpression.MatchString(server.Command) || codexEnvExpression.MatchString(server.CWD) {
 			return entry, fmt.Errorf(
 				"codex command and cwd must be literal paths; use a wrapper command for environment expansion",
@@ -154,7 +160,7 @@ func codexMCPServer(server config.MCPServer) (CodexMCPServer, error) {
 				entry.Env[key] = value
 			}
 		}
-	case config.MCPServerTypeHTTP:
+	case provider.MCPServerTypeHTTP:
 		if codexEnvExpression.MatchString(server.URL) {
 			return entry, fmt.Errorf("codex URL must be literal; use headers for environment-based authentication")
 		}
@@ -194,7 +200,7 @@ var (
 	codexEnvExpression = regexp.MustCompile(`\$(?:[A-Za-z_]|\{)`)
 )
 
-// Convert references to Codex's runtime environment fields without reading secrets.
+// codexEnvReference extracts a runtime environment variable name without reading secrets.
 func codexEnvReference(value string) (string, bool) {
 	name, ok := strings.CutPrefix(value, "$")
 	if !ok {
@@ -204,4 +210,9 @@ func codexEnvReference(value string) (string, bool) {
 		name = name[1 : len(name)-1]
 	}
 	return name, codexEnvName.MatchString(name)
+}
+
+// MCPToolName formats a server tool name for this provider.
+func MCPToolName(serverName, toolName string) string {
+	return fmt.Sprintf("mcp__%s__%s", serverName, toolName)
 }

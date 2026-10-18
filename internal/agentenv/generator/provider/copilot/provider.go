@@ -1,26 +1,27 @@
-package provider
+package copilot
 
 import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
 
-	"github.com/go42-dev/go42x/internal/config"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider"
 	"github.com/go42-dev/go42x/internal/fspatch"
 )
 
 const (
-	Copilot              = "copilot"
+	Name                 = "copilot"
 	copilotMcpConfigFile = ".mcp.json"
 )
 
-// CopilotMCPConfig represents the project configuration for Copilot CLI.
-type CopilotMCPConfig struct {
-	MCPServers map[string]CopilotMCPServer `json:"mcpServers"`
+// MCPConfig represents the project configuration for Copilot CLI.
+type MCPConfig struct {
+	MCPServers map[string]MCPServer `json:"mcpServers"`
 }
 
+// MCPServer describes an MCP server in Copilot CLI's configuration.
 // @see https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-mcp-servers
-type CopilotMCPServer struct {
+type MCPServer struct {
 	Type    string            `json:"type"`              // stdio, http, sse
 	URL     string            `json:"url,omitempty"`     // for sse and http
 	Command string            `json:"command,omitempty"` //
@@ -31,22 +32,26 @@ type CopilotMCPServer struct {
 	Tools   []string          `json:"tools"`             // ["*"] makes all server tools available
 }
 
-type CopilotProvider struct {
-	*BaseProvider
+// Settings contains the inputs needed to generate this provider's files.
+type Settings struct {
+	OutputDir  string
+	MCPServers map[string]provider.MCPServer
 }
 
-func NewCopilotProvider(
-	logger *slog.Logger,
-	cfg *config.Config,
-	templateEngine TemplateEngineAccessor,
-	templateDir, outputDir string,
-) *CopilotProvider {
-	return &CopilotProvider{
-		BaseProvider: NewBaseProvider(logger, cfg, templateEngine, templateDir, outputDir),
-	}
+type Provider struct {
+	settings Settings
 }
 
-func (p *CopilotProvider) Prepare(plan *fspatch.Plan, _ map[string]any, _ config.Provider) error {
+func New(
+	_ *slog.Logger,
+	settings Settings,
+	_ provider.TemplateEngineAccessor,
+	_ string,
+) *Provider {
+	return &Provider{settings: settings}
+}
+
+func (p *Provider) Prepare(plan *fspatch.Plan, _ map[string]any) error {
 	if err := p.prepareConfigFiles(plan); err != nil {
 		return fmt.Errorf("failed to prepare config files: %w", err)
 	}
@@ -54,27 +59,27 @@ func (p *CopilotProvider) Prepare(plan *fspatch.Plan, _ map[string]any, _ config
 	return nil
 }
 
-func (p *CopilotProvider) prepareConfigFiles(plan *fspatch.Plan) error {
+func (p *Provider) prepareConfigFiles(plan *fspatch.Plan) error {
 	mcpConfig := p.extractMCPServers()
 
 	// Generate the project MCP configuration shared with Claude when enabled.
-	cfg := CopilotMCPConfig{
+	cfg := MCPConfig{
 		MCPServers: mcpConfig,
 	}
 
-	path := filepath.Join(p.outputDir, copilotMcpConfigFile)
-	if err := p.prepareJSONFile(plan, path, cfg); err != nil {
+	path := filepath.Join(p.settings.OutputDir, copilotMcpConfigFile)
+	if err := provider.PrepareJSONFile(plan, path, cfg); err != nil {
 		return fmt.Errorf("failed to prepare %s: %w", path, err)
 	}
 
 	return nil
 }
 
-func (p *CopilotProvider) extractMCPServers() map[string]CopilotMCPServer {
-	mcpServers := make(map[string]CopilotMCPServer)
-	for name, server := range p.config.MCP {
+func (p *Provider) extractMCPServers() map[string]MCPServer {
+	mcpServers := make(map[string]MCPServer)
+	for name, server := range p.settings.MCPServers {
 		if server.Enabled {
-			mcpServers[name] = CopilotMCPServer{
+			mcpServers[name] = MCPServer{
 				Type:    server.Transport(),
 				URL:     server.URL,
 				Tools:   []string{"*"},
@@ -87,4 +92,9 @@ func (p *CopilotProvider) extractMCPServers() map[string]CopilotMCPServer {
 		}
 	}
 	return mcpServers
+}
+
+// MCPToolName formats a server tool name for this provider.
+func MCPToolName(serverName, toolName string) string {
+	return serverName + "/" + toolName
 }

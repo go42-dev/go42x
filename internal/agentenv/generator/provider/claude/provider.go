@@ -1,4 +1,4 @@
-package provider
+package claude
 
 import (
 	"fmt"
@@ -8,34 +8,38 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/go42-dev/go42x/internal/config"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider"
 	"github.com/go42-dev/go42x/internal/fspatch"
 )
 
 const (
-	Claude             = "claude"
+	Name               = "claude"
 	claudeSettingsDir  = ".claude"
 	claudeSettingsFile = "settings.local.json"
 	claudeMCPFile      = ".mcp.json"
 	claudeAgentsDir    = "agents"
 )
 
-// ClaudeSettings represents .claude/settings.local.json structure
-type ClaudeSettings struct {
-	Permissions struct {
-		Allow []string `json:"allow"`
-		Deny  []string `json:"deny"`
-	} `json:"permissions"`
-	EnabledMCPServers []string `json:"enabledMcpjsonServers"`
+// Permissions contains the generated tool approval lists.
+type Permissions struct {
+	Allow []string `json:"allow"`
+	Deny  []string `json:"deny"`
 }
 
-// ClaudeMCPConfig represents .mcp.json structure
-type ClaudeMCPConfig struct {
-	MCPServers map[string]ClaudeMCPServer `json:"mcpServers"`
+// LocalSettings represents .claude/settings.local.json.
+type LocalSettings struct {
+	Permissions       Permissions `json:"permissions"`
+	EnabledMCPServers []string    `json:"enabledMcpjsonServers"`
 }
 
+// MCPConfig represents the .mcp.json structure.
+type MCPConfig struct {
+	MCPServers map[string]MCPServer `json:"mcpServers"`
+}
+
+// MCPServer describes an MCP server in Claude's configuration.
 // @see https://docs.anthropic.com/en/docs/claude-code/mcp
-type ClaudeMCPServer struct {
+type MCPServer struct {
 	Command string            `json:"command,omitempty"` //
 	URL     string            `json:"url,omitempty"`     // for sse
 	Type    string            `json:"type"`              // sse / http
@@ -44,90 +48,107 @@ type ClaudeMCPServer struct {
 	Headers map[string]string `json:"headers,omitempty"` // Authorization: Bearer ...
 }
 
-type ClaudeProvider struct {
-	*BaseProvider
+// Settings contains the inputs needed to generate this provider's files.
+type Settings struct {
+	OutputDir        string
+	MCPServers       map[string]provider.MCPServer
+	Agents           []string
+	AutoApproveTools []string
+	WriteMCPFile     bool
 }
 
-func NewClaudeProvider(
+type Provider struct {
+	settings       Settings
+	logger         *slog.Logger
+	templateDir    string
+	templateEngine provider.TemplateEngineAccessor
+}
+
+func New(
 	logger *slog.Logger,
-	cfg *config.Config,
-	templateEngine TemplateEngineAccessor,
-	templateDir, outputDir string,
-) *ClaudeProvider {
-	return &ClaudeProvider{
-		BaseProvider: NewBaseProvider(logger, cfg, templateEngine, templateDir, outputDir),
+	settings Settings,
+	templateEngine provider.TemplateEngineAccessor,
+	templateDir string,
+) *Provider {
+	if logger == nil {
+		logger = slog.New(slog.DiscardHandler)
+	}
+	return &Provider{
+		settings:       settings,
+		logger:         logger,
+		templateDir:    templateDir,
+		templateEngine: templateEngine,
 	}
 }
 
-func (p *ClaudeProvider) Prepare(
+func (p *Provider) Prepare(
 	plan *fspatch.Plan,
 	ctxData map[string]any,
-	providerConfig config.Provider,
 ) error {
-	if err := p.prepareConfigFiles(plan, providerConfig); err != nil {
+	if err := p.prepareConfigFiles(plan); err != nil {
 		return fmt.Errorf("failed to prepare config files: %w", err)
 	}
 
-	if err := p.prepareAgents(plan, providerConfig, ctxData); err != nil {
+	if err := p.prepareAgents(plan, ctxData); err != nil {
 		return fmt.Errorf("failed to prepare agents: %w", err)
 	}
 
 	return nil
 }
 
-func (p *ClaudeProvider) prepareConfigFiles(plan *fspatch.Plan, providerConfig config.Provider) error {
-	allTools := p.collectAllTools(providerConfig)
+func (p *Provider) prepareConfigFiles(plan *fspatch.Plan) error {
+	allTools := p.collectAllTools()
 	enabledServers, mcpServers := p.extractMCPServers(&allTools)
 
 	// Generate .claude/settings.local.json
-	claudeSettings := ClaudeSettings{}
+	claudeSettings := LocalSettings{}
 	claudeSettings.Permissions.Allow = allTools
 	claudeSettings.Permissions.Deny = []string{}
 	claudeSettings.EnabledMCPServers = enabledServers
 
-	claudeDir := filepath.Join(p.outputDir, claudeSettingsDir)
+	claudeDir := filepath.Join(p.settings.OutputDir, claudeSettingsDir)
 	settingsPath := filepath.Join(claudeDir, claudeSettingsFile)
-	if err := p.prepareJSONSettings(plan, settingsPath, claudeSettings,
+	if err := provider.PrepareJSONSettings(plan, settingsPath, claudeSettings,
 		[]string{"permissions.allow", "enabledMcpjsonServers"},
 		[]string{"permissions.deny"},
 	); err != nil {
 		return fmt.Errorf("failed to prepare %s: %w", settingsPath, err)
 	}
 
-	// Copilot owns the shared file when enabled.
-	if p.config.ProviderEnabled(Copilot) {
+	// The generator assigns ownership of the shared MCP file.
+	if !p.settings.WriteMCPFile {
 		return nil
 	}
 
 	// Generate .mcp.json
-	mcpConfig := ClaudeMCPConfig{
+	mcpConfig := MCPConfig{
 		MCPServers: mcpServers,
 	}
 
-	mcpPath := filepath.Join(p.outputDir, claudeMCPFile)
-	if err := p.prepareJSONFile(plan, mcpPath, mcpConfig); err != nil {
+	mcpPath := filepath.Join(p.settings.OutputDir, claudeMCPFile)
+	if err := provider.PrepareJSONFile(plan, mcpPath, mcpConfig); err != nil {
 		return fmt.Errorf("failed to prepare %s: %w", mcpPath, err)
 	}
 
 	return nil
 }
 
-func (p *ClaudeProvider) collectAllTools(providerConfig config.Provider) []string {
-	allTools := make([]string, 0, len(providerConfig.AutoApproveTools))
-	allTools = append(allTools, providerConfig.AutoApproveTools...)
+func (p *Provider) collectAllTools() []string {
+	allTools := make([]string, 0, len(p.settings.AutoApproveTools))
+	allTools = append(allTools, p.settings.AutoApproveTools...)
 	return allTools
 }
 
-func (p *ClaudeProvider) extractMCPServers(allTools *[]string) ([]string, map[string]ClaudeMCPServer) {
+func (p *Provider) extractMCPServers(allTools *[]string) ([]string, map[string]MCPServer) {
 	enabledServers := make([]string, 0)
-	mcpServers := make(map[string]ClaudeMCPServer)
-	for name, server := range p.config.MCP {
+	mcpServers := make(map[string]MCPServer)
+	for name, server := range p.settings.MCPServers {
 		if server.Enabled {
 			enabledServers = append(enabledServers, name)
 			for _, tool := range server.Tools {
-				*allTools = append(*allTools, MCPToolName(Claude, name, tool))
+				*allTools = append(*allTools, MCPToolName(name, tool))
 			}
-			mcpServers[name] = ClaudeMCPServer{
+			mcpServers[name] = MCPServer{
 				Command: server.Command,
 				Args:    server.Args,
 				Env:     server.Env,
@@ -142,18 +163,17 @@ func (p *ClaudeProvider) extractMCPServers(allTools *[]string) ([]string, map[st
 	return enabledServers, mcpServers
 }
 
-func (p *ClaudeProvider) prepareAgents(
+func (p *Provider) prepareAgents(
 	plan *fspatch.Plan,
-	providerConfig config.Provider,
 	ctxData map[string]any,
 ) error {
-	if len(providerConfig.Agents) == 0 {
+	if len(p.settings.Agents) == 0 {
 		return nil
 	}
 
-	destAgentsDir := filepath.Join(p.outputDir, claudeSettingsDir, claudeAgentsDir)
+	destAgentsDir := filepath.Join(p.settings.OutputDir, claudeSettingsDir, claudeAgentsDir)
 
-	for _, agentPath := range providerConfig.Agents {
+	for _, agentPath := range p.settings.Agents {
 		// Extract just the filename without .tpl.md extension for the agent name
 		baseName := filepath.Base(agentPath)
 		agentName := strings.TrimSuffix(baseName, ".tpl.md")
@@ -183,4 +203,9 @@ func (p *ClaudeProvider) prepareAgents(
 	}
 
 	return nil
+}
+
+// MCPToolName formats a server tool name for this provider.
+func MCPToolName(serverName, toolName string) string {
+	return fmt.Sprintf("mcp__%s__%s", serverName, toolName)
 }

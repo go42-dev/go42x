@@ -10,13 +10,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go42-dev/go42x/internal/config"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider"
 	"github.com/go42-dev/go42x/internal/doctor/check"
 )
 
 // DoctorCheck reads server definitions when it runs, allowing the caller to
 // register a dependency on its configuration check before any connections start.
-func DoctorCheck(root string, servers func() map[string]config.MCPServer, options DoctorOptions) check.Check {
+func DoctorCheck(root string, servers func() map[string]provider.MCPServer, options DoctorOptions) check.Check {
 	if options.Timeout == 0 {
 		options.Timeout = 10 * time.Second
 	}
@@ -41,7 +41,7 @@ func DoctorCheck(root string, servers func() map[string]config.MCPServer, option
 	}}
 }
 
-func mcpChecks(root, name string, server config.MCPServer, options DoctorOptions) []check.Check {
+func mcpChecks(root, name string, server provider.MCPServer, options DoctorOptions) []check.Check {
 	id := "mcp." + name
 	cwd := server.CWD
 	if cwd == "" {
@@ -49,8 +49,8 @@ func mcpChecks(root, name string, server config.MCPServer, options DoctorOptions
 	} else if !filepath.IsAbs(cwd) {
 		cwd = filepath.Join(root, cwd)
 	}
-	return []check.Check{{ID: id + ".configuration", Run: func(ctx context.Context) check.Result {
-		if server.Transport() != config.MCPServerTypeStdio {
+	return []check.Check{{ID: id + ".configuration", Run: func(_ context.Context) check.Result {
+		if server.Transport() != provider.MCPServerTypeStdio {
 			return check.Result{Status: check.Pass, Message: "Remote transport configured; connectivity unchecked"}
 		}
 		info, err := os.Stat(cwd)

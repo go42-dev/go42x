@@ -7,12 +7,14 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
 
 	"github.com/go42-dev/go42x/assets"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider"
 	"github.com/go42-dev/go42x/internal/buildinfo"
 	"github.com/go42-dev/go42x/internal/config"
 )
@@ -221,6 +223,17 @@ func TestGenerateAndCleanPreserveSources(t *testing.T) {
 	for name, p := range cfg.Providers {
 		p.Enabled = &enabled
 		cfg.Providers[name] = p
+	}
+	// HTTP endpoints make this fixture compatible with every provider.
+	for name, server := range cfg.MCP {
+		if server.Enabled && server.Transport() == provider.MCPServerTypeStdio {
+			server.Type = provider.MCPServerTypeHTTP
+			server.URL = "https://example.com/mcp"
+			server.Command = ""
+			server.Args = nil
+			server.Container = nil
+			cfg.MCP[name] = server
+		}
 	}
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
@@ -469,5 +482,32 @@ func TestUpdateRequiresInitialization(t *testing.T) {
 	service := testService(t, t.TempDir(), false)
 	if _, err := service.Update(t.Context()); err == nil || !strings.Contains(err.Error(), "agentenv init") {
 		t.Fatalf("update without init = %v", err)
+	}
+}
+
+func TestUpdateRejectsInvalidProviderConfiguration(t *testing.T) {
+	for _, local := range []string{
+		"providers: {typo: {enabled: false}}\n",
+		"providers: {codex: {approval-policy: invalid}}\n",
+		"providers: {copilot: {auto-approve-tools: []}}\n",
+	} {
+		t.Run(local, func(t *testing.T) {
+			root := t.TempDir()
+			service := testService(t, root, false)
+			if _, err := service.Init(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			writeFile(t, filepath.Join(root, ".go42x", config.LocalConfigFile), local)
+			writeFile(t, filepath.Join(root, ".go42x/agents.tpl.md"), "existing instructions\n")
+			before := snapshotTree(t, root)
+
+			result, err := service.Update(t.Context())
+			if err == nil || !strings.Contains(err.Error(), "validate updated configuration") || result != nil {
+				t.Fatalf("Update() = %+v, %v; want validation failure", result, err)
+			}
+			if !reflect.DeepEqual(before, snapshotTree(t, root)) {
+				t.Fatal("invalid provider configuration caused source or backup writes")
+			}
+		})
 	}
 }

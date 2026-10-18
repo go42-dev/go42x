@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider"
 	"github.com/go42-dev/go42x/internal/cmdutil"
 	"github.com/go42-dev/go42x/internal/config"
 	"github.com/go42-dev/go42x/internal/doctor"
@@ -28,7 +29,7 @@ func NewDoctorCommand(f *cmdutil.Factory) *cobra.Command {
 			}
 			if cmdutil.ExplicitFlag(cmd, "providers") {
 				var err error
-				settings.Providers, err = config.ParseProviders(viper.GetString("providers"))
+				settings.Providers, err = provider.ParseProviders(viper.GetString("providers"), config.ProviderNames())
 				if err != nil {
 					return cmdutil.UsageError(err)
 				}

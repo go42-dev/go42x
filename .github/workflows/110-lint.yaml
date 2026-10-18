@@ -51,10 +51,9 @@ jobs:
           # Save lint's build outputs in the dedicated cache below.
           cache: false
       - name: 'Install pinned golangci-lint'
-        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        uses: ./.github/actions/setup-tools
         with:
-          version: '2026.9.1'
-          install_args: --locked golangci-lint
+          install-args: --locked golangci-lint
       - name: 'Get lint cache metadata'
         id: lint-cache
         shell: bash
@@ -112,19 +111,93 @@ jobs:
           go-version-file: 'go.mod'
           cache: false
       - name: 'Install pinned configuration linters'
-        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        uses: ./.github/actions/setup-tools
         with:
-          version: '2026.9.1'
-          install_args: >-
-            --locked task actionlint go:github.com/caarlos0/jsonfmt go:github.com/google/yamlfmt/cmd/yamlfmt tombi
+          install-task: 'true'
+          install-args: >-
+            --locked go:github.com/caarlos0/jsonfmt go:github.com/google/yamlfmt/cmd/yamlfmt tombi
       - name: 'Check JSON formatting'
         run: task --exit-code lint:json
       - name: 'Check YAML formatting'
         run: task --exit-code lint:yaml
       - name: 'Check TOML formatting and lint rules'
         run: task --exit-code lint:toml
-      - name: 'Check GitHub Actions workflows'
+
+  # Authored and generated GitHub Actions workflows.
+  # @see https://github.com/rhysd/actionlint
+  action-lint:
+    name: action-lint
+    runs-on: ${{ inputs.runs_on }}
+    continue-on-error: ${{ inputs.continue_on_error }}
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    permissions:
+      contents: read
+    env:
+      MISE_DEFAULT_CONFIG_FILENAME: etc/mise.toml
+      MISE_DATA_DIR: ${{ github.workspace }}/.tools
+      MISE_CACHE_DIR: ${{ github.workspace }}/.tools/cache
+      MISE_STATE_DIR: ${{ github.workspace }}/.tools/state
+    steps:
+      - name: 'Checkout repository'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: 'Install pinned Actionlint'
+        uses: ./.github/actions/setup-tools
+        with:
+          install-task: 'true'
+          install-args: --locked actionlint
+      - name: 'Check all GitHub Actions workflows'
         run: task --exit-code lint:actions
+
+  # Agentic workflow sources and compiler-owned lock files.
+  # @see https://github.github.com/gh-aw/
+  agentic-lint:
+    name: agentic-lint
+    runs-on: ${{ inputs.runs_on }}
+    continue-on-error: ${{ inputs.continue_on_error }}
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    permissions:
+      contents: read
+    env:
+      MISE_DEFAULT_CONFIG_FILENAME: etc/mise.toml
+      MISE_DATA_DIR: ${{ github.workspace }}/.tools
+      MISE_CACHE_DIR: ${{ github.workspace }}/.tools/cache
+      MISE_STATE_DIR: ${{ github.workspace }}/.tools/state
+    steps:
+      - name: 'Checkout repository'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: 'Setup Go'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+      - name: 'Install pinned agentic workflow tools'
+        uses: ./.github/actions/setup-tools
+        with:
+          install-task: 'true'
+          install-args: --locked node actionlint github:github/gh-aw go:github.com/go42-dev/go42x
+      - name: 'Generate and compile agentic workflows'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: task --exit-code agentic:compile
+      - name: 'Check for uncommitted changes'
+        shell: bash
+        run: |-
+          if [[ -n $(git status --porcelain) ]]; then
+            echo "Uncommitted changes detected after running 'task agentic:compile'"
+            echo "The following files have changes:"
+            git status --porcelain
+            echo ""
+            echo "Please run 'task setup && task agentic:compile' locally and commit the changes."
+            exit 1
+          else
+            echo "No uncommitted changes detected"
+          fi
+      - name: 'Check compiled GitHub Agentic Workflows'
+        run: task --exit-code agentic:lint
 
   # Documentation checks use the same Task entrypoint locally and in CI.
   documentation-lint:
@@ -144,11 +217,10 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: 'Install pinned Task'
-        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      - name: 'Install mise and Task'
+        uses: ./.github/actions/setup-tools
         with:
-          version: '2026.9.1'
-          install_args: --locked task
+          install-task: 'true'
       - name: 'Set up documentation tools'
         run: task setup:docs
       - name: 'Check Markdown'

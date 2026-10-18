@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/go42-dev/go42x/internal/doctor/check"
 )
 
@@ -33,6 +35,7 @@ func TestProviderSelectionPrecedence(t *testing.T) {
 		{name: "flag overrides invalid environment", local: true, env: new("typo"), flags: []string{"--providers=antigravity"}, want: []string{"antigravity"}},
 		{name: "empty flag", local: true, env: new("claude"), flags: []string{"--providers="}},
 		{name: "empty environment", local: true, env: new("")},
+		{name: "workflow fragment", local: true, flags: []string{"--providers=gh-aw"}, want: []string{"gh-aw"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -49,6 +52,7 @@ func TestProviderSelectionPrecedence(t *testing.T) {
 			p.run(t, 0, append([]string{"agentenv", "generate"}, tc.flags...)...)
 			for provider, path := range map[string]string{
 				"claude": ".claude/settings.local.json", "codex": ".codex/config.toml", "antigravity": ".agents/plugins/project-tools/mcp_config.json",
+				"gh-aw": ".github/workflows/900-aw-mcp.md",
 			} {
 				_, err := os.Stat(filepath.Join(p.root, filepath.FromSlash(path)))
 				if want := slices.Contains(tc.want, provider); want && err != nil || !want && !os.IsNotExist(err) {
@@ -113,15 +117,111 @@ func TestProviderSelectionRejectsInvalidNamesWithoutWrites(t *testing.T) {
 
 func TestInvalidLocalConfigurationCannotPartiallyGenerate(t *testing.T) {
 	t.Parallel()
+	for _, tc := range []struct{ name, local, private string }{
+		{
+			name:    "invalid approval policy",
+			local:   "providers: {codex: {approval-policy: secret-invalid-policy}}\n",
+			private: "secret-invalid-policy",
+		},
+		{
+			name:  "unknown disabled provider",
+			local: "providers: {typo: {enabled: false}}\n",
+		},
+		{
+			name:  "retired disabled provider",
+			local: "providers: {gemini: {enabled: false}}\n",
+		},
+		{
+			name:  "unsupported option on unselected provider",
+			local: "providers: {copilot: {auto-approve-tools: []}}\n",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			p := newProject(t)
+			p.configure(t)
+			p.run(t, 0, "agentenv", "generate")
+			p.write(t, ".go42x/go42x.local.yaml", tc.local)
+			before := p.snapshot(t)
+
+			p.run(t, 1, "agentenv", "generate", "--clean", "--providers=codex")
+			result := p.run(t, 1, "doctor", "--providers=codex", "--json")
+			if len(tc.private) > 0 && strings.Contains(result.stdout+result.stderr, tc.private) {
+				t.Fatal("doctor printed invalid local configuration contents")
+			}
+			p.assertUnchanged(t, before)
+		})
+	}
+}
+
+func TestGHAWFragmentGeneration(t *testing.T) {
+	t.Parallel()
 	p := newProject(t)
 	p.configure(t)
-	p.run(t, 0, "agentenv", "generate")
-	p.write(t, ".go42x/go42x.local.yaml", "providers: {codex: {approval-policy: secret-invalid-policy}}\n")
+	p.env = append(p.env, "GITHUB_TOKEN=local-token-do-not-write", "CONTEXT7_API_KEY=local-key-do-not-write")
+	const local = `mcp:
+  local:
+    command: docker
+    args: [run, --rm, -i, example/project-mcp:test, go42x, mcp]
+  remote:
+    enabled: true
+    name: remote
+    type: http
+    url: https://api.example.com/mcp
+    headers:
+      Authorization: "Bearer ${GITHUB_TOKEN}"
+      X-API-Key: "$CONTEXT7_API_KEY"
+`
+	p.write(t, ".go42x/go42x.local.yaml", local)
+	const workflow = "---\non: pull_request\nengine: codex\nimports: [900-aw-mcp.md]\n---\nDescribe this PR.\n"
+	p.write(t, ".github/workflows/910-aw-description.md", workflow)
+
+	p.run(t, 0, "agentenv", "generate", "--providers=gh-aw")
+	content := p.read(t, ".github/workflows/900-aw-mcp.md")
+	var fragment map[string]any
+	if err := yaml.Unmarshal(
+		[]byte(strings.TrimSuffix(strings.TrimPrefix(content, "---\n"), "---\n")),
+		&fragment,
+	); err != nil {
+		t.Fatal(err)
+	}
+	assertSetting(t, fragment, "mcp-servers.local.command", "docker")
+	assertSetting(t, fragment, "mcp-servers.remote.headers.Authorization", "Bearer ${{ github.token }}")
+	assertSetting(t, fragment, "mcp-servers.remote.headers.X-API-Key", "${{ secrets.CONTEXT7_API_KEY }}")
+	assertSetting(t, fragment, "mcp-servers.remote.allowed", []any{"*"})
+	if strings.Contains(content, "local-token-do-not-write") || strings.Contains(content, "local-key-do-not-write") {
+		t.Fatal("fragment contains local credential values")
+	}
+	if p.read(t, ".github/workflows/910-aw-description.md") != workflow ||
+		p.read(t, ".go42x/go42x.local.yaml") != local {
+		t.Fatal("generation changed an authored workflow or configuration")
+	}
+
 	before := p.snapshot(t)
-	p.run(t, 1, "agentenv", "generate", "--clean", "--providers=codex")
-	result := p.run(t, 1, "doctor", "--providers=codex", "--json")
-	if strings.Contains(result.stdout+result.stderr, "secret-invalid-policy") {
-		t.Fatal("doctor printed invalid local configuration contents")
+	p.run(t, 0, "agentenv", "generate", "--providers=gh-aw")
+	p.assertUnchanged(t, before)
+	p.run(t, 0, "agentenv", "generate", "--providers=", "--clean")
+	if p.read(t, ".github/workflows/900-aw-mcp.md") != content {
+		t.Fatal("disabling the provider changed its output during clean generation")
+	}
+
+	p.write(
+		t,
+		".go42x/go42x.local.yaml",
+		strings.Replace(local, "command: docker", "type: sse\n    url: https://api.example.com/events", 1),
+	)
+	before = p.snapshot(t)
+	result := p.run(t, 1, "agentenv", "generate", "--providers=gh-aw", "--clean")
+	if !strings.Contains(result.stderr, "gh-aw supports only stdio and HTTP") {
+		t.Fatalf("unsupported transport diagnostic: %s", result.stderr)
+	}
+	p.assertUnchanged(t, before)
+
+	p.write(t, ".go42x/go42x.local.yaml", strings.Replace(local, "command: docker", "command: task", 1))
+	before = p.snapshot(t)
+	result = p.run(t, 1, "agentenv", "generate", "--providers=gh-aw")
+	if !strings.Contains(result.stderr, "gh-aw cannot run this stdio command directly") {
+		t.Fatalf("unsupported command diagnostic: %s", result.stderr)
 	}
 	p.assertUnchanged(t, before)
 }

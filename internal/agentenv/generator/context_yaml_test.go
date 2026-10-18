@@ -11,6 +11,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider"
 	"github.com/go42-dev/go42x/internal/config"
 )
 
@@ -82,7 +83,7 @@ func TestContextYAMLRoundTrip(t *testing.T) {
 			"ref_name": "main", "user_request": request,
 			"runner": map[string]any{"name": "unpublished-runner"},
 		},
-		"mcp": map[string]config.MCPServer{
+		"mcp": map[string]provider.MCPServer{
 			"enabled": {
 				Enabled: true, Type: "http", URL: "https://unpublished-host.example",
 				Headers: map[string]string{"Authorization": "unpublished-token"},
@@ -133,12 +134,8 @@ func TestContextYAMLRoundTrip(t *testing.T) {
 	if github["ref"] != "main" || github["user_request"] != request {
 		t.Fatalf("GitHub context did not round-trip: %+v", github)
 	}
-	wantMCP := map[string]any{
-		"tools":   "all_exposed",
-		"servers": map[string]any{"enabled": map[string]any{"transport": "http"}},
-	}
-	if !reflect.DeepEqual(decoded["mcp"], wantMCP) {
-		t.Fatalf("MCP context = %+v, want %+v", decoded["mcp"], wantMCP)
+	if _, exists := decoded["mcp"]; exists {
+		t.Fatal("context contains MCP client configuration")
 	}
 	if strings.Contains(content, "unpublished-") {
 		t.Fatal("context exposed fields outside the published context")
@@ -159,7 +156,7 @@ func TestContextYAMLRoundTrip(t *testing.T) {
 func TestContextYAMLOmitsUnavailableSections(t *testing.T) {
 	content, err := renderDefaultContext(t, map[string]any{
 		"project": map[string]any{"name": "example"},
-		"mcp":     map[string]config.MCPServer{"disabled": {Enabled: false}},
+		"mcp":     map[string]provider.MCPServer{"disabled": {Enabled: false}},
 	})
 	if err != nil {
 		t.Fatal(err)

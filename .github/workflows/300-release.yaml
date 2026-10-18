@@ -174,10 +174,10 @@ jobs:
         with:
           go-version-file: 'go.mod'
       - name: 'Install pinned release tools'
-        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        uses: ./.github/actions/setup-tools
         with:
-          version: '2026.9.1'
-          install_args: --locked task goreleaser syft cosign
+          install-task: 'true'
+          install-args: --locked goreleaser syft cosign
       - name: 'Validate GoReleaser configuration'
         run: task release:check
       - name: 'Prepare local release tag'
@@ -200,15 +200,6 @@ jobs:
           # Creating a release tag can require permission to modify workflows at its target commit.
           # @see https://docs.github.com/en/rest/releases/releases#create-a-release
           permission-workflows: write
-      - name: 'Verify release App identity'
-        env:
-          ACTUAL_APP_SLUG: ${{ steps.release-app.outputs.app-slug }}
-          EXPECTED_APP_SLUG: ${{ vars.RELEASE_APP_NAME }}
-        run: |
-          if [ -z "$EXPECTED_APP_SLUG" ] || [ "$ACTUAL_APP_SLUG" != "$EXPECTED_APP_SLUG" ]; then
-            echo '::error::Release App slug does not match RELEASE_APP_NAME.'
-            exit 1
-          fi
       - name: 'Generate tap-scoped release App token'
         if: needs.validate-release.outputs.is_prerelease == 'false'
         id: homebrew-app
@@ -223,13 +214,7 @@ jobs:
         if: needs.validate-release.outputs.is_prerelease == 'false'
         env:
           GH_TOKEN: ${{ steps.homebrew-app.outputs.token }}
-          ACTUAL_APP_SLUG: ${{ steps.homebrew-app.outputs.app-slug }}
-          EXPECTED_APP_SLUG: ${{ vars.RELEASE_APP_NAME }}
         run: |
-          if [ -z "$EXPECTED_APP_SLUG" ] || [ "$ACTUAL_APP_SLUG" != "$EXPECTED_APP_SLUG" ]; then
-            echo '::error::Homebrew App slug does not match RELEASE_APP_NAME.'
-            exit 1
-          fi
           gh api repos/go42-dev/homebrew-go42x --jq '
             if .private or .archived then error("The Homebrew tap must be public and active") else .full_name end
           '
@@ -255,3 +240,75 @@ jobs:
               echo 'Install with: brew install --cask go42-dev/go42x/go42x'
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+  publish-docker:
+    needs:
+      - validate-release
+      - publish-release
+    uses: ./.github/workflows/140-docker-build.yaml
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+      attestations: write
+      id-token: write
+    with:
+      runs_on: ubuntu-24.04
+      continue_on_error: false
+      service_name: go42x
+      platforms: linux/amd64,linux/arm64
+      attestation: true
+      generate_sbom: true
+      attestation_sbom: true
+      timeout_minutes: 60
+      image_tag: ${{ needs.validate-release.outputs.release_version }}
+      source_sha: ${{ needs.validate-release.outputs.source_sha }}
+
+  security-extra:
+    needs:
+      - publish-docker
+    uses: ./.github/workflows/140-security-extra.yaml
+    permissions:
+      contents: read
+      packages: read
+    with:
+      runs_on: ubuntu-24.04
+      continue_on_error: false
+      image_reference: ${{ needs.publish-docker.outputs.image_reference }}
+      platforms: linux/amd64,linux/arm64
+      timeout_minutes: 30
+
+  promote-docker:
+    name: promote-docker
+    needs:
+      - validate-release
+      - publish-docker
+      - security-extra
+    if: ${{ needs.validate-release.outputs.is_prerelease == 'false' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      packages: write
+    steps:
+      - name: 'Set up Docker Buildx'
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - name: 'Log in to GitHub Container Registry'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: 'Promote the stable image to latest'
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          IMAGE_REFERENCE: ${{ needs.publish-docker.outputs.image_reference }}
+          IMAGE_DIGEST: ${{ needs.publish-docker.outputs.image_digest }}
+        run: |-
+          set -euo pipefail
+          docker buildx imagetools create --tag "$IMAGE_NAME:latest" "$IMAGE_REFERENCE"
+          latest_digest=$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$IMAGE_NAME:latest")
+          if [ "$latest_digest" != "$IMAGE_DIGEST" ]; then
+            echo '::error::The latest tag does not identify the published image.'
+            exit 1
+          fi
+          echo "Latest Docker image: $IMAGE_REFERENCE" >> "$GITHUB_STEP_SUMMARY"

@@ -1,43 +1,92 @@
-package provider
+package provider_test
 
 import (
-	"errors"
+	"bytes"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
-	"go.uber.org/mock/gomock"
+	"gopkg.in/yaml.v3"
 
-	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/mocks"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/antigravity"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/claude"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/codex"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/copilot"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/crush"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/ghaw"
 	"github.com/go42-dev/go42x/internal/config"
 	"github.com/go42-dev/go42x/internal/fspatch"
 )
 
 type testProvider interface {
-	Prepare(*fspatch.Plan, map[string]any, config.Provider) error
-	prepareJSONFile(*fspatch.Plan, string, any) error
+	Prepare(*fspatch.Plan, map[string]any) error
 }
 
 func makeProvider(
 	t *testing.T,
 	name string,
 	cfg *config.Config,
-	engine TemplateEngineAccessor,
+	engine provider.TemplateEngineAccessor,
 	dir, out string,
 ) testProvider {
 	t.Helper()
 	logger := slog.New(slog.DiscardHandler)
 	switch name {
-	case Claude:
-		return NewClaudeProvider(logger, cfg, engine, dir, out)
-	case Antigravity:
-		return NewAntigravityProvider(logger, cfg, engine, dir, out)
-	case Crush:
-		return NewCrushProvider(logger, cfg, engine, dir, out)
-	case Copilot:
-		return NewCopilotProvider(logger, cfg, engine, dir, out)
+	case claude.Name:
+		return claude.New(
+			logger,
+			claude.Settings{
+				OutputDir:        out,
+				MCPServers:       cfg.MCP,
+				Agents:           cfg.Providers[name].Agents,
+				AutoApproveTools: cfg.Providers[name].AutoApproveTools,
+				WriteMCPFile:     !cfg.ProviderEnabled(copilot.Name),
+			},
+			engine,
+			dir,
+		)
+	case codex.Name:
+		return codex.New(
+			logger,
+			codex.Settings{
+				OutputDir:      out,
+				MCPServers:     cfg.MCP,
+				ApprovalPolicy: cfg.Providers[name].ApprovalPolicy,
+				MCPApproval:    cfg.Providers[name].MCPApproval,
+			},
+			engine,
+			dir,
+		)
+	case antigravity.Name:
+		return antigravity.New(logger, antigravity.Settings{
+			OutputDir:  out,
+			MCPServers: cfg.MCP,
+		}, engine, dir)
+	case crush.Name:
+		return crush.New(
+			logger,
+			crush.Settings{
+				OutputDir:        out,
+				MCPServers:       cfg.MCP,
+				AutoApproveTools: cfg.Providers[name].AutoApproveTools,
+			},
+			engine,
+			dir,
+		)
+	case copilot.Name:
+		return copilot.New(logger, copilot.Settings{
+			OutputDir:  out,
+			MCPServers: cfg.MCP,
+		}, engine, dir)
+	case ghaw.Name:
+		return ghaw.New(logger, ghaw.Settings{
+			OutputDir:  out,
+			MCPServers: cfg.MCP,
+		}, engine, dir)
 	default:
 		t.Fatalf("unknown provider %s", name)
 		return nil
@@ -54,11 +103,94 @@ func writeTestFile(t *testing.T, path, content string) {
 	}
 }
 
+func TestProviderMCPLifecycle(t *testing.T) {
+	for _, tt := range []struct{ name, output string }{
+		{claude.Name, ".mcp.json"},
+		{codex.Name, ".codex/config.toml"},
+		{antigravity.Name, ".agents/plugins/project-tools/mcp_config.json"},
+		{crush.Name, ".crush.json"},
+		{copilot.Name, ".mcp.json"},
+		{ghaw.Name, ghaw.MCPFile},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			cfg := &config.Config{MCP: map[string]provider.MCPServer{
+				"enabled-server": {
+					Enabled: true,
+					Name:    "enabled-server",
+					Command: "npx",
+					Args:    []string{"example-mcp"},
+					Container: &provider.MCPContainer{
+						Image:   "example/container:v1",
+						Command: "container-mcp",
+					},
+				},
+				"disabled-server": {Name: "disabled-server", Command: "npx"},
+			}}
+			original, err := yaml.Marshal(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			logger := slog.New(slog.DiscardHandler)
+			p := makeProvider(t, tt.name, cfg, nil, root, root)
+			plan := fspatch.NewPlan(logger, root, filepath.Join(root, ".build/backups"))
+			if err := p.Prepare(plan, nil); err != nil {
+				t.Fatal(err)
+			}
+			entries, err := os.ReadDir(root)
+			if err != nil || len(entries) != 0 {
+				t.Fatalf("Prepare wrote files before Apply: %v, %v", entries, err)
+			}
+			if err := plan.Apply(); err != nil {
+				t.Fatal(err)
+			}
+			content, err := os.ReadFile(filepath.Join(root, tt.output))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Contains(content, []byte("enabled-server")) ||
+				bytes.Contains(content, []byte("disabled-server")) {
+				t.Fatalf("generated server selection is wrong: %s", content)
+			}
+			if got := bytes.Contains(content, []byte("example/container:v1")); got != (tt.name == ghaw.Name) {
+				t.Fatalf("container execution must only affect gh-aw: %s", content)
+			}
+			if tt.name != ghaw.Name && !bytes.Contains(content, []byte("npx")) {
+				t.Fatalf("local stdio command was lost: %s", content)
+			}
+			after, err := yaml.Marshal(cfg)
+			if err != nil || !bytes.Equal(original, after) {
+				t.Fatalf("generation modified shared configuration: %v", err)
+			}
+
+			plan = fspatch.NewPlan(logger, root, filepath.Join(root, ".build/backups"))
+			if err := p.Prepare(plan, nil); err != nil || len(plan.Changes()) != 0 {
+				t.Fatalf("unchanged generation scheduled writes: %v, %v", plan.Changes(), err)
+			}
+
+			server := cfg.MCP["enabled-server"]
+			server.Enabled = false
+			cfg.MCP["enabled-server"] = server
+			plan = fspatch.NewPlan(logger, root, filepath.Join(root, ".build/backups"))
+			if err := p.Prepare(plan, nil); err != nil {
+				t.Fatal(err)
+			}
+			if err := plan.Apply(); err != nil {
+				t.Fatal(err)
+			}
+			content, err = os.ReadFile(filepath.Join(root, tt.output))
+			if err != nil || bytes.Contains(content, []byte("enabled-server")) {
+				t.Fatalf("disabled server retained in MCP configuration: %s, %v", content, err)
+			}
+		})
+	}
+}
+
 func TestProviderGenerationErrors(t *testing.T) {
-	for _, name := range []string{Claude, Antigravity, Crush, Copilot} {
+	for _, name := range []string{claude.Name, antigravity.Name, crush.Name, copilot.Name} {
 		t.Run(name, func(t *testing.T) {
 			dir, out := t.TempDir(), t.TempDir()
-			path := map[string]string{Claude: ".claude/settings.local.json", Antigravity: ".agents/plugins/project-tools/mcp_config.json", Crush: ".crush.json", Copilot: ".mcp.json"}[name]
+			path := map[string]string{claude.Name: ".claude/settings.local.json", antigravity.Name: ".agents/plugins/project-tools/mcp_config.json", crush.Name: ".crush.json", copilot.Name: ".mcp.json"}[name]
 			if err := os.MkdirAll(filepath.Join(out, path), 0755); err != nil {
 				t.Fatal(err)
 			}
@@ -66,7 +198,6 @@ func TestProviderGenerationErrors(t *testing.T) {
 			if err := p.Prepare(
 				fspatch.NewPlan(slog.New(slog.DiscardHandler), out, filepath.Join(out, ".go42x", "backups")),
 				nil,
-				config.Provider{},
 			); err == nil ||
 				!strings.Contains(err.Error(), "failed to prepare config files") {
 				t.Fatalf("Prepare() = %v, want configuration error", err)
@@ -76,25 +207,23 @@ func TestProviderGenerationErrors(t *testing.T) {
 }
 
 func TestProviderJSONWriting(t *testing.T) {
-	for _, name := range []string{Claude, Antigravity, Crush, Copilot} {
-		t.Run(name, func(t *testing.T) {
-			dir := t.TempDir()
-			p := makeProvider(t, name, &config.Config{}, nil, dir, dir)
-			plan := fspatch.NewPlan(slog.New(slog.DiscardHandler), dir, filepath.Join(dir, ".go42x", "backups"))
-			path := filepath.Join(dir, "nested", "config.json")
-			if err := p.prepareJSONFile(plan, path, map[string]any{"enabled": true, "name": "example"}); err != nil {
-				t.Fatal(err)
-			}
-			if err := plan.Apply(); err != nil {
-				t.Fatal(err)
-			}
-			if err := p.prepareJSONFile(plan, path, make(chan int)); err == nil {
-				t.Fatal("unsupported JSON value was accepted")
-			}
-			if err := p.prepareJSONFile(plan, dir, map[string]string{}); err == nil {
-				t.Fatal("JSON write error was swallowed")
-			}
-		})
+	dir := t.TempDir()
+	plan := fspatch.NewPlan(slog.New(slog.DiscardHandler), dir, filepath.Join(dir, ".go42x", "backups"))
+	path := filepath.Join(dir, "nested", "config.json")
+	if err := provider.PrepareJSONFile(plan, path, map[string]any{
+		"enabled": true,
+		"name":    "example",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := plan.Apply(); err != nil {
+		t.Fatal(err)
+	}
+	if err := provider.PrepareJSONFile(plan, path, make(chan int)); err == nil {
+		t.Fatal("unsupported JSON value was accepted")
+	}
+	if err := provider.PrepareJSONFile(plan, dir, map[string]string{}); err == nil {
+		t.Fatal("JSON write error was swallowed")
 	}
 }
 
@@ -122,94 +251,48 @@ func TestPreparedOutputFiles(t *testing.T) {
 	}
 }
 
-func TestClaudeAgents(t *testing.T) {
-	for _, stage := range []string{"success", "directory", "read", "process", "write"} {
-		t.Run(stage, func(t *testing.T) {
-			dir, out := t.TempDir(), t.TempDir()
-			writeTestFile(t, filepath.Join(dir, "agents", "reviewer.tpl.md"), "Review {{ .project }}")
-			engine := mocks.NewMockTemplateEngineAccessor(gomock.NewController(t))
-			p := NewClaudeProvider(slog.New(slog.DiscardHandler), &config.Config{}, engine, dir, out)
-			plan := fspatch.NewPlan(slog.New(slog.DiscardHandler), out, filepath.Join(out, ".go42x", "backups"))
-			pc := config.Provider{Agents: []string{"agents/reviewer.tpl.md"}}
-			data := map[string]any{"project": "example"}
-			want := ""
-			switch stage {
-			case "directory":
-				writeTestFile(t, filepath.Join(out, ".claude"), "blocked")
-				want = "prepare agent"
-			case "read":
-				pc.Agents = []string{"missing"}
-				want = "read agent template"
-			case "process":
-				engine.EXPECT().Process("Review {{ .project }}", data).Return("", errors.New("bad template"))
-				want = "process agent template"
-			case "write":
-				if err := os.MkdirAll(filepath.Join(out, ".claude/agents/reviewer.md"), 0755); err != nil {
-					t.Fatal(err)
-				}
-				want = "prepare agent"
-			}
-			if stage == "success" || stage == "write" || stage == "directory" {
-				engine.EXPECT().Process("Review {{ .project }}", data).Return("Review example", nil)
-			}
-			err := p.prepareAgents(plan, pc, data)
-			if want != "" {
-				if err == nil || !strings.Contains(err.Error(), want) {
-					t.Fatalf("prepareAgents() = %v, want %s", err, want)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := plan.Apply(); err != nil {
-				t.Fatal(err)
-			}
-			result, err := os.ReadFile(filepath.Join(out, ".claude/agents/reviewer.md"))
-			if err != nil || string(result) != "Review example" {
-				t.Fatalf("agent output = %q, %v", result, err)
+func TestParseProviders(t *testing.T) {
+	for _, tt := range []struct {
+		value   string
+		want    []string
+		invalid bool
+	}{
+		{"", []string{}, false},
+		{" \t ", []string{}, false},
+		{"codex", []string{"codex"}, false},
+		{ghaw.Name, []string{ghaw.Name}, false},
+		{" codex, antigravity ", []string{"codex", "antigravity"}, false},
+		{"codex,", nil, true},
+		{",codex", nil, true},
+		{"codex,,claude", nil, true},
+		{"codex,codex", nil, true},
+		{"Codex", nil, true},
+		{"typo", nil, true},
+		{"gemini", nil, true},
+	} {
+		t.Run(tt.value, func(t *testing.T) {
+			got, err := provider.ParseProviders(tt.value, config.ProviderNames())
+			if (err != nil) != tt.invalid || !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("ParseProviders(%q) = %#v, %v; want %#v, invalid=%v", tt.value, got, err, tt.want, tt.invalid)
 			}
 		})
 	}
 }
 
-func TestClaudeAdditionalOutputFailures(t *testing.T) {
-	for _, stage := range []string{"mcp", "agents"} {
-		t.Run(stage, func(t *testing.T) {
-			dir, out := t.TempDir(), t.TempDir()
-			engine := mocks.NewMockTemplateEngineAccessor(gomock.NewController(t))
-			pc := config.Provider{}
-			want := ""
-			if stage == "mcp" {
-				if err := os.Mkdir(filepath.Join(out, ".mcp.json"), 0755); err != nil {
-					t.Fatal(err)
-				}
-				want = "failed to prepare"
-			} else {
-				pc.Agents = []string{"missing"}
-				want = "failed to prepare agents"
-			}
-			p := NewClaudeProvider(slog.New(slog.DiscardHandler), &config.Config{}, engine, dir, out)
-			plan := fspatch.NewPlan(slog.New(slog.DiscardHandler), out, filepath.Join(out, ".go42x", "backups"))
-			if err := p.Prepare(plan, nil, pc); err == nil || !strings.Contains(err.Error(), want) {
-				t.Fatalf("Prepare() = %v, want %s", err, want)
-			}
-		})
-	}
-}
+func TestProviderSelectionUsesSuppliedNames(t *testing.T) {
+	supported := []string{"custom"}
 
-func TestMCPNamesAndEmptyTools(t *testing.T) {
-	if got := MCPToolName("unknown", "example", "tool"); got != "tool" {
-		t.Fatalf("unknown provider = %q", got)
+	got, err := provider.ParseProviders(" custom ", supported)
+	if err != nil || !reflect.DeepEqual(got, supported) {
+		t.Fatalf("ParseProviders() = %v, %v; want %v", got, err, supported)
 	}
-	p := NewCopilotProvider(
-		slog.New(slog.DiscardHandler),
-		&config.Config{MCP: map[string]config.MCPServer{"empty": {Enabled: true, Command: "example"}}},
-		nil,
-		"",
-		"",
-	)
-	if p.extractMCPServers()["empty"].Tools == nil {
-		t.Error("Copilot requires a tools array, even when empty")
+	if err := provider.ValidateProviders([]string{codex.Name}, supported); err == nil {
+		t.Fatal("accepted a provider outside the supplied list")
+	}
+	if err := provider.ValidateProviders([]string{"custom", "custom"}, supported); err == nil {
+		t.Fatal("accepted a duplicate provider")
+	}
+	if err := provider.ValidateProviders([]string{" "}, supported); err == nil {
+		t.Fatal("accepted a blank provider")
 	}
 }

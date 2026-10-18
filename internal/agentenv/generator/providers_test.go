@@ -7,6 +7,13 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/antigravity"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/claude"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/codex"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/copilot"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/crush"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/ghaw"
 	"github.com/go42-dev/go42x/internal/config"
 )
 
@@ -14,13 +21,14 @@ func TestGenerateProviderToggles(t *testing.T) {
 	t.Setenv("PATH", "")
 	t.Setenv("GITHUB_ACTIONS", "false")
 	settingsFiles := map[string]string{
-		"claude":      ".claude/settings.local.json",
-		"codex":       ".codex/config.toml",
-		"antigravity": ".agents/plugins/project-tools/mcp_config.json",
-		"crush":       ".crush.json",
-		"copilot":     ".mcp.json",
+		claude.Name:      ".claude/settings.local.json",
+		codex.Name:       ".codex/config.toml",
+		antigravity.Name: ".agents/plugins/project-tools/mcp_config.json",
+		crush.Name:       ".crush.json",
+		copilot.Name:     ".mcp.json",
+		ghaw.Name:        ghaw.MCPFile,
 	}
-	for _, name := range []string{"claude", "codex", "antigravity", "crush", "copilot"} {
+	for name := range settingsFiles {
 		t.Run(name, func(t *testing.T) {
 			enabled, disabled := true, false
 			cfg := &config.Config{
@@ -28,7 +36,7 @@ func TestGenerateProviderToggles(t *testing.T) {
 				Project:   config.Project{Name: "example"},
 				Context:   config.Context{Template: "main.tpl.md"},
 				Providers: make(map[string]config.Provider),
-				MCP: map[string]config.MCPServer{
+				MCP: map[string]provider.MCPServer{
 					"example": {Enabled: true, Name: "example", Command: "example"},
 				},
 			}
@@ -36,7 +44,12 @@ func TestGenerateProviderToggles(t *testing.T) {
 				cfg.Providers[provider] = config.Provider{Enabled: &disabled}
 			}
 			cfg.Providers[name] = config.Provider{Enabled: &enabled}
-			if name != "claude" && name != "crush" {
+			if name == ghaw.Name {
+				server := cfg.MCP["example"]
+				server.Command = "npx"
+				cfg.MCP["example"] = server
+			}
+			if name != claude.Name && name != crush.Name && name != ghaw.Name {
 				server := cfg.MCP["example"]
 				server.CWD = "src"
 				cfg.MCP["example"] = server
@@ -50,10 +63,10 @@ func TestGenerateProviderToggles(t *testing.T) {
 				t.Fatal(err)
 			}
 			want := []string{"AGENTS.md", settingsFiles[name]}
-			if name == "claude" {
+			if name == claude.Name {
 				want = append(want, ".mcp.json")
 			}
-			if name == "antigravity" {
+			if name == antigravity.Name {
 				want = append(want, ".agents/plugins/project-tools/plugin.json")
 				settings := readJSON[map[string]any](t, out, settingsFiles[name])
 				server := settings["mcpServers"].(map[string]any)["example"].(map[string]any)
@@ -88,8 +101,12 @@ func TestGenerateProviderToggles(t *testing.T) {
 				preserved[path] = string(data)
 			}
 			cfg.Providers[name] = config.Provider{Enabled: &disabled}
-			cfg.Providers["claude"] = config.Provider{Enabled: &disabled, Agents: []string{"missing.tpl.md"}}
-			cfg.MCP["example"] = config.MCPServer{Enabled: true, Name: "example", Command: "changed"}
+			cfg.Providers[claude.Name] = config.Provider{Enabled: &disabled, Agents: []string{"missing.tpl.md"}}
+			cfg.MCP["example"] = provider.MCPServer{
+				Enabled: true,
+				Name:    "example",
+				Command: "changed",
+			}
 			for _, clean := range []bool{false, true} {
 				g = NewGenerator(slog.New(slog.DiscardHandler), cfg, dir, out)
 				if err := g.Generate(t.Context(), clean); err != nil {

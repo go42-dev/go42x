@@ -1,0 +1,370 @@
+---
+
+name: docker-build
+
+# Build the CLI tools image for both CI and releases, then publish it to GHCR.
+on:
+  workflow_call:
+    inputs:
+      runs_on:
+        required: true
+        type: string
+      continue_on_error:
+        required: true
+        type: boolean
+      attestation:
+        required: true
+        type: boolean
+      generate_sbom:
+        required: true
+        type: boolean
+      platforms:
+        required: true
+        type: string
+      attestation_sbom:
+        required: true
+        type: boolean
+      timeout_minutes:
+        required: false
+        type: number
+        default: 60
+      service_name:
+        description: Container package name.
+        type: string
+        required: true
+      image_tag:
+        description: Temporary CI tag or validated release version.
+        type: string
+        required: true
+      source_sha:
+        description: Exact source commit to build.
+        type: string
+        required: true
+    outputs:
+      image_digest:
+        description: Manifest digest of the published image.
+        value: ${{ jobs.docker-build.outputs.image_digest }}
+      image_reference:
+        description: Immutable reference of the published image.
+        value: ${{ jobs.docker-build.outputs.image_reference }}
+
+# Callers grant registry writes and any requested attestation permissions.
+permissions: {}
+
+jobs:
+  configure:
+    name: docker-inputs
+    runs-on: ${{ inputs.runs_on }}
+    timeout-minutes: 5
+    permissions: {}
+    outputs:
+      platforms: ${{ steps.platforms.outputs.platforms }}
+    steps:
+      - name: Validate options and select platforms
+        id: platforms
+        env:
+          PLATFORMS: ${{ inputs.platforms }}
+          GENERATE_SBOM: ${{ inputs.generate_sbom }}
+          ATTESTATION_SBOM: ${{ inputs.attestation_sbom }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import sys
+
+          platforms = [platform.strip() for platform in os.environ["PLATFORMS"].split(",")]
+          supported = {"linux/amd64", "linux/arm64"}
+          if not platforms or any(platform not in supported for platform in platforms):
+              sys.exit("platforms must contain linux/amd64, linux/arm64, or both")
+          if len(platforms) != len(set(platforms)):
+              sys.exit("platforms must not contain duplicates")
+          if os.environ["ATTESTATION_SBOM"] == "true" and os.environ["GENERATE_SBOM"] != "true":
+              sys.exit("attestation_sbom requires generate_sbom")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write("platforms=" + ",".join(platforms) + "\n")
+          PY
+
+  # Publication is shared; callers scan the digest and own cleanup or promotion.
+  docker-build:
+    needs: configure
+    name: docker-build
+    runs-on: ${{ inputs.runs_on }}
+    continue-on-error: ${{ inputs.continue_on_error }}
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+      attestations: write
+      id-token: write
+    outputs:
+      image_digest: ${{ steps.validate-digest.outputs.image_digest }}
+      image_reference: ${{ steps.validate-digest.outputs.image_reference }}
+    env:
+      MISE_DEFAULT_CONFIG_FILENAME: etc/mise.toml
+      MISE_DATA_DIR: ${{ github.workspace }}/.tools
+      MISE_CACHE_DIR: ${{ github.workspace }}/.tools/cache
+      MISE_STATE_DIR: ${{ github.workspace }}/.tools/state
+    # ----
+    steps:
+      - name: 'Validate image publication target'
+        env:
+          CALLER_WORKFLOW_REF: ${{ github.workflow_ref }}
+          CALLER_WORKFLOW_SHA: ${{ github.workflow_sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          IMAGE_TAG: ${{ inputs.image_tag }}
+          REPOSITORY: ${{ github.repository }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          SERVICE_NAME: ${{ inputs.service_name }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$IMAGE_TAG" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+            echo "Invalid OCI image tag: $IMAGE_TAG" >&2
+            exit 1
+          fi
+          if [[ ! "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Invalid source commit SHA: $SOURCE_SHA" >&2
+            exit 1
+          fi
+
+          if [[ ! "$SERVICE_NAME" =~ ^[a-z0-9][a-z0-9._-]{0,127}$ ]]; then
+            echo "Invalid container package name: $SERVICE_NAME" >&2
+            exit 1
+          fi
+
+          if [[ "$EVENT_SHA" != "$SOURCE_SHA" || "$CALLER_WORKFLOW_SHA" != "$SOURCE_SHA" ]]; then
+            echo '::error::Publication must use the exact caller and event commit.'
+            exit 1
+          fi
+
+          # Version tags are permanent release aliases. Only the master-only
+          # release workflow may create them from its validated dispatch commit.
+          if [[ "$IMAGE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$ ]]; then
+            expected_workflow_ref="${REPOSITORY}/.github/workflows/300-release.yaml@refs/heads/master"
+            if [[ "$EVENT_NAME" != "workflow_dispatch" || "$EVENT_REF" != "refs/heads/master" || \
+              "$CALLER_WORKFLOW_REF" != "$expected_workflow_ref" ]]; then
+              echo '::error::Only the master release workflow may publish version tags.'
+              exit 1
+            fi
+          elif [[ "$IMAGE_TAG" =~ ^ci-[1-9][0-9]*-[1-9][0-9]*$ ]]; then
+            expected_workflow_ref="${REPOSITORY}/.github/workflows/100-unified-workflow.yaml@${EVENT_REF}"
+            if [[ "$IMAGE_TAG" != "ci-${RUN_ID}-${RUN_ATTEMPT}" || \
+              "$CALLER_WORKFLOW_REF" != "$expected_workflow_ref" ]]; then
+              echo '::error::CI publication requires the current Unified CI run tag.'
+              exit 1
+            fi
+            case "$EVENT_NAME" in
+              push|pull_request|workflow_dispatch) ;;
+              *)
+                echo '::error::Unsupported CI publication event.'
+                exit 1
+                ;;
+            esac
+          else
+            echo '::error::Publication requires a CI run tag or release version.'
+            exit 1
+          fi
+      # ----
+      - name: 'Checkout repository'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - name: 'Validate checked-out source'
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$(git rev-parse HEAD)" != "$SOURCE_SHA" ]]; then
+            echo "Checkout did not resolve to $SOURCE_SHA" >&2
+            exit 1
+          fi
+      # ----
+      - name: 'Setup Go'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: 'Install Docker tools'
+        uses: ./.github/actions/setup-tools
+        with:
+          install-task: 'true'
+          install-args: --locked hadolint
+      - name: 'Lint Dockerfile'
+        run: task --exit-code lint:docker
+      # ----
+      - name: 'Extract tool versions and cache platform key'
+        env:
+          PLATFORMS: ${{ needs.configure.outputs.platforms }}
+        run: |
+          {
+            echo "gopls_version=$(sed -n 's/^"go:golang.org\/x\/tools\/gopls" = "\(.*\)"$/\1/p' etc/mise.toml)"
+            echo "mise_version=$(sed -n 's/^min_version = "\(.*\)"$/\1/p' etc/mise.toml)"
+            echo "go_version=$(awk '/^go / {print $2}' go.mod)"
+            # Cache keys cannot contain commas from the multi-platform build list.
+            echo "go_cache_platforms=$(printf '%s' "$PLATFORMS" | sha256sum | cut -d ' ' -f1)"
+          } >> "$GITHUB_ENV"
+      - name: 'Extract commit hash'
+        run: echo "commit_hash=$(git rev-parse HEAD 2>/dev/null || echo '')" >> "$GITHUB_ENV"
+      # ----
+      - name: 'Set up target architecture emulation'
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          platforms: all
+      - name: 'Set up Docker Buildx'
+        id: buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+        with:
+          cache-binary: true
+      - name: 'Log in to GitHub Container Registry'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # ----
+      # The layer cache does not preserve RUN cache mounts. Restore the Go module
+      # and compiler caches before the build, then extract them only when saving a new key.
+      - name: 'Restore and save Go module and compiler caches'
+        id: go-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/docker-go-cache
+          # Reuse the cache across source changes; Go validates compiled packages.
+          # Refresh it when dependencies, target platforms, or the Dockerfile change.
+          key: docker-go-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.go_version }}-${{ hashFiles('go.mod', 'go.sum') }}-${{
+            env.go_cache_platforms }}-${{ hashFiles('Dockerfile', 'etc/mise.toml') }}
+          restore-keys: |
+            docker-go-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.go_version }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ env.go_cache_platforms }}-
+            docker-go-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.go_version }}-${{ hashFiles('go.mod', 'go.sum') }}-
+            docker-go-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.go_version }}-
+      - name: 'Restore and extract Go cache mounts'
+        uses: reproducible-containers/buildkit-cache-dance@5422eac04292c961a382e0f584ea0f03ad9da723 # v3.4.0
+        continue-on-error: true
+        with:
+          builder: ${{ steps.buildx.outputs.name }}
+          dockerfile: Dockerfile
+          cache-dir: ${{ runner.temp }}/docker-go-cache
+          scratch-dir: ${{ runner.temp }}/buildkit-cache-dance
+          # Exact hits cannot be saved again, so avoid copying the cache back out.
+          skip-extraction: ${{ steps.go-cache.outputs.cache-hit == 'true' }}
+      # ----
+      - name: 'Determine annotation levels'
+        id: annotations-levels
+        env:
+          PLATFORMS: ${{ needs.configure.outputs.platforms }}
+        run: |
+          if [[ "$PLATFORMS" == *,* ]]; then
+            echo "levels=manifest,index" >> "$GITHUB_OUTPUT"
+          else
+            echo "levels=manifest" >> "$GITHUB_OUTPUT"
+          fi
+      # Prepare tags, labels and annotations for the image.
+      - name: 'Extract metadata'
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        id: meta
+        with:
+          images: |
+            ghcr.io/${{ github.repository_owner }}/${{ inputs.service_name }}
+          tags: |
+            type=raw,value=${{ inputs.image_tag }}
+          # @see https://github.com/opencontainers/image-spec/blob/main/annotations.md
+          labels: |
+            org.opencontainers.image.title=${{ inputs.service_name }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.url=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ inputs.image_tag }}
+            org.opencontainers.image.revision=${{ env.commit_hash }}
+            org.opencontainers.image.licenses=MIT
+        env:
+          DOCKER_METADATA_ANNOTATIONS_LEVELS: ${{ steps.annotations-levels.outputs.levels }}
+      # ----
+      - name: 'Build and push Docker image'
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        id: build
+        with:
+          builder: ${{ steps.buildx.outputs.name }}
+          context: ${{ github.workspace }}/
+          file: ${{ github.workspace }}/Dockerfile
+          platforms: ${{ needs.configure.outputs.platforms }}
+          cache-from: type=gha,scope=docker-build
+          # Cache export is an optimization, not a publication requirement.
+          # A cache-service write failure must not cancel the image push.
+          cache-to: type=gha,scope=docker-build,mode=max,ignore-error=true
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          build-args: |
+            GO_VERSION=${{ env.go_version }}
+            GOPLS_VERSION=${{ env.gopls_version }}
+            MISE_VERSION=${{ env.mise_version }}
+            SOURCE_DATE_EPOCH=0
+            COMMIT_HASH=${{ env.commit_hash }}
+            RELEASE_TAG=${{ inputs.image_tag }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+        env:
+          # Fix image filesystem timestamps independently of the publishing time.
+          # @see https://reproducible-builds.org/docs/source-date-epoch/
+          SOURCE_DATE_EPOCH: 0
+          # @see https://github.com/orgs/community/discussions/45969
+          BUILDX_NO_DEFAULT_ATTESTATIONS: true
+      - name: 'Validate image digest'
+        id: validate-digest
+        env:
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/${{ inputs.service_name }}
+        run: |
+          if [[ ! "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "Invalid image digest: $IMAGE_DIGEST" >&2
+            exit 1
+          fi
+          echo "image_digest=$IMAGE_DIGEST" >> "$GITHUB_OUTPUT"
+          echo "image_reference=${IMAGE_NAME}@${IMAGE_DIGEST}" >> "$GITHUB_OUTPUT"
+      # ----
+      # Record requested provenance immediately after publication.
+      - name: 'Attest build provenance'
+        if: ${{ inputs.attestation }}
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/${{ inputs.service_name }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          show-summary: true
+      # ----
+      - name: 'Generate SBOM'
+        if: ${{ inputs.generate_sbom }}
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          # Generate the SBOM from the immutable manifest that was just built,
+          # not from a tag that another workflow could move concurrently.
+          image: ghcr.io/${{ github.repository_owner }}/${{ inputs.service_name }}@${{ steps.build.outputs.digest }}
+          format: spdx-json
+          output-file: sbom-${{ inputs.service_name }}-${{ inputs.image_tag }}.spdx.json
+          artifact-name: sbom-${{ inputs.service_name }}-${{ inputs.image_tag }}.spdx.json
+          # Go dependencies are already captured by GitHub's managed
+          # Dependency Graph job.
+          dependency-snapshot: false
+          upload-artifact: true
+      # ----
+      - name: 'Attest SBOM'
+        if: ${{ inputs.attestation_sbom }}
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/${{ inputs.service_name }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          sbom-path: sbom-${{ inputs.service_name }}-${{ inputs.image_tag }}.spdx.json
+          show-summary: true
+      - name: 'Summarize published image'
+        env:
+          IMAGE_REFERENCE: ${{ steps.validate-digest.outputs.image_reference }}
+          IMAGE_TAG: ${{ inputs.image_tag }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |-
+          {
+            echo "Docker image tag: $IMAGE_TAG"
+            echo "Image: $IMAGE_REFERENCE"
+            echo "Source: $SOURCE_SHA"
+          } >> "$GITHUB_STEP_SUMMARY"

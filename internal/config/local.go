@@ -7,13 +7,15 @@ import (
 	"path/filepath"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider"
 )
 
 // LoadProjectConfig merges the adjacent optional local file, then applies an
 // exact provider selection. Nil preserves configuration choices; an empty slice
 // disables every provider. Neither source file is modified.
 func LoadProjectConfig(path string, providers []string) (*Config, error) {
-	if err := ValidateProviders(providers); err != nil {
+	if err := provider.ValidateProviders(providers, ProviderNames()); err != nil {
 		return nil, err
 	}
 	base, err := readConfig(path)
@@ -32,7 +34,7 @@ func LoadProjectConfig(path string, providers []string) (*Config, error) {
 // applies an exact provider selection, and validates the effective configuration.
 // Nil local bytes mean no overrides; nil providers preserve configuration choices.
 func ParseProjectConfig(baseData, localData []byte, providers []string) (*Config, error) {
-	if err := ValidateProviders(providers); err != nil {
+	if err := provider.ValidateProviders(providers, ProviderNames()); err != nil {
 		return nil, err
 	}
 	base, err := decodeConfigMap(baseData)
@@ -88,7 +90,7 @@ func decodeConfigMap(data []byte) (map[string]any, error) {
 	return values, nil
 }
 
-// Maps merge by key; lists and scalar values replace the previous value.
+// mergeConfigMaps merges maps by key and replaces lists and scalar values.
 // Explicit null clears a value instead of inheriting it.
 func mergeConfigMaps(base, local map[string]any) {
 	for key, value := range local {

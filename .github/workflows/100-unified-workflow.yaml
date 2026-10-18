@@ -85,7 +85,9 @@ jobs:
   security:
     uses: ./.github/workflows/130-security.yaml
     permissions:
+      actions: read
       contents: read
+      security-events: read
     needs:
       - unit-tests
     with:
@@ -104,6 +106,55 @@ jobs:
     with:
       runs_on: ubuntu-latest
       continue_on_error: false
+      timeout_minutes: 30
+
+  docker-prepare-tag:
+    name: docker-prepare-tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs:
+      - unit-tests
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - name: 'Prepare temporary CI image tag'
+        id: tag
+        run: echo "tag=ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+
+  docker-build:
+    uses: ./.github/workflows/140-docker-build.yaml
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+      attestations: write
+      id-token: write
+    needs:
+      - docker-prepare-tag
+    with:
+      runs_on: ubuntu-24.04
+      continue_on_error: false
+      service_name: go42x
+      image_tag: ${{ needs.docker-prepare-tag.outputs.tag }}
+      platforms: linux/amd64,linux/arm64
+      attestation: ${{ github.ref == 'refs/heads/master' }}
+      generate_sbom: true
+      attestation_sbom: false
+      timeout_minutes: 45
+      source_sha: ${{ github.sha }}
+
+  security-extra:
+    uses: ./.github/workflows/140-security-extra.yaml
+    permissions:
+      contents: read
+      packages: read
+    needs:
+      - docker-build
+    with:
+      runs_on: ubuntu-24.04
+      continue_on_error: false
+      image_reference: ${{ needs.docker-build.outputs.image_reference }}
+      platforms: linux/amd64,linux/arm64
       timeout_minutes: 30
 
   # stage 5: test artifacts
@@ -134,7 +185,25 @@ jobs:
       continue_on_error: true
       timeout_minutes: 10
 
-  # stage 7: required finish gate
+  # stage 7: remove the temporary image after its consumers finish
+
+  cleanup:
+    if: ${{ always() && needs.docker-prepare-tag.result == 'success' && needs.docker-prepare-tag.outputs.tag != '' }}
+    uses: ./.github/workflows/160-cleanup.yaml
+    permissions:
+      contents: read
+      packages: write
+    needs:
+      - docker-prepare-tag
+      - docker-build
+      - security-extra
+    with:
+      runs_on: ubuntu-latest
+      service_name: go42x
+      image_tag: ${{ needs.docker-prepare-tag.outputs.tag }}
+      timeout_minutes: 10
+
+  # stage 8: required finish gate
 
   gate-finish:
     name: gate-finish
@@ -150,6 +219,9 @@ jobs:
       - security
       - build-artifacts
       - test-artifacts
+      - docker-build
+      - security-extra
+      - cleanup
     steps:
       - name: 'Require all blocking jobs to succeed'
         env:
@@ -161,6 +233,9 @@ jobs:
           SECURITY_RESULT: ${{ needs.security.result }}
           BUILD_ARTIFACTS_RESULT: ${{ needs.build-artifacts.result }}
           TEST_ARTIFACTS_RESULT: ${{ needs.test-artifacts.result }}
+          DOCKER_BUILD_RESULT: ${{ needs.docker-build.result }}
+          SECURITY_EXTRA_RESULT: ${{ needs.security-extra.result }}
+          CLEANUP_RESULT: ${{ needs.cleanup.result }}
         run: |-
           echo "gate-start: $GATE_START_RESULT"
           echo "lint: $LINT_RESULT"
@@ -170,6 +245,9 @@ jobs:
           echo "security: $SECURITY_RESULT"
           echo "build-artifacts: $BUILD_ARTIFACTS_RESULT"
           echo "test-artifacts: $TEST_ARTIFACTS_RESULT"
+          echo "docker-build: $DOCKER_BUILD_RESULT"
+          echo "security-extra: $SECURITY_EXTRA_RESULT"
+          echo "cleanup: $CLEANUP_RESULT"
           if [ "$GATE_START_RESULT" != 'success' ] || \
             [ "$LINT_RESULT" != 'success' ] || \
             [ "$UNIT_TESTS_RESULT" != 'success' ] || \
@@ -177,7 +255,9 @@ jobs:
             [ "$E2E_TESTS_RESULT" != 'success' ] || \
             [ "$SECURITY_RESULT" != 'success' ] || \
             [ "$BUILD_ARTIFACTS_RESULT" != 'success' ] || \
-            [ "$TEST_ARTIFACTS_RESULT" != 'success' ]; then
+            [ "$TEST_ARTIFACTS_RESULT" != 'success' ] || \
+            [ "$DOCKER_BUILD_RESULT" != 'success' ] || \
+            [ "$SECURITY_EXTRA_RESULT" != 'success' ]; then
             echo '::error::One or more blocking CI jobs did not succeed.'
             exit 1
           fi

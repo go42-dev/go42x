@@ -12,6 +12,12 @@ import (
 
 	"github.com/go42-dev/go42x/internal/agentenv/generator/collector"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/antigravity"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/claude"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/codex"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/copilot"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/crush"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/ghaw"
 	"github.com/go42-dev/go42x/internal/config"
 	"github.com/go42-dev/go42x/internal/fspatch"
 )
@@ -42,33 +48,7 @@ func NewGenerator(logger *slog.Logger, cfg *config.Config, templateDir, outputDi
 		outputDir:   outputDir,
 	}
 
-	g.registerProviders()
-
 	return g
-}
-
-func (g *Generator) registerProviders() {
-	templateEngine := newTemplateEngine(g.templateDir)
-
-	g.providers[provider.Claude] = provider.NewClaudeProvider(
-		g.logger.With("provider", provider.Claude),
-		g.config, templateEngine, g.templateDir, g.outputDir)
-
-	g.providers[provider.Codex] = provider.NewCodexProvider(
-		g.logger.With("provider", provider.Codex),
-		g.config, templateEngine, g.templateDir, g.outputDir)
-
-	g.providers[provider.Antigravity] = provider.NewAntigravityProvider(
-		g.logger.With("provider", provider.Antigravity),
-		g.config, templateEngine, g.templateDir, g.outputDir)
-
-	g.providers[provider.Crush] = provider.NewCrushProvider(
-		g.logger.With("provider", provider.Crush),
-		g.config, templateEngine, g.templateDir, g.outputDir)
-
-	g.providers[provider.Copilot] = provider.NewCopilotProvider(
-		g.logger.With("provider", provider.Copilot),
-		g.config, templateEngine, g.templateDir, g.outputDir)
 }
 
 func (g *Generator) Generate(ctx context.Context, clean bool) error {
@@ -97,6 +77,10 @@ func (g *Generator) Prepare(ctx context.Context, clean bool) (*fspatch.Plan, err
 		g.config.MCP[name] = server
 	}
 
+	if len(g.providers) == 0 {
+		g.registerProviders()
+	}
+
 	g.logger.Info("Starting generation")
 
 	tplCtx, err := g.buildTemplateContext(ctx)
@@ -114,7 +98,6 @@ func (g *Generator) Prepare(ctx context.Context, clean bool) (*fspatch.Plan, err
 		if !g.config.ProviderEnabled(name) {
 			continue
 		}
-		providerConfig := g.config.Providers[name]
 		p, exists := g.providers[name]
 		if !exists {
 			preparationErrors = append(preparationErrors, fmt.Errorf("unknown provider %q", name))
@@ -122,7 +105,7 @@ func (g *Generator) Prepare(ctx context.Context, clean bool) (*fspatch.Plan, err
 		}
 		ctxData := tplCtx.ToMap()
 		ctxData["provider"] = name
-		if err := p.Prepare(plan, ctxData, providerConfig); err != nil {
+		if err := p.Prepare(plan, ctxData); err != nil {
 			preparationErrors = append(preparationErrors, fmt.Errorf("provider %s: %w", name, err))
 		}
 	}
@@ -171,7 +154,7 @@ func (g *Generator) buildTemplateContext(ctx context.Context) (*Context, error) 
 		tplCtx.Set(k, v)
 	}
 
-	servers := make(map[string]config.MCPServer)
+	servers := make(map[string]provider.MCPServer)
 	for name, server := range g.config.MCP {
 		if server.Enabled {
 			servers[name] = server
@@ -198,4 +181,67 @@ func (g *Generator) prepareInstructions(plan *fspatch.Plan, ctxData map[string]a
 	}
 
 	return nil
+}
+
+func (g *Generator) registerProviders() {
+	templateEngine := newTemplateEngine(g.templateDir)
+	servers := g.config.MCP
+	claudeConfig := g.config.Providers[claude.Name]
+	codexConfig := g.config.Providers[codex.Name]
+	crushConfig := g.config.Providers[crush.Name]
+
+	g.providers[claude.Name] = claude.New(
+		g.logger.With("provider", claude.Name),
+		claude.Settings{
+			OutputDir:        g.outputDir,
+			MCPServers:       servers,
+			Agents:           claudeConfig.Agents,
+			AutoApproveTools: claudeConfig.AutoApproveTools,
+			WriteMCPFile:     !g.config.ProviderEnabled(copilot.Name),
+		},
+		templateEngine, g.templateDir,
+	)
+	g.providers[codex.Name] = codex.New(
+		g.logger.With("provider", codex.Name),
+		codex.Settings{
+			OutputDir:      g.outputDir,
+			MCPServers:     servers,
+			ApprovalPolicy: codexConfig.ApprovalPolicy,
+			MCPApproval:    codexConfig.MCPApproval,
+		},
+		templateEngine, g.templateDir,
+	)
+	g.providers[crush.Name] = crush.New(
+		g.logger.With("provider", crush.Name),
+		crush.Settings{
+			OutputDir:        g.outputDir,
+			MCPServers:       servers,
+			AutoApproveTools: crushConfig.AutoApproveTools,
+		},
+		templateEngine, g.templateDir,
+	)
+	g.providers[antigravity.Name] = antigravity.New(
+		g.logger.With("provider", antigravity.Name),
+		antigravity.Settings{
+			OutputDir:  g.outputDir,
+			MCPServers: servers,
+		},
+		templateEngine, g.templateDir,
+	)
+	g.providers[copilot.Name] = copilot.New(
+		g.logger.With("provider", copilot.Name),
+		copilot.Settings{
+			OutputDir:  g.outputDir,
+			MCPServers: servers,
+		},
+		templateEngine, g.templateDir,
+	)
+	g.providers[ghaw.Name] = ghaw.New(
+		g.logger.With("provider", ghaw.Name),
+		ghaw.Settings{
+			OutputDir:  g.outputDir,
+			MCPServers: servers,
+		},
+		templateEngine, g.templateDir,
+	)
 }

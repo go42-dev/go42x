@@ -1,1 +1,4 @@
 # go42x knowledgebase will ignore the following files and directories
+
+.github/workflows/*.lock.yml
+.github/aw/actions-lock.json

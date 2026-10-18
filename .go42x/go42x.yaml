@@ -104,6 +104,13 @@ providers:
   copilot:
     enabled: false
 
+  # -------------------------
+  # GitHub Agentic Workflows
+  # -------------------------
+  # Generates .github/workflows/900-aw-mcp.md for import before gh-aw compilation.
+  gh-aw:
+    enabled: false
+
 mcp:
   # All tools from enabled servers are available, including tools omitted from these lists.
   # Lists use raw tool names for context descriptions and client approval settings.
@@ -111,8 +118,9 @@ mcp:
   # Antigravity resolves $NAME and ${NAME} in remote headers during generation.
   # Export these variables before generating; resolved headers stay in ignored plugin output.
   # Optional cwd is a literal path for stdio servers; relative paths use the project directory.
-  # Codex, Antigravity, and Copilot support cwd. Enabled Claude or Crush providers reject it.
+  # Codex, Antigravity, and Copilot support cwd. Enabled Claude, Crush, or gh-aw providers reject it.
   # Omit cwd to use the client's default working directory.
+  # Optional container settings are used by gh-aw; other providers use command and args.
   gopls:
     enabled: true
     type: stdio
@@ -123,6 +131,16 @@ mcp:
       - --
       - gopls
       - mcp
+    # Runtime pulls the latest release once and shares its digest with all servers.
+    container:
+      image: ghcr.io/go42-dev/go42x
+      version: '${{ env.GO42X_MCP_IMAGE_VERSION }}'
+      command: gopls
+      args:
+        - mcp
+      workdir: '${{ github.workspace }}'
+      mounts:
+        - '${{ github.workspace }}:${{ github.workspace }}:rw'
     tools:
       - go_diagnostics
       - go_file_context
@@ -143,6 +161,15 @@ mcp:
       - --
       - go42x
       - mcp
+    container:
+      image: ghcr.io/go42-dev/go42x
+      version: '${{ env.GO42X_MCP_IMAGE_VERSION }}'
+      command: go42x
+      args:
+        - mcp
+      workdir: '${{ github.workspace }}'
+      mounts:
+        - '${{ github.workspace }}:${{ github.workspace }}:rw'
     tools:
       - project_context
       - docs_get
@@ -162,6 +189,17 @@ mcp:
       - --
       - mise
       - mcp
+    container:
+      image: ghcr.io/go42-dev/go42x
+      version: '${{ env.GO42X_MCP_IMAGE_VERSION }}'
+      command: mise
+      args:
+        - mcp
+      workdir: '${{ github.workspace }}'
+      mounts:
+        - '${{ github.workspace }}:${{ github.workspace }}:rw'
+      env:
+        MISE_TRUSTED_CONFIG_PATHS: '${{ github.workspace }}/etc/mise.toml'
     tools:
       - list_commands
       - run_task
@@ -183,7 +221,7 @@ mcp:
     name: github
     url: https://api.githubcopilot.com/mcp/
     headers:
-      Authorization: "Bearer ${GITHUB_PERSONAL_ACCESS_TOKEN}"
+      Authorization: "Bearer ${GITHUB_TOKEN}"
       X-MCP-Toolsets: all
     tools:
       - actions_get

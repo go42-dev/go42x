@@ -1,0 +1,121 @@
+---
+
+name: security-extra
+
+# Vulnerability scan of final artifacts.
+# @see https://trivy.dev/latest/
+# Go call reachability is checked by govulncheck in 130-security.yaml;
+# an image SBOM does not contain the symbol data needed for that analysis.
+
+on:
+  workflow_call:
+    inputs:
+      runs_on:
+        required: true
+        type: string
+      continue_on_error:
+        required: true
+        type: boolean
+      image_reference:
+        required: true
+        type: string
+      platforms:
+        description: Comma-separated Linux platforms to scan.
+        required: true
+        type: string
+      timeout_minutes:
+        required: false
+        type: number
+        default: 15
+
+permissions: {}
+
+jobs:
+  configure:
+    name: scan-inputs
+    runs-on: ${{ inputs.runs_on }}
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.platforms.outputs.matrix }}
+    steps:
+      - name: 'Validate image reference and select platforms'
+        id: platforms
+        env:
+          IMAGE_REFERENCE: ${{ inputs.image_reference }}
+          PLATFORMS: ${{ inputs.platforms }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import sys
+
+          if not re.fullmatch(r"ghcr\.io/[a-z0-9._/-]+@sha256:[0-9a-f]{64}", os.environ["IMAGE_REFERENCE"]):
+              sys.exit("image_reference must be an immutable GHCR digest reference")
+          platforms = [platform.strip() for platform in os.environ["PLATFORMS"].split(",")]
+          supported = {"linux/amd64", "linux/arm64"}
+          if not platforms or any(platform not in supported for platform in platforms):
+              sys.exit("platforms must contain linux/amd64, linux/arm64, or both")
+          if len(platforms) != len(set(platforms)):
+              sys.exit("platforms must not contain duplicates")
+          matrix = {"include": [
+              {"platform": platform, "arch": platform.split("/")[1]} for platform in platforms
+          ]}
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write("matrix=" + json.dumps(matrix, separators=(",", ":")) + "\n")
+          PY
+
+  trivy:
+    needs: configure
+    name: trivy-${{ matrix.arch }}
+    runs-on: ${{ inputs.runs_on }}
+    continue-on-error: ${{ inputs.continue_on_error }}
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.configure.outputs.matrix) }}
+    env:
+      TRIVY_PLATFORM: ${{ matrix.platform }}
+      TRIVY_IMAGE_SRC: remote
+    # ----
+    steps:
+      # Registry authentication from the build job is not shared with this job.
+      - name: 'Log in to GitHub Container Registry'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # Keep a complete, non-blocking inventory in the job log. This includes
+      # every severity and unfixed findings, so the enforcement policy below
+      # does not hide vulnerabilities that currently have no remediation.
+      - name: 'Report all image vulnerabilities'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ inputs.image_reference }}
+          scanners: vuln
+          timeout: 10m
+          format: 'table'
+          version: v0.70.0
+          exit-code: '0'
+          ignore-unfixed: false
+          vuln-type: 'os,library'
+          severity: 'UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL'
+      # Trivy has one severity/fixability policy per invocation. Run it again
+      # to enforce the narrower merge policy while reusing the installation
+      # from the reporting pass above.
+      - name: 'Enforce fixable high and critical image vulnerabilities'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ inputs.image_reference }}
+          scanners: vuln
+          timeout: 10m
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true # fail only when remediation exists
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+          skip-setup-trivy: true

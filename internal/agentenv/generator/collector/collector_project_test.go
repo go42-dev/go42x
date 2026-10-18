@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider"
 	"github.com/go42-dev/go42x/internal/config"
 )
 
@@ -24,7 +25,7 @@ func TestProjectCollector(t *testing.T) {
 			Metadata:                map[string]string{"custom": "value"},
 		},
 		Providers: map[string]config.Provider{"claude": {}, "antigravity": {}},
-		MCP: map[string]config.MCPServer{
+		MCP: map[string]provider.MCPServer{
 			"enabled": {Enabled: true, Command: "go42x"}, "disabled": {Command: "hidden"},
 		},
 	}

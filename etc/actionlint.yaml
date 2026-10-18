@@ -1,0 +1,12 @@
+---
+
+paths:
+  .github/workflows/*.lock.yml:
+    ignore:
+      # GitHub supports queueing, but actionlint 1.7.12 does not recognize this key.
+      # @see https://github.com/rhysd/actionlint/issues/680
+      - '^unexpected key "queue" for "concurrency" section\.'
+  .github/workflows/400-cleanup-registry.yaml:
+    ignore:
+      # Keep the same file-scoped exception for the registry cleanup queue.
+      - '^unexpected key "queue" for "concurrency" section\.'

@@ -1,0 +1,51 @@
+---
+
+name: setup-tools
+description: 'Install mise from project configuration and optionally install Task and selected tools'
+
+inputs:
+  install-task:
+    description: 'Install the pinned Task executable as a CI prerequisite'
+    required: false
+    default: 'false'
+  install-args:
+    description: 'Arguments for mise install; empty installs mise without project tools'
+    required: false
+    default: ''
+  cache:
+    description: 'Enable the mise action tool cache'
+    required: false
+    default: 'true'
+  cache-key-prefix:
+    description: 'Prefix for the mise action tool cache key'
+    required: false
+    default: 'mise-v1'
+
+runs:
+  using: composite
+  steps:
+    - name: 'Read mise version'
+      id: mise-version
+      shell: bash
+      run: |
+        mise_version=$(sed -n 's/^min_version = "\([^"]*\)"$/\1/p' etc/mise.toml)
+        if [[ ! "$mise_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo '::error::etc/mise.toml must define min_version as an exact mise release.'
+          exit 1
+        fi
+        echo "version=$mise_version" >> "$GITHUB_OUTPUT"
+    # -----
+    - name: 'Install mise and selected tools'
+      uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      with:
+        version: ${{ steps.mise-version.outputs.version }}
+        install: ${{ inputs.install-args != '' }}
+        install_args: ${{ inputs.install-args }}
+        cache: ${{ inputs.cache }}
+        cache_key_prefix: ${{ inputs.cache-key-prefix }}
+    # -----
+    - name: 'Install Task'
+      if: inputs.install-task == 'true'
+      uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2.2.0
+      with:
+        version: '3.53.1'

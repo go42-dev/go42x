@@ -19,15 +19,16 @@ import (
 	"github.com/mark3labs/mcp-go/client/transport"
 	"github.com/mark3labs/mcp-go/mcp"
 
-	"github.com/go42-dev/go42x/internal/config"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider"
 	"github.com/go42-dev/go42x/internal/doctor/check"
 )
 
 var doctorEnvName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
+// probeMCP initializes a server and checks its tools without exposing credentials.
 // Probe responses and subprocess logs are intentionally not echoed: servers can
 // include authentication values in errors. Only locally defined messages escape.
-func probeMCP(parent context.Context, server config.MCPServer, timeout time.Duration) check.Result {
+func probeMCP(parent context.Context, server provider.MCPServer, timeout time.Duration) check.Result {
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 	var missing []string
@@ -72,7 +73,7 @@ func probeMCP(parent context.Context, server config.MCPServer, timeout time.Dura
 	var c *client.Client
 	var err error
 	switch server.Transport() {
-	case config.MCPServerTypeStdio:
+	case provider.MCPServerTypeStdio:
 		command := server.Command
 		if strings.ContainsAny(command, "/\\") && !filepath.IsAbs(command) {
 			command = filepath.Join(server.CWD, command)
@@ -89,13 +90,13 @@ func probeMCP(parent context.Context, server config.MCPServer, timeout time.Dura
 				return cmd, nil
 			}))
 		c = client.NewClient(t)
-	case config.MCPServerTypeHTTP:
+	case provider.MCPServerTypeHTTP:
 		c, err = client.NewStreamableHttpClient(
 			url,
 			transport.WithHTTPHeaders(headers),
 			transport.WithHTTPBasicClient(&http.Client{Timeout: timeout}),
 		)
-	case config.MCPServerTypeSSE:
+	case provider.MCPServerTypeSSE:
 		c, err = client.NewSSEMCPClient(
 			url,
 			client.WithHeaders(headers),

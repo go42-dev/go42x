@@ -1,0 +1,309 @@
+---
+
+name: cleanup-registry
+
+# Cleanup GitHub Container Registry.
+# Deletes only old temporary CI images; release and untagged versions are retained.
+
+on:
+  schedule:
+    # Runs daily at midnight UTC.
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+    inputs:
+      retention_days:
+        description: 'Number of days to retain CI images'
+        required: false
+        type: number
+        default: 30
+      keep_versions:
+        description: 'Minimum number of CI versions to keep regardless of age'
+        required: false
+        type: number
+        default: 5
+      dry_run:
+        description: 'Report candidates without deleting them'
+        required: false
+        type: boolean
+        default: true
+      debug:
+        description: 'Enable debug logging'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  SERVICE_NAME: go42x
+  DEFAULT_RETENTION_DAYS: 30
+  DEFAULT_KEEP_VERSIONS: 5
+
+permissions: {}
+
+concurrency:
+  group: cleanup-registry
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  cleanup-registry:
+    name: cleanup-registry
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      packages: write
+      contents: read
+    steps:
+      - name: 'Validate cleanup configuration'
+        id: config
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_RETENTION_DAYS: ${{ inputs.retention_days }}
+          INPUT_KEEP_VERSIONS: ${{ inputs.keep_versions }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+          INPUT_DEBUG: ${{ inputs.debug }}
+          DEFAULT_RETENTION_DAYS: ${{ env.DEFAULT_RETENTION_DAYS }}
+          DEFAULT_KEEP_VERSIONS: ${{ env.DEFAULT_KEEP_VERSIONS }}
+        run: |-
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "schedule" ]; then
+            retention_days=$DEFAULT_RETENTION_DAYS
+            keep_versions=$DEFAULT_KEEP_VERSIONS
+            dry_run=false
+            debug=false
+          else
+            retention_days=$INPUT_RETENTION_DAYS
+            keep_versions=$INPUT_KEEP_VERSIONS
+            dry_run=$INPUT_DRY_RUN
+            debug=$INPUT_DEBUG
+          fi
+
+          if [[ ! "$retention_days" =~ ^[0-9]{1,5}$ ]] || ((10#$retention_days > 36500)); then
+            echo "retention_days must be an integer between 0 and 36500"
+            exit 1
+          fi
+
+          if [[ ! "$keep_versions" =~ ^[0-9]{1,5}$ ]] || ((10#$keep_versions > 10000)); then
+            echo "keep_versions must be an integer between 0 and 10000"
+            exit 1
+          fi
+
+          case "$dry_run" in
+            true|false) ;;
+            *)
+              echo "dry_run must be true or false"
+              exit 1
+              ;;
+          esac
+
+          case "$debug" in
+            true|false) ;;
+            *)
+              echo "debug must be true or false"
+              exit 1
+              ;;
+          esac
+
+          {
+            echo "retention_days=$retention_days"
+            echo "keep_versions=$keep_versions"
+            echo "dry_run=$dry_run"
+            echo "debug=$debug"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: 'Cleanup old CI images'
+        id: cleanup
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          PACKAGE_NAME: ${{ env.SERVICE_NAME }}
+          RETENTION_DAYS: ${{ steps.config.outputs.retention_days }}
+          KEEP_VERSIONS: ${{ steps.config.outputs.keep_versions }}
+          DRY_RUN: ${{ steps.config.outputs.dry_run }}
+          DEBUG_MODE: ${{ steps.config.outputs.debug }}
+        run: |-
+          set -euo pipefail
+
+          readonly CI_TAG_PATTERN='^ci-[1-9][0-9]*-[1-9][0-9]*$'
+          cutoff_date=$(date -u -d "$RETENTION_DAYS days ago" +'%Y-%m-%dT%H:%M:%SZ')
+
+          echo "Package: ghcr.io/$OWNER/$PACKAGE_NAME"
+          echo "CI retention period: $RETENTION_DAYS days"
+          echo "Minimum CI versions to keep: $KEEP_VERSIONS"
+          echo "Cutoff date: $cutoff_date"
+          echo "Dry run: $DRY_RUN"
+
+          if [[ ! "$PACKAGE_NAME" =~ ^[a-z0-9][a-z0-9._-]{0,127}$ ]]; then
+            echo "Refusing invalid package name: $PACKAGE_NAME"
+            exit 1
+          fi
+
+          owner_type=$(gh api "users/$OWNER" --jq '.type')
+          case "$owner_type" in
+            Organization) package_endpoint="orgs/$OWNER/packages/container/$PACKAGE_NAME" ;;
+            User) package_endpoint="users/$OWNER/packages/container/$PACKAGE_NAME" ;;
+            *)
+              echo "Unsupported package owner type: $owner_type"
+              exit 1
+              ;;
+          esac
+
+          all_versions=$(gh api --paginate "$package_endpoint/versions?per_page=100" | jq -s 'add // []')
+          if ! printf '%s' "$all_versions" | jq -e '
+            type == "array" and
+            all(.[];
+              (.id | type) == "number" and
+              (.name | type) == "string" and
+              (.created_at | type) == "string" and
+              (((.created_at | try fromdateiso8601 catch null) | type) == "number") and
+              (.metadata.container.tags | type) == "array" and
+              all(.metadata.container.tags[]; type == "string")
+            ) and
+            (([.[].id] | length) == ([.[].id] | unique | length))
+          ' >/dev/null; then
+            echo "Package version response was incomplete, malformed, or duplicated"
+            exit 1
+          fi
+
+          # Retention and keep-count apply only to tagged versions whose entire
+          # tag set is CI-only. Release, mixed-tag, malformed, and untagged
+          # versions never become candidates.
+          ci_versions=$(printf '%s' "$all_versions" | jq \
+            --arg pattern "$CI_TAG_PATTERN" '
+              [
+                .[] |
+                select(
+                  (.metadata.container.tags | length) > 0 and
+                  all(.metadata.container.tags[]; test($pattern))
+                )
+              ] |
+              sort_by(.created_at, .id) |
+              reverse
+            ')
+          candidates=$(printf '%s' "$ci_versions" | jq \
+            --arg cutoff "$cutoff_date" \
+            --argjson keep "$KEEP_VERSIONS" \
+            '.[$keep:] | map(select(.created_at < $cutoff))')
+
+          version_total=$(printf '%s' "$all_versions" | jq 'length')
+          ci_version_total=$(printf '%s' "$ci_versions" | jq 'length')
+          candidate_count=$(printf '%s' "$candidates" | jq 'length')
+          retained_other_count=$((version_total - ci_version_total))
+          deleted_count=0
+          failure_count=0
+
+          echo "Found $version_total package versions: $ci_version_total CI-only, $retained_other_count protected or untagged"
+          echo "Selected $candidate_count old CI-only versions"
+
+          if [ "$DEBUG_MODE" = "true" ]; then
+            printf '%s' "$candidates" | jq '[.[] | {id, name, created_at, tags: .metadata.container.tags}]'
+          fi
+
+          while IFS= read -r candidate; do
+            [ -z "$candidate" ] && continue
+
+            version_id=$(printf '%s' "$candidate" | jq -r '.id')
+            version_name=$(printf '%s' "$candidate" | jq -r '.name')
+            created_at=$(printf '%s' "$candidate" | jq -r '.created_at')
+            expected_tags=$(printf '%s' "$candidate" | jq -c '.metadata.container.tags | sort | unique')
+            display_tags=$(printf '%s' "$expected_tags" | jq -r 'join(", ")')
+
+            echo "Version $version_id ($version_name), created $created_at, tags: $display_tags"
+
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "[dry run] Would delete version $version_id"
+              continue
+            fi
+
+            if ! current=$(gh api "$package_endpoint/versions/$version_id"); then
+              echo "::error::Could not re-fetch candidate version $version_id"
+              failure_count=$((failure_count + 1))
+              continue
+            fi
+
+            # Revalidate immediately before deletion to narrow the race in
+            # which a candidate is concurrently retagged.
+            if ! printf '%s' "$current" | jq -e \
+              --argjson expected_id "$version_id" \
+              --arg expected_name "$version_name" \
+              --arg expected_created_at "$created_at" \
+              --argjson expected_tags "$expected_tags" \
+              --arg pattern "$CI_TAG_PATTERN" '
+                .id == $expected_id and
+                .name == $expected_name and
+                .created_at == $expected_created_at and
+                (.metadata.container.tags | type) == "array" and
+                (.metadata.container.tags | length) > 0 and
+                ((.metadata.container.tags | sort | unique) == $expected_tags) and
+                all(.metadata.container.tags[]; test($pattern))
+              ' >/dev/null; then
+              echo "::error::Version $version_id changed or is no longer CI-only; refusing deletion"
+              failure_count=$((failure_count + 1))
+              continue
+            fi
+
+            if gh api --method DELETE "$package_endpoint/versions/$version_id" >/dev/null; then
+              echo "Deleted version $version_id"
+              deleted_count=$((deleted_count + 1))
+            else
+              echo "::error::Failed to delete version $version_id"
+              failure_count=$((failure_count + 1))
+            fi
+          done < <(printf '%s' "$candidates" | jq -c '.[]')
+
+          {
+            echo "cutoff_date=$cutoff_date"
+            echo "version_total=$version_total"
+            echo "ci_version_total=$ci_version_total"
+            echo "retained_other_count=$retained_other_count"
+            echo "candidate_count=$candidate_count"
+            echo "deleted_count=$deleted_count"
+            echo "failure_count=$failure_count"
+          } >> "$GITHUB_OUTPUT"
+
+          if [ "$failure_count" -ne 0 ]; then
+            echo "Cleanup completed with $failure_count failure(s)"
+            exit 1
+          fi
+
+      - name: 'Generate job summary'
+        if: always()
+        env:
+          RETENTION_DAYS: ${{ steps.config.outputs.retention_days }}
+          KEEP_VERSIONS: ${{ steps.config.outputs.keep_versions }}
+          DRY_RUN: ${{ steps.config.outputs.dry_run }}
+          CLEANUP_OUTCOME: ${{ steps.cleanup.outcome }}
+          CUTOFF_DATE: ${{ steps.cleanup.outputs.cutoff_date }}
+          VERSION_TOTAL: ${{ steps.cleanup.outputs.version_total }}
+          CI_VERSION_TOTAL: ${{ steps.cleanup.outputs.ci_version_total }}
+          RETAINED_OTHER_COUNT: ${{ steps.cleanup.outputs.retained_other_count }}
+          CANDIDATE_COUNT: ${{ steps.cleanup.outputs.candidate_count }}
+          DELETED_COUNT: ${{ steps.cleanup.outputs.deleted_count }}
+          FAILURE_COUNT: ${{ steps.cleanup.outputs.failure_count }}
+        run: |-
+          case "${DRY_RUN:-}" in
+            true) mode_label='Dry run' ;;
+            false) mode_label='Live' ;;
+            *) mode_label='Not configured' ;;
+          esac
+
+          {
+            echo "# Registry Cleanup Report"
+            echo
+            echo "**Package:** ghcr.io/${{ github.repository_owner }}/${{ env.SERVICE_NAME }}"
+            echo "**Run type:** ${{ github.event_name == 'schedule' && 'Scheduled' || 'Manual' }}"
+            echo "**Mode:** $mode_label"
+            echo "**Outcome:** ${CLEANUP_OUTCOME:-not run}"
+            echo "**Retention period:** ${RETENTION_DAYS:-N/A} days"
+            echo "**Minimum CI versions kept:** ${KEEP_VERSIONS:-N/A}"
+            echo "**Cutoff date:** ${CUTOFF_DATE:-N/A}"
+            echo
+            echo "| Metric | Value |"
+            echo "| --- | ---: |"
+            echo "| All package versions | ${VERSION_TOTAL:-0} |"
+            echo "| CI-only versions | ${CI_VERSION_TOTAL:-0} |"
+            echo "| Protected or untagged versions retained | ${RETAINED_OTHER_COUNT:-0} |"
+            echo "| Deletion candidates | ${CANDIDATE_COUNT:-0} |"
+            echo "| Deleted versions | ${DELETED_COUNT:-0} |"
+            echo "| Failures | ${FAILURE_COUNT:-0} |"
+          } >> "$GITHUB_STEP_SUMMARY"

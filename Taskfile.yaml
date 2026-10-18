@@ -32,7 +32,6 @@ env:
   MISE_DATA_DIR: '{{.ROOT_DIR}}/.tools'
   MISE_CACHE_DIR: '{{.ROOT_DIR}}/.tools/cache'
   MISE_STATE_DIR: '{{.ROOT_DIR}}/.tools/state'
-  MISE_EXEC_AUTO_INSTALL: 'false'
   TASK_TEMP_DIR: '{{.ROOT_DIR}}/.tools/task'
 
 tasks:
@@ -48,13 +47,19 @@ tasks:
     cmds:
       - "task --list --sort none"
 
-  ## x | run go42x
   x:
-    desc: "run go42x"
+    desc: "Run the go42x binary installed by mise"
     summary: "Usage: task x [-- COMMAND ...]"
     interactive: true
     cmds:
       - '"{{.TOOLS_BIN}}/go42x" {{.CLI_ARGS}}'
+
+  x:source:
+    desc: "Run go42x from the current source"
+    summary: "Usage: task x:source [-- COMMAND ...]"
+    interactive: true
+    cmds:
+      - 'go run . {{.CLI_ARGS}}'
 
   tool:
     desc: "Run a command with the project tools"
@@ -73,25 +78,22 @@ tasks:
       - "mise install --locked"
       - "go mod download"
 
-  ## setup:generators | install dependencies for code generation
   setup:generators:
     desc: "install dependencies for code generation"
     cmds:
-      - "mise install --locked task go:go.uber.org/mock/mockgen"
+      - "mise install --locked go:go.uber.org/mock/mockgen"
 
-  ## setup:docs | install dependencies for documentation checks
   setup:docs:
     desc: "Install pinned documentation tools"
     cmds:
-      - "mise install --locked task node markdownlint-cli2"
+      - "mise install --locked node markdownlint-cli2"
 
   setup:release:
     desc: "install release dependencies"
     cmds:
-      - "mise install --locked task goreleaser syft cosign"
+      - "mise install --locked goreleaser syft cosign"
       - "go mod download"
 
-  ## bump | set a mise tool dependency to a version
   bump:
     desc: "Set a mise tool dependency to a version (writes)"
     summary: "Usage: task bump TOOL=go:github.com/go42-dev/go42x VERSION=0.23.0"
@@ -195,6 +197,33 @@ tasks:
       - 'CGO_ENABLED=0 SOURCE_DATE_EPOCH=0 go build -v -mod=readonly -trimpath -buildvcs=false -ldflags {{.LDFLAGS | shellQuote}}
         -o .build/go42x .'
 
+  image:
+    desc: "Build and load the host platform's MCP tools image"
+    summary: "Usage: task image [IMAGE=go42x:dev VERSION=dev]"
+    vars:
+      IMAGE: '{{default "go42x:dev" .IMAGE}}'
+      VERSION: '{{default "dev" .VERSION}}'
+      GO_VERSION:
+        sh: "awk '/^go / {print $2}' go.mod"
+      GOPLS_VERSION:
+        sh: >-
+          sed -n 's/^"go:golang.org\/x\/tools\/gopls" = "\(.*\)"$/\1/p' etc/mise.toml
+      MISE_VERSION:
+        sh: >-
+          sed -n 's/^min_version = "\(.*\)"$/\1/p' etc/mise.toml
+      COMMIT:
+        sh: "git rev-parse HEAD"
+    cmds:
+      - >-
+        docker buildx build --load
+        --build-arg {{printf "GO_VERSION=%s" .GO_VERSION | shellQuote}}
+        --build-arg {{printf "GOPLS_VERSION=%s" .GOPLS_VERSION | shellQuote}}
+        --build-arg {{printf "MISE_VERSION=%s" .MISE_VERSION | shellQuote}}
+        --build-arg {{printf "COMMIT_HASH=%s" .COMMIT | shellQuote}}
+        --build-arg {{printf "RELEASE_TAG=%s" .VERSION | shellQuote}}
+        --build-arg SOURCE_DATE_EPOCH=0
+        --tag {{.IMAGE | shellQuote}} .
+
   generate:
     desc: "generate code for all modules"
     cmds:
@@ -283,7 +312,9 @@ tasks:
       - task: "lint:json"
       - task: "lint:yaml"
       - task: "lint:toml"
+      - task: "lint:docker"
       - task: "lint:actions"
+      - task: "agentic:lint"
       - task: "docs:check"
 
   lint:go:
@@ -320,12 +351,18 @@ tasks:
     cmds:
       - '"{{.TOOLS_BIN}}/gitleaks" git --config etc/gitleaks.toml --no-banner --redact -v'
 
+  lint:docker:
+    desc: "Check Dockerfile with pinned Hadolint"
+    cmds:
+      - '"{{.TOOLS_BIN}}/hadolint" --failure-threshold info Dockerfile'
+
   lint:actions:
-    desc: "check GitHub Actions workflows"
+    desc: "Check all GitHub Actions workflows"
+    summary: "Usage: task lint:actions [-- FILE.yaml ...]."
     preconditions:
       - *file_paths
     cmds:
-      - '"{{.TOOLS_BIN}}/actionlint" -oneline {{.CLI_ARGS}}'
+      - '"{{.TOOLS_BIN}}/actionlint" -config-file etc/actionlint.yaml -oneline {{.CLI_ARGS}}'
 
   lint:yaml:
     desc: "Check plain YAML source formatting, or explicit files (read only)"
@@ -334,7 +371,7 @@ tasks:
       SOURCE_FILES:
         sh: |
           {{if not .CLI_ARGS}}
-          git ls-files --cached --others --exclude-standard -z -- '*.yaml' '*.yml'
+          git ls-files --cached --others --exclude-standard -z -- '*.yaml' '*.yml' ':!:.github/workflows/*.lock.yml'
           {{end}}
     preconditions:
       - *file_paths
@@ -396,7 +433,6 @@ tasks:
           fi
         done
 
-  ## lint:markdown | check documentation Markdown
   lint:markdown:
     desc: "Lint documentation Markdown, or explicit files (read only)"
     summary: "Usage: task lint:markdown [-- FILE.md ...]; defaults to docs/**/*.md."
@@ -415,7 +451,6 @@ tasks:
   # │                Documentation                 │
   # ╰─────────────────────----------------─────────╯
 
-  ## docs:check | validate documentation
   docs:check:
     desc: "Lint documentation Markdown"
     cmds:
@@ -455,3 +490,28 @@ tasks:
       - |-
         export PATH="{{.TOOLS_BIN}}:$PATH"
         goreleaser release --config etc/goreleaser.yaml --clean
+
+  # ╭────────────────────----------------──────────╮
+  # │              Agentic workflows               │
+  # ╰─────────────────────----------------─────────╯
+
+  agentic:lint:
+    desc: "Lint compiled GitHub Agentic Workflows"
+    summary: "Usage: task agentic:lint [-- FILE.lock.yml ...]; defaults to all workflow locks."
+    preconditions:
+      - *file_paths
+    cmds:
+      - 'PATH="{{.TOOLS_BIN}}:$PATH" "{{.TOOLS_BIN}}/gh-aw" lint {{.CLI_ARGS}}'
+
+  agentic:generate:
+    desc: "Generate agent instructions and gh-aw MCP declarations"
+    cmds:
+      - task: x
+        vars:
+          CLI_ARGS: 'agentenv generate --providers=gh-aw'
+
+  agentic:compile:
+    desc: "Generate MCP declarations and compile agentic workflows"
+    cmds:
+      - task: agentic:generate
+      - 'PATH="{{.TOOLS_BIN}}:$PATH" "{{.TOOLS_BIN}}/gh-aw" compile --no-check-update --strict --purge --approve'

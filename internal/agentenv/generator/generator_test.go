@@ -15,6 +15,12 @@ import (
 
 	"github.com/go42-dev/go42x/internal/agentenv/generator/mocks"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/antigravity"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/claude"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/codex"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/copilot"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/crush"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/ghaw"
 	"github.com/go42-dev/go42x/internal/config"
 	"github.com/go42-dev/go42x/internal/fspatch"
 )
@@ -129,8 +135,8 @@ func TestGeneratorContextAndProviderErrors(t *testing.T) {
 	for i, name := range []string{"claude", "antigravity"} {
 		p := mocks.NewMockproviderAccessor(ctrl)
 		p.EXPECT().
-			Prepare(gomock.Any(), gomock.Any(), cfg.Providers[name]).
-			DoAndReturn(func(_ *fspatch.Plan, data map[string]any, _ config.Provider) error {
+			Prepare(gomock.Any(), gomock.Any()).
+			DoAndReturn(func(_ *fspatch.Plan, data map[string]any) error {
 				if data["provider"] != name {
 					t.Errorf("provider context = %v, want %s", data["provider"], name)
 				}
@@ -291,14 +297,15 @@ func TestGenerateMCPConfigurations(t *testing.T) {
 	t.Setenv("GITHUB_ACTIONS", "false")
 	t.Setenv("API_KEY", "test-api-key")
 	t.Setenv("CONTEXT7_API_KEY", "test-context7-key")
-	t.Setenv("GITHUB_PERSONAL_ACCESS_TOKEN", "test-github-token")
+	t.Setenv("GITHUB_TOKEN", "test-github-token")
 	templateDir := filepath.Join("..", "..", "..", "assets", "agentenv")
 	cfg, err := config.LoadConfig(filepath.Join(templateDir, "go42x.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	// This fixture exercises the JSON clients, including legacy SSE transport.
-	delete(cfg.Providers, provider.Codex)
+	delete(cfg.Providers, codex.Name)
+	delete(cfg.Providers, ghaw.Name)
 	enabled := true
 	for name, p := range cfg.Providers {
 		p.Enabled = &enabled
@@ -308,7 +315,7 @@ func TestGenerateMCPConfigurations(t *testing.T) {
 		s.Enabled = true
 		cfg.MCP[name] = s
 	}
-	cfg.MCP["sse"] = config.MCPServer{
+	cfg.MCP["sse"] = provider.MCPServer{
 		Enabled: true,
 		Name:    "sse",
 		Type:    "sse",
@@ -316,7 +323,7 @@ func TestGenerateMCPConfigurations(t *testing.T) {
 		Tools:   []string{"readItem"},
 		Headers: map[string]string{"Authorization": "Bearer ${API_KEY}"},
 	}
-	cfg.MCP["local"] = config.MCPServer{
+	cfg.MCP["local"] = provider.MCPServer{
 		Enabled: true,
 		Name:    "local",
 		Command: "example",
@@ -324,7 +331,11 @@ func TestGenerateMCPConfigurations(t *testing.T) {
 		Tools:   []string{"tool.v2"},
 		Env:     map[string]string{"TOKEN": "${TOKEN:-fallback}", "LITERAL": "true", "READY": "$COPILOT_MCP_READY"},
 	}
-	cfg.MCP["disabled"] = config.MCPServer{Name: "disabled", Command: "example", Tools: []string{"disabled_tool"}}
+	cfg.MCP["disabled"] = provider.MCPServer{
+		Name:    "disabled",
+		Command: "example",
+		Tools:   []string{"disabled_tool"},
+	}
 	original, err := json.Marshal(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -334,18 +345,18 @@ func TestGenerateMCPConfigurations(t *testing.T) {
 	if err := g.Generate(t.Context(), false); err != nil {
 		t.Fatal(err)
 	}
-	claude := readJSON[provider.ClaudeSettings](t, out, ".claude/settings.local.json")
-	claudeMCP := readJSON[provider.ClaudeMCPConfig](t, out, ".mcp.json")
-	antigravity := readJSON[provider.AntigravityMCPConfig](t, out, ".agents/plugins/project-tools/mcp_config.json")
-	manifest := readJSON[provider.AntigravityPluginManifest](t, out, ".agents/plugins/project-tools/plugin.json")
+	claudeSettings := readJSON[claude.LocalSettings](t, out, ".claude/settings.local.json")
+	claudeMCP := readJSON[claude.MCPConfig](t, out, ".mcp.json")
+	antigravityConfig := readJSON[antigravity.MCPConfig](t, out, ".agents/plugins/project-tools/mcp_config.json")
+	manifest := readJSON[antigravity.PluginManifest](t, out, ".agents/plugins/project-tools/plugin.json")
 	if manifest.Name != "project-tools" || manifest.Schema != "https://antigravity.google/schemas/v1/plugin.json" ||
 		manifest.Description == "" {
 		t.Fatalf("invalid Antigravity plugin manifest: %+v", manifest)
 	}
-	crush := readJSON[provider.CrushConfig](t, out, ".crush.json")
-	copilot := readJSON[provider.CopilotMCPConfig](t, out, ".mcp.json")
-	if len(claudeMCP.MCPServers) != 9 || len(antigravity.MCPServers) != 9 || len(copilot.MCPServers) != 9 ||
-		len(crush.MCP) != 9 {
+	crushConfig := readJSON[crush.Config](t, out, ".crush.json")
+	copilotConfig := readJSON[copilot.MCPConfig](t, out, ".mcp.json")
+	if len(claudeMCP.MCPServers) != 9 || len(antigravityConfig.MCPServers) != 9 || len(copilotConfig.MCPServers) != 9 ||
+		len(crushConfig.MCP) != 9 {
 		t.Fatal("enabled server set does not match generated configurations")
 	}
 	for name, s := range cfg.MCP {
@@ -355,56 +366,57 @@ func TestGenerateMCPConfigurations(t *testing.T) {
 		if claudeMCP.MCPServers[name].Type != s.Transport() {
 			t.Errorf("Claude transport for %s", name)
 		}
-		if copilot.MCPServers[name].Type != s.Transport() {
+		if copilotConfig.MCPServers[name].Type != s.Transport() {
 			t.Errorf("Copilot transport for %s", name)
 		}
-		if !slices.Equal(copilot.MCPServers[name].Tools, []string{"*"}) {
+		if !slices.Equal(copilotConfig.MCPServers[name].Tools, []string{"*"}) {
 			t.Errorf("Copilot must make all tools available for %s", name)
 		}
-		if _, ok := antigravity.MCPServers[name]; !ok || !slices.Contains(claude.EnabledMCPServers, name) {
+		if _, ok := antigravityConfig.MCPServers[name]; !ok ||
+			!slices.Contains(claudeSettings.EnabledMCPServers, name) {
 			t.Errorf("missing enabled server %s", name)
 		}
 		for _, tool := range s.Tools {
-			if !slices.Contains(claude.Permissions.Allow, "mcp__"+name+"__"+tool) {
+			if !slices.Contains(claudeSettings.Permissions.Allow, "mcp__"+name+"__"+tool) {
 				t.Errorf("Claude permission missing for %s/%s", name, tool)
 			}
-			if !slices.Contains(crush.Permissions.AllowedTools, "mcp_"+name+"_"+tool) {
+			if !slices.Contains(crushConfig.Permissions.AllowedTools, "mcp_"+name+"_"+tool) {
 				t.Errorf("Crush permission missing for %s/%s", name, tool)
 			}
 		}
 	}
-	if _, ok := crush.MCP["gopls"]; !ok {
+	if _, ok := crushConfig.MCP["gopls"]; !ok {
 		t.Error("Crush gopls MCP server missing")
 	}
-	if crush.LSP["go"].Command != "gopls" {
+	if crushConfig.LSP["go"].Command != "gopls" {
 		t.Error("Crush Go LSP missing")
 	}
-	if antigravity.MCPServers["jira"].ServerURL != "https://mcp.atlassian.com/v2/mcp" {
+	if antigravityConfig.MCPServers["jira"].ServerURL != "https://mcp.atlassian.com/v2/mcp" {
 		t.Error("Antigravity HTTP endpoint must use serverUrl")
 	}
-	if antigravity.MCPServers["sse"].ServerURL != "https://example.com/sse" {
+	if antigravityConfig.MCPServers["sse"].ServerURL != "https://example.com/sse" {
 		t.Error("Antigravity SSE endpoint must use serverUrl")
 	}
-	if antigravity.MCPServers["sse"].Headers["Authorization"] != "Bearer test-api-key" {
+	if antigravityConfig.MCPServers["sse"].Headers["Authorization"] != "Bearer test-api-key" {
 		t.Error("Antigravity SSE header was not resolved")
 	}
-	if antigravity.MCPServers["github"].Headers["Authorization"] != "Bearer test-github-token" ||
-		antigravity.MCPServers["github"].Headers["X-MCP-Toolsets"] != "all" {
+	if antigravityConfig.MCPServers["github"].Headers["Authorization"] != "Bearer test-github-token" ||
+		antigravityConfig.MCPServers["github"].Headers["X-MCP-Toolsets"] != "all" {
 		t.Error("Antigravity GitHub headers were not resolved")
 	}
-	if copilot.MCPServers["sse"].Headers["Authorization"] != "Bearer ${API_KEY}" {
+	if copilotConfig.MCPServers["sse"].Headers["Authorization"] != "Bearer ${API_KEY}" {
 		t.Error("Copilot header reference changed")
 	}
-	if copilot.MCPServers["github"].Headers["Authorization"] != "Bearer ${GITHUB_PERSONAL_ACCESS_TOKEN}" {
+	if copilotConfig.MCPServers["github"].Headers["Authorization"] != "Bearer ${GITHUB_TOKEN}" {
 		t.Error("Copilot GitHub secret reference changed")
 	}
-	local := copilot.MCPServers["local"]
+	local := copilotConfig.MCPServers["local"]
 	if local.Env["TOKEN"] != "${TOKEN:-fallback}" || local.Env["LITERAL"] != "true" ||
 		local.Env["READY"] != "$COPILOT_MCP_READY" ||
 		local.Args[0] != "--token=$TOKEN" {
 		t.Fatalf("Copilot environment references changed = %+v", local)
 	}
-	antigravityLocal := antigravity.MCPServers["local"]
+	antigravityLocal := antigravityConfig.MCPServers["local"]
 	if antigravityLocal.Command != "example" || antigravityLocal.ServerURL != "" ||
 		!reflect.DeepEqual(antigravityLocal.Env, cfg.MCP["local"].Env) ||
 		!slices.Equal(antigravityLocal.Args, cfg.MCP["local"].Args) {

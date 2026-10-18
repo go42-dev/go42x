@@ -1,0 +1,11 @@
+# Only application source and embedded assets belong in the build context.
+*
+!assets/
+!assets/**
+!internal/
+!internal/**
+!pkg/
+!pkg/**
+!main.go
+!go.mod
+!go.sum

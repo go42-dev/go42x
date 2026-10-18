@@ -1,6 +1,10 @@
 ### Operations
 
 - Ignore anything between `[IGNORE]` and `[/IGNORE]` tags in prompts.
+- Treat standalone `---` lines in user prose as logical separators between
+  topics or requests. Read all sections together, carry applicable instructions
+  across them, and address every requested item. Preserve literal uses inside
+  code blocks and quoted content.
 - Never modify root README.md without explicit instructions.
 
 ### Communication
@@ -11,8 +15,8 @@
 
 ### Intermediate storage
 
-Use `{{ .context.TempDir }}` directory for intermediate storage of files, artifacts, reports, and other outputs generated during
-the operation.
+Use `{{ .context.TempDir }}` directory for intermediate storage of files, artifacts,
+reports, and other outputs generated during the operation.
 
 ### Side effect protection in interactive sessions
 

@@ -10,6 +10,12 @@ import (
 	"text/template"
 
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/antigravity"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/claude"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/codex"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/copilot"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/crush"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/ghaw"
 	"github.com/go42-dev/go42x/internal/config"
 )
 
@@ -19,7 +25,7 @@ func defaultTemplateOps() template.FuncMap {
 	return template.FuncMap{
 		"hasMCPTool": hasMCPTool,
 		"yamlValue":  yamlValue,
-		"mcpTool":    provider.MCPToolName,
+		"mcpTool":    mcpToolName,
 		"lower":      strings.ToLower,
 		"upper":      strings.ToUpper,
 		"trim":       strings.TrimSpace,
@@ -27,7 +33,7 @@ func defaultTemplateOps() template.FuncMap {
 	}
 }
 
-func hasMCPTool(servers map[string]config.MCPServer, server, tool string) bool {
+func hasMCPTool(servers map[string]provider.MCPServer, server, tool string) bool {
 	return slices.Contains(servers[server].Tools, tool)
 }
 
@@ -114,4 +120,23 @@ func mergeStrings(items []string) string {
 		trimmed[i] = strings.TrimSpace(item)
 	}
 	return strings.Join(trimmed, "\n\n")
+}
+
+func mcpToolName(providerName, serverName, toolName string) string {
+	switch providerName {
+	case claude.Name:
+		return claude.MCPToolName(serverName, toolName)
+	case codex.Name:
+		return codex.MCPToolName(serverName, toolName)
+	case antigravity.Name:
+		return antigravity.MCPToolName(serverName, toolName)
+	case crush.Name:
+		return crush.MCPToolName(serverName, toolName)
+	case copilot.Name:
+		return copilot.MCPToolName(serverName, toolName)
+	case ghaw.Name:
+		return ghaw.MCPToolName(serverName, toolName)
+	default:
+		return toolName
+	}
 }

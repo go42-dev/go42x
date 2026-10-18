@@ -5,11 +5,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/claude"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/codex"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/ghaw"
 )
 
 func validConfig() *Config {
@@ -20,9 +24,49 @@ func validConfig() *Config {
 		Providers: map[string]Provider{
 			"claude": {},
 		},
-		MCP: map[string]MCPServer{
+		MCP: map[string]provider.MCPServer{
 			"example": {Name: "example", Command: "example", Tools: []string{"search", "getIssue", "tool.v2-test"}},
 		},
+	}
+}
+
+func TestMCPContainerValidation(t *testing.T) {
+	container := provider.MCPContainer{
+		Image:   "go42x:test",
+		Command: "go42x",
+		Args:    []string{"mcp"},
+	}
+	for _, tt := range []struct {
+		name, provider, transport string
+		container                 *provider.MCPContainer
+		want                      string
+	}{
+		{"valid", "gh-aw", provider.MCPServerTypeStdio, &container, ""},
+		{"local provider", "codex", provider.MCPServerTypeStdio, &container, ""},
+		{"no container", "gh-aw", provider.MCPServerTypeStdio, nil, ""},
+		{"remote server", "gh-aw", provider.MCPServerTypeHTTP, &container, "only supported for stdio"},
+		{"SSE server", "gh-aw", provider.MCPServerTypeSSE, &container, "only supported for stdio"},
+		{"missing image", "gh-aw", provider.MCPServerTypeStdio, &provider.MCPContainer{Command: "go42x"}, "image and command are required"},
+		{"missing command", "gh-aw", provider.MCPServerTypeStdio, &provider.MCPContainer{Image: "go42x:test"}, "image and command are required"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := validConfig()
+			cfg.Providers = map[string]Provider{
+				tt.provider: {},
+			}
+			server := cfg.MCP["example"]
+			server.Type = tt.transport
+			server.Container = tt.container
+			server.URL = "https://example.com/mcp"
+			cfg.MCP["example"] = server
+			err := cfg.Validate()
+			if tt.want == "" && err != nil {
+				t.Fatal(err)
+			}
+			if tt.want != "" && (err == nil || !strings.Contains(err.Error(), tt.want)) {
+				t.Fatalf("Validate() = %v, want %q", err, tt.want)
+			}
+		})
 	}
 }
 
@@ -92,12 +136,6 @@ func TestValidate(t *testing.T) {
 		{"malformed version", func(c *Config) { c.Version = "banana" }, "unsupported configuration version"},
 		{"missing project", func(c *Config) { c.Project.Name = "" }, "project name is required"},
 		{"missing providers", func(c *Config) { c.Providers = nil }, "at least one provider"},
-		{"unknown provider", func(c *Config) { c.Providers = map[string]Provider{"typo": {}} }, "unknown provider"},
-		{
-			"retired provider",
-			func(c *Config) { c.Providers = map[string]Provider{"gemini": {}} },
-			"unknown provider \"gemini\"",
-		},
 		{
 			"missing template",
 			func(c *Config) { c.Context.Template = "" },
@@ -105,7 +143,7 @@ func TestValidate(t *testing.T) {
 		},
 		{
 			"missing server name",
-			func(c *Config) { c.MCP["example"] = MCPServer{Command: "example"} },
+			func(c *Config) { c.MCP["example"] = provider.MCPServer{Command: "example"} },
 			"name is required",
 		},
 	}
@@ -131,56 +169,65 @@ func TestValidate(t *testing.T) {
 	}
 }
 
-func TestParseProviders(t *testing.T) {
-	for _, tt := range []struct {
-		value   string
-		want    []string
-		invalid bool
-	}{
-		{"", []string{}, false},
-		{" \t ", []string{}, false},
-		{"codex", []string{"codex"}, false},
-		{" codex, antigravity ", []string{"codex", "antigravity"}, false},
-		{"codex,", nil, true},
-		{",codex", nil, true},
-		{"codex,,claude", nil, true},
-		{"codex,codex", nil, true},
-		{"Codex", nil, true},
-		{"typo", nil, true},
-		{"gemini", nil, true},
-	} {
-		t.Run(tt.value, func(t *testing.T) {
-			got, err := ParseProviders(tt.value)
-			if (err != nil) != tt.invalid || !reflect.DeepEqual(got, tt.want) {
-				t.Fatalf("ParseProviders(%q) = %#v, %v; want %#v, invalid=%v", tt.value, got, err, tt.want, tt.invalid)
-			}
-		})
-	}
-}
-
 func TestValidateMCPServers(t *testing.T) {
 	for _, tt := range []struct {
 		name   string
-		server MCPServer
+		server provider.MCPServer
 		want   string
 	}{
-		{"implicit stdio", MCPServer{Command: "go42x"}, ""},
-		{"explicit stdio", MCPServer{Type: "stdio", Command: "go42x"}, ""},
-		{"http", MCPServer{Type: "http", URL: "https://example.com/mcp"}, ""},
-		{"sse", MCPServer{Type: "sse", URL: "http://localhost:9000/sse"}, ""},
-		{"missing command", MCPServer{}, "command is required"},
-		{"blank command", MCPServer{Command: "  "}, "command is required"},
-		{"missing URL", MCPServer{Type: "http"}, "valid HTTP(S) URL"},
-		{"relative URL", MCPServer{Type: "sse", URL: "/sse"}, "valid HTTP(S) URL"},
-		{"wrong URL scheme", MCPServer{Type: "http", URL: "file:///tmp/mcp"}, "valid HTTP(S) URL"},
-		{"malformed URL", MCPServer{Type: "http", URL: "https://%"}, "valid HTTP(S) URL"},
-		{"unknown transport", MCPServer{Type: "websocket"}, "invalid type"},
-		{"qualified name", MCPServer{Command: "example", Tools: []string{"mcp__example__search"}}, "raw MCP tool name"},
-		{"empty tool", MCPServer{Command: "example", Tools: []string{""}}, "invalid tool"},
-		{"tool whitespace", MCPServer{Command: "example", Tools: []string{"get issue"}}, "invalid tool"},
-		{"long tool", MCPServer{Command: "example", Tools: []string{strings.Repeat("a", 129)}}, "invalid tool"},
-		{"duplicate tool", MCPServer{Command: "example", Tools: []string{"search", "search"}}, "duplicate tool"},
-		{"case sensitive names", MCPServer{Command: "example", Tools: []string{"search", "Search"}}, ""},
+		{"implicit stdio", provider.MCPServer{Command: "go42x"}, ""},
+		{"explicit stdio", provider.MCPServer{
+			Type:    "stdio",
+			Command: "go42x",
+		}, ""},
+		{"http", provider.MCPServer{
+			Type: "http",
+			URL:  "https://example.com/mcp",
+		}, ""},
+		{"sse", provider.MCPServer{
+			Type: "sse",
+			URL:  "http://localhost:9000/sse",
+		}, ""},
+		{"missing command", provider.MCPServer{}, "command is required"},
+		{"blank command", provider.MCPServer{Command: "  "}, "command is required"},
+		{"missing URL", provider.MCPServer{Type: "http"}, "valid HTTP(S) URL"},
+		{"relative URL", provider.MCPServer{
+			Type: "sse",
+			URL:  "/sse",
+		}, "valid HTTP(S) URL"},
+		{"wrong URL scheme", provider.MCPServer{
+			Type: "http",
+			URL:  "file:///tmp/mcp",
+		}, "valid HTTP(S) URL"},
+		{"malformed URL", provider.MCPServer{
+			Type: "http",
+			URL:  "https://%",
+		}, "valid HTTP(S) URL"},
+		{"unknown transport", provider.MCPServer{Type: "websocket"}, "invalid type"},
+		{"qualified name", provider.MCPServer{
+			Command: "example",
+			Tools:   []string{"mcp__example__search"},
+		}, "raw MCP tool name"},
+		{"empty tool", provider.MCPServer{
+			Command: "example",
+			Tools:   []string{""},
+		}, "invalid tool"},
+		{"tool whitespace", provider.MCPServer{
+			Command: "example",
+			Tools:   []string{"get issue"},
+		}, "invalid tool"},
+		{"long tool", provider.MCPServer{
+			Command: "example",
+			Tools:   []string{strings.Repeat("a", 129)},
+		}, "invalid tool"},
+		{"duplicate tool", provider.MCPServer{
+			Command: "example",
+			Tools:   []string{"search", "search"},
+		}, "duplicate tool"},
+		{"case sensitive names", provider.MCPServer{
+			Command: "example",
+			Tools:   []string{"search", "Search"},
+		}, ""},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := validConfig()
@@ -199,7 +246,7 @@ func TestValidateMCPServers(t *testing.T) {
 			}
 		})
 	}
-	if got := (MCPServer{}).Transport(); got != "stdio" {
+	if got := (provider.MCPServer{}).Transport(); got != "stdio" {
 		t.Fatalf("default transport = %q", got)
 	}
 }
@@ -280,7 +327,7 @@ func TestDefaultConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cfg.Providers) != 5 || len(cfg.MCP) != 7 {
+	if len(cfg.Providers) != 6 || len(cfg.MCP) != 7 {
 		t.Fatalf("default providers/servers = %d/%d", len(cfg.Providers), len(cfg.MCP))
 	}
 	paths := []string{cfg.Context.Template, cfg.Context.ChunksDir}
@@ -332,90 +379,6 @@ func TestLoadConfigRejectsRemovedContextDirectories(t *testing.T) {
 			}
 			if _, err := LoadConfig(path); err == nil || !strings.Contains(err.Error(), field) {
 				t.Errorf("LoadConfig() = %v, want rejection of %s", err, field)
-			}
-		})
-	}
-}
-
-func TestLoadConfigValidation(t *testing.T) {
-	const base = `version: "1.0"
-project: {name: example}
-context: {template: agents.tpl.md}
-`
-	for _, tt := range []struct {
-		name, content string
-		wantErr       bool
-	}{
-		{"provider enabled by default", "providers: {codex: {}}", false},
-		{"disabled provider", "providers: {codex: {enabled: false}}", false},
-		{"missing providers", "", true},
-		{"empty providers", "providers: {}", true},
-		{"unknown provider", "providers: {unknown: {}}", true},
-		{"retired Gemini provider", "providers: {gemini: {}}", true},
-		{"Antigravity provider", "providers: {antigravity: {}}", false},
-		{"disabled Antigravity", "providers: {antigravity: {enabled: false}}", false},
-		{"Antigravity legacy tool approvals", "providers: {antigravity: {auto-approve-tools: []}}", true},
-		{"Antigravity approval policy", "providers: {antigravity: {approval-policy: never}}", true},
-		{"Antigravity MCP approvals", "providers: {antigravity: {mcp-approval: auto}}", true},
-		{"unsupported provider option", "providers: {copilot: {approval-policy: never}}", true},
-		{"invalid approval policy", "providers: {codex: {approval-policy: invalid}}", true},
-		{
-			"raw MCP tool names",
-			`providers: {codex: {}}
-mcp: {server: {name: server, command: go42x, tools: [search, tool.v2-test, find_mcp__server]}}`,
-			false,
-		},
-		{
-			"qualified MCP tool name",
-			`providers: {codex: {}}
-mcp: {server: {name: server, command: go42x, tools: [mcp__server__search]}}`,
-			true,
-		},
-		{
-			"cwd containing NUL",
-			`providers: {codex: {}}
-mcp: {server: {name: server, command: go42x, cwd: "src\0"}}`,
-			true,
-		},
-		{
-			"cwd containing environment variable",
-			`providers: {codex: {}}
-mcp: {server: {name: server, command: go42x, cwd: '${PROJECT_DIR}/src'}}`,
-			true,
-		},
-		{
-			"cwd containing home expansion",
-			`providers: {codex: {}}
-mcp: {server: {name: server, command: go42x, cwd: '~/src'}}`,
-			true,
-		},
-		{
-			"empty cwd",
-			`providers: {codex: {}}
-mcp: {server: {name: server, command: go42x, cwd: ''}}`,
-			false,
-		},
-		{
-			"cwd with implicitly enabled claude",
-			`providers: {claude: {}}
-mcp: {server: {enabled: true, name: server, command: go42x, cwd: src}}`,
-			true,
-		},
-		{
-			"cwd with disabled claude",
-			`providers: {claude: {enabled: false}, codex: {}}
-mcp: {server: {enabled: true, name: server, command: go42x, cwd: src}}`,
-			false,
-		},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			data := []byte(base + tt.content)
-			path := filepath.Join(t.TempDir(), "go42x.yaml")
-			if err := os.WriteFile(path, data, 0600); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := LoadConfig(path); (err != nil) != tt.wantErr {
-				t.Errorf("LoadConfig() = %v, want error %v", err, tt.wantErr)
 			}
 		})
 	}
@@ -495,7 +458,7 @@ func TestLoadConfigProviderEnabled(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "go42x.yaml")
 			data := "version: '1.0'\nproject: {name: example}\ncontext: {template: agents.tpl.md}\nproviders:\n"
-			for _, name := range []string{"claude", "codex", "antigravity", "crush", "copilot"} {
+			for _, name := range []string{"claude", "codex", "antigravity", "crush", "copilot", "gh-aw"} {
 				data += "  " + name + ": " + tt.entry + "\n"
 			}
 			if err := os.WriteFile(path, []byte(data), 0600); err != nil {
@@ -518,9 +481,115 @@ func TestLoadConfigProviderEnabled(t *testing.T) {
 	}
 }
 
+func validProviderConfig() *Config {
+	return &Config{
+		Version: "1.0",
+		Project: Project{Name: "example"},
+		Context: Context{Template: "agents.tpl.md"},
+		Providers: map[string]Provider{
+			claude.Name: {},
+		},
+		MCP: map[string]provider.MCPServer{
+			"example": {
+				Name:    "example",
+				Command: "example",
+				Tools:   []string{"search", "getIssue", "tool.v2-test"},
+			},
+		},
+	}
+}
+
+func TestValidateLoadedConfig(t *testing.T) {
+	const base = `version: "1.0"
+project: {name: example}
+context: {template: agents.tpl.md}
+`
+	for _, tt := range []struct {
+		name, content string
+		wantErr       bool
+	}{
+		{"provider enabled by default", "providers: {codex: {}}", false},
+		{"disabled provider", "providers: {codex: {enabled: false}}", false},
+		{"missing providers", "", true},
+		{"empty providers", "providers: {}", true},
+		{"unknown provider", "providers: {unknown: {}}", true},
+		{"retired Gemini provider", "providers: {gemini: {}}", true},
+		{"Antigravity provider", "providers: {antigravity: {}}", false},
+		{"disabled Antigravity", "providers: {antigravity: {enabled: false}}", false},
+		{"Antigravity legacy tool approvals", "providers: {antigravity: {auto-approve-tools: []}}", true},
+		{"Antigravity approval policy", "providers: {antigravity: {approval-policy: never}}", true},
+		{"Antigravity MCP approvals", "providers: {antigravity: {mcp-approval: auto}}", true},
+		{"unsupported provider option", "providers: {copilot: {approval-policy: never}}", true},
+		{"unsupported agents", "providers: {codex: {agents: []}}", true},
+		{"blank approved tool", "providers: {claude: {auto-approve-tools: [' ']}}", true},
+		{"invalid approval policy", "providers: {codex: {approval-policy: invalid}}", true},
+		{"invalid MCP approval", "providers: {codex: {mcp-approval: invalid}}", true},
+		{
+			"raw MCP tool names",
+			`providers: {codex: {}}
+mcp: {server: {name: server, command: go42x, tools: [search, tool.v2-test, find_mcp__server]}}`,
+			false,
+		},
+		{
+			"qualified MCP tool name",
+			`providers: {codex: {}}
+mcp: {server: {name: server, command: go42x, tools: [mcp__server__search]}}`,
+			true,
+		},
+		{
+			"cwd containing NUL",
+			`providers: {codex: {}}
+mcp: {server: {name: server, command: go42x, cwd: "src\0"}}`,
+			true,
+		},
+		{
+			"cwd containing environment variable",
+			`providers: {codex: {}}
+mcp: {server: {name: server, command: go42x, cwd: '${PROJECT_DIR}/src'}}`,
+			true,
+		},
+		{
+			"cwd containing home expansion",
+			`providers: {codex: {}}
+mcp: {server: {name: server, command: go42x, cwd: '~/src'}}`,
+			true,
+		},
+		{
+			"empty cwd",
+			`providers: {codex: {}}
+mcp: {server: {name: server, command: go42x, cwd: ''}}`,
+			false,
+		},
+		{
+			"cwd with implicitly enabled claude",
+			`providers: {claude: {}}
+mcp: {server: {enabled: true, name: server, command: go42x, cwd: src}}`,
+			true,
+		},
+		{
+			"cwd with disabled claude",
+			`providers: {claude: {enabled: false}, codex: {}}
+mcp: {server: {enabled: true, name: server, command: go42x, cwd: src}}`,
+			false,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			data := []byte(base + tt.content)
+			path := filepath.Join(t.TempDir(), "go42x.yaml")
+			if err := os.WriteFile(path, data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := LoadConfig(path)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("LoadConfig() = %v, want error %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestDisabledProvidersAllowMCPCWD(t *testing.T) {
 	enabled, disabled := true, false
-	for _, name := range []string{"claude", "crush"} {
+	for _, name := range []string{"claude", "crush", ghaw.Name} {
 		for _, tt := range []struct {
 			name    string
 			enabled *bool
@@ -531,12 +600,17 @@ func TestDisabledProvidersAllowMCPCWD(t *testing.T) {
 			{"disabled", &disabled, false},
 		} {
 			t.Run(name+"/"+tt.name, func(t *testing.T) {
-				cfg := validConfig()
+				cfg := validProviderConfig()
 				cfg.Providers = map[string]Provider{
 					"copilot": {},
 					name:      {Enabled: tt.enabled},
 				}
-				cfg.MCP["example"] = MCPServer{Enabled: true, Name: "example", Command: "example", CWD: "src"}
+				cfg.MCP["example"] = provider.MCPServer{
+					Enabled: true,
+					Name:    "example",
+					Command: "example",
+					CWD:     "src",
+				}
 				err := cfg.Validate()
 				if tt.wantErr {
 					if err == nil || !strings.Contains(err.Error(), "provider "+name+" does not support cwd") {
@@ -547,5 +621,59 @@ func TestDisabledProvidersAllowMCPCWD(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestProjectConfigValidationAfterProviderSelection(t *testing.T) {
+	const base = `version: "1.0"
+project: {name: example}
+context: {template: agents.tpl.md}
+providers:
+  claude: {}
+  codex: {}
+mcp:
+  server: {enabled: true, name: server, command: example, cwd: src}
+`
+	for _, tt := range []struct {
+		name, local, want string
+		selection         []string
+	}{
+		{
+			name: "configured incompatible provider",
+			want: "provider claude does not support cwd",
+		},
+		{
+			name:      "exact selection disables incompatible provider",
+			selection: []string{codex.Name},
+		},
+		{
+			name:  "local override disables incompatible provider",
+			local: "providers: {claude: {enabled: false}}",
+		},
+		{
+			name:      "unselected unknown provider is rejected",
+			local:     "providers: {typo: {enabled: false}}",
+			selection: []string{codex.Name},
+			want:      "unknown provider",
+		},
+		{
+			name:      "invalid effective provider option",
+			local:     "providers: {codex: {approval-policy: invalid}}",
+			selection: []string{codex.Name},
+			want:      "invalid approval-policy",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ParseProjectConfig([]byte(base), []byte(tt.local), tt.selection)
+			if len(tt.want) == 0 {
+				if err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("ParseProjectConfig() = %v, want %q", err, tt.want)
+			}
+		})
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"slices"
 
 	"github.com/go42-dev/go42x/internal/agentenv/generator"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider"
 	"github.com/go42-dev/go42x/internal/config"
 	"github.com/go42-dev/go42x/internal/doctor/check"
 )
@@ -17,10 +18,11 @@ import (
 // DoctorChecks supplies agent-environment diagnostics for registration with doctor.Service.
 // Configuration is loaded once per run and shared by dependent checks.
 func (s *Service) DoctorChecks(root string) []check.Check {
-	checks := []check.Check{{ID: "agentenv.config", Run: func(ctx context.Context) check.Result {
+	checks := []check.Check{{ID: "agentenv.config", Run: func(_ context.Context) check.Result {
 		var err error
 		s.config, err = config.LoadProjectConfig(filepath.Join(root, agentEnvDir, configFile), s.settings.Providers)
 		if err != nil {
+			s.config = nil
 			message := "Configuration cannot be read or validated"
 			if errors.Is(err, os.ErrNotExist) {
 				message = "Configuration is missing"
@@ -56,7 +58,7 @@ func (s *Service) DoctorChecks(root string) []check.Check {
 			result.Evidence = append(result.Evidence, change.Operation+" "+change.Path)
 		}
 		return result
-	}}, {ID: "agentenv.providers", DependsOn: []string{"agentenv.config"}, Run: func(ctx context.Context) check.Result {
+	}}, {ID: "agentenv.providers", DependsOn: []string{"agentenv.config"}, Run: func(_ context.Context) check.Result {
 		var enabled []string
 		for _, name := range slices.Sorted(maps.Keys(s.config.Providers)) {
 			if s.config.ProviderEnabled(name) {
@@ -78,7 +80,7 @@ func (s *Service) DoctorChecks(root string) []check.Check {
 
 // MCPServers returns the definitions from the latest successful configuration
 // check, or nil when configuration has not been loaded or is invalid.
-func (s *Service) MCPServers() map[string]config.MCPServer {
+func (s *Service) MCPServers() map[string]provider.MCPServer {
 	if s.config == nil {
 		return nil
 	}

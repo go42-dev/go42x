@@ -17,6 +17,9 @@ func TestTemplateProcessing(t *testing.T) {
 	for _, tt := range []struct{ name, template, want string }{
 		{"context", "Hello {{ .name }}", "Hello World"},
 		{"functions", `{{ lower .name }} {{ upper "go" }} {{ trim " x " }} {{ join .items "," }}`, "world GO x a,b"},
+		{"MCP unknown", `{{ mcpTool "unknown" "example" "tool" }}`, "tool"},
+		{"MCP Codex", `{{ mcpTool "codex" "go42x" "kwb_search" }}`, "mcp__go42x__kwb_search"},
+		{"MCP gh-aw", `{{ mcpTool "gh-aw" "go42x" "kwb_search" }}`, "kwb_search"},
 		{"MCP Claude", `{{ mcpTool "claude" "go42x" "kwb_search" }}`, "mcp__go42x__kwb_search"},
 		{"MCP Antigravity", `{{ mcpTool "antigravity" "go42x" "kwb_search" }}`, "go42x/kwb_search"},
 		{"MCP Crush", `{{ mcpTool "crush" "go42x" "kwb_search" }}`, "mcp_go42x_kwb_search"},
@@ -71,7 +74,7 @@ func TestContextMapsAreIndependent(t *testing.T) {
 	}
 }
 
-// File-loading coverage relocated from BaseProvider with the shared renderer.
+// TestTemplateFiles verifies the common loading and merging rules for shared instructions.
 func TestTemplateFiles(t *testing.T) {
 	dir := t.TempDir()
 	e := newTemplateEngine(dir)
@@ -96,7 +99,7 @@ func TestTemplateFiles(t *testing.T) {
 	}
 }
 
-// Rendering failures used to be exercised separately by every provider.
+// TestTemplateGenerationErrors covers template loading, rendering, and output failures.
 func TestTemplateGenerationErrors(t *testing.T) {
 	for _, stage := range []string{"template", "chunks", "process", "output"} {
 		t.Run(stage, func(t *testing.T) {

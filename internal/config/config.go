@@ -13,6 +13,14 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/antigravity"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/claude"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/codex"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/copilot"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/crush"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/ghaw"
 )
 
 var (
@@ -23,21 +31,18 @@ var (
 
 const (
 	SupportedVersion               = "1.0"
-	MCPServerTypeStdio             = "stdio"
-	MCPServerTypeHTTP              = "http"
-	MCPServerTypeSSE               = "sse"
 	LocalConfigFile                = "go42x.local.yaml"
 	DefaultTempDir                 = ".build"
 	DefaultDocumentationEntrypoint = "docs/README.md"
 )
 
 type Config struct {
-	Version   string               `yaml:"version"`
-	Project   Project              `yaml:"project"`
-	EnvVars   []string             `yaml:"env"`
-	Context   Context              `yaml:"context"`
-	Providers map[string]Provider  `yaml:"providers"`
-	MCP       map[string]MCPServer `yaml:"mcp"`
+	Version   string                        `yaml:"version"`
+	Project   Project                       `yaml:"project"`
+	EnvVars   []string                      `yaml:"env"`
+	Context   Context                       `yaml:"context"`
+	Providers map[string]Provider           `yaml:"providers"`
+	MCP       map[string]provider.MCPServer `yaml:"mcp"`
 }
 
 type Project struct {
@@ -88,58 +93,6 @@ type Provider struct {
 func (c *Config) ProviderEnabled(name string) bool {
 	provider, exists := c.Providers[name]
 	return exists && (provider.Enabled == nil || *provider.Enabled)
-}
-
-type MCPServer struct {
-	Enabled bool              `yaml:"enabled"`
-	Type    string            `yaml:"type"`
-	Name    string            `yaml:"name"`
-	URL     string            `yaml:"url"`
-	Command string            `yaml:"command"`
-	Args    []string          `yaml:"args"`
-	Env     map[string]string `yaml:"env"`
-	Tools   []string          `yaml:"tools"`
-	Headers map[string]string `yaml:"headers"`
-	CWD     string            `yaml:"cwd"`
-}
-
-func (s MCPServer) Transport() string {
-	if s.Type == "" {
-		return MCPServerTypeStdio
-	}
-	return s.Type
-}
-
-// ParseProviders parses a comma-separated, exact provider selection. An empty
-// value explicitly selects no providers, unlike an absent selection (nil).
-func ParseProviders(value string) ([]string, error) {
-	providers := []string{}
-	if strings.TrimSpace(value) != "" {
-		for name := range strings.SplitSeq(value, ",") {
-			providers = append(providers, strings.TrimSpace(name))
-		}
-	}
-	if err := ValidateProviders(providers); err != nil {
-		return nil, err
-	}
-	return providers, nil
-}
-
-// ValidateProviders rejects unknown names, empty entries, and duplicate choices.
-func ValidateProviders(providers []string) error {
-	seen := make(map[string]bool, len(providers))
-	for _, name := range providers {
-		switch name {
-		case "claude", "codex", "antigravity", "crush", "copilot":
-		default:
-			return fmt.Errorf("unknown provider %q; use claude, codex, antigravity, crush, or copilot", name)
-		}
-		if seen[name] {
-			return fmt.Errorf("duplicate provider %q", name)
-		}
-		seen[name] = true
-	}
-	return nil
 }
 
 func LoadConfig(path string) (*Config, error) {
@@ -230,11 +183,11 @@ func (c *Config) Validate() error {
 	}
 
 	providers := slices.Sorted(maps.Keys(c.Providers))
-	if err := ValidateProviders(providers); err != nil {
+	if err := provider.ValidateProviders(providers, ProviderNames()); err != nil {
 		return err
 	}
 	for _, name := range providers {
-		if err := c.Providers[name].validate(name); err != nil {
+		if err := validateProvider(c.Providers[name], name); err != nil {
 			return fmt.Errorf("providers.%s: %w", name, err)
 		}
 	}
@@ -244,13 +197,14 @@ func (c *Config) Validate() error {
 		if server.Name == "" {
 			return fmt.Errorf("MCP server %s: name is required", name)
 		}
-		if err := server.validate(); err != nil {
+		if err := validateMCPServer(server); err != nil {
 			return fmt.Errorf("MCP server %s: %w", name, err)
 		}
-		if server.Enabled && server.CWD != "" {
-			for _, provider := range providers {
-				if c.ProviderEnabled(provider) && (provider == "claude" || provider == "crush") {
-					return fmt.Errorf("MCP server %s: provider %s does not support cwd", name, provider)
+		if server.Enabled && len(server.CWD) > 0 {
+			for _, providerName := range providers {
+				if c.ProviderEnabled(providerName) &&
+					(providerName == claude.Name || providerName == crush.Name || providerName == ghaw.Name) {
+					return fmt.Errorf("MCP server %s: provider %s does not support cwd", name, providerName)
 				}
 			}
 		}
@@ -259,48 +213,22 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-func (p Provider) validate(name string) error {
-	if p.Agents != nil && name != "claude" {
-		return fmt.Errorf("agents is only supported by claude")
-	}
-	if p.AutoApproveTools != nil && name != "claude" && name != "crush" {
-		return fmt.Errorf("auto-approve-tools is only supported by claude and crush")
-	}
-	for i, tool := range p.AutoApproveTools {
-		if strings.TrimSpace(tool) == "" {
-			return fmt.Errorf("auto-approve-tools[%d] must not be blank", i)
+func validateMCPServer(s provider.MCPServer) error {
+	if s.Container != nil {
+		if s.Transport() != provider.MCPServerTypeStdio {
+			return fmt.Errorf("container is only supported for stdio transport")
+		}
+		if strings.TrimSpace(s.Container.Image) == "" || strings.TrimSpace(s.Container.Command) == "" {
+			return fmt.Errorf("container: image and command are required")
 		}
 	}
-	if p.ApprovalPolicy != nil {
-		if name != "codex" {
-			return fmt.Errorf("approval-policy is only supported by codex")
-		}
-		switch *p.ApprovalPolicy {
-		case "on-request", "never":
-		default:
-			return fmt.Errorf("invalid approval-policy %q: use on-request or never", *p.ApprovalPolicy)
-		}
-	}
-	if p.MCPApproval != nil {
-		if name != "codex" {
-			return fmt.Errorf("mcp-approval is only supported by codex")
-		}
-		switch *p.MCPApproval {
-		case "auto", "prompt", "writes", "approve":
-		default:
-			return fmt.Errorf("invalid mcp-approval %q: use auto, prompt, writes, or approve", *p.MCPApproval)
-		}
-	}
-	return nil
-}
 
-func (s MCPServer) validate() error {
 	switch s.Transport() {
-	case MCPServerTypeStdio:
+	case provider.MCPServerTypeStdio:
 		if strings.TrimSpace(s.Command) == "" {
 			return fmt.Errorf("command is required for stdio transport")
 		}
-	case MCPServerTypeHTTP, MCPServerTypeSSE:
+	case provider.MCPServerTypeHTTP, provider.MCPServerTypeSSE:
 		u, err := url.Parse(s.URL)
 		if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
 			return fmt.Errorf("a valid HTTP(S) URL is required for %s transport", s.Type)
@@ -310,7 +238,7 @@ func (s MCPServer) validate() error {
 	}
 
 	if s.CWD != "" {
-		if s.Transport() != MCPServerTypeStdio {
+		if s.Transport() != provider.MCPServerTypeStdio {
 			return fmt.Errorf("cwd is only supported for stdio transport")
 		}
 		if strings.TrimSpace(s.CWD) == "" || strings.ContainsRune(s.CWD, '\x00') {
@@ -330,6 +258,53 @@ func (s MCPServer) validate() error {
 			return fmt.Errorf("duplicate tool %q", tool)
 		}
 		seen[tool] = true
+	}
+	return nil
+}
+
+// ProviderNames returns the supported providers, using their canonical names.
+func ProviderNames() []string {
+	return []string{
+		claude.Name,
+		codex.Name,
+		antigravity.Name,
+		crush.Name,
+		copilot.Name,
+		ghaw.Name,
+	}
+}
+
+func validateProvider(p Provider, name string) error {
+	if p.Agents != nil && name != claude.Name {
+		return fmt.Errorf("agents is only supported by claude")
+	}
+	if p.AutoApproveTools != nil && name != claude.Name && name != crush.Name {
+		return fmt.Errorf("auto-approve-tools is only supported by claude and crush")
+	}
+	for i, tool := range p.AutoApproveTools {
+		if len(strings.TrimSpace(tool)) == 0 {
+			return fmt.Errorf("auto-approve-tools[%d] must not be blank", i)
+		}
+	}
+	if p.ApprovalPolicy != nil {
+		if name != codex.Name {
+			return fmt.Errorf("approval-policy is only supported by codex")
+		}
+		switch *p.ApprovalPolicy {
+		case "on-request", "never":
+		default:
+			return fmt.Errorf("invalid approval-policy %q: use on-request or never", *p.ApprovalPolicy)
+		}
+	}
+	if p.MCPApproval != nil {
+		if name != codex.Name {
+			return fmt.Errorf("mcp-approval is only supported by codex")
+		}
+		switch *p.MCPApproval {
+		case "auto", "prompt", "writes", "approve":
+		default:
+			return fmt.Errorf("invalid mcp-approval %q: use auto, prompt, writes, or approve", *p.MCPApproval)
+		}
 	}
 	return nil
 }

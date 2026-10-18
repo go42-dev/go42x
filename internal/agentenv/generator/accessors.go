@@ -3,7 +3,6 @@ package generator
 import (
 	"context"
 
-	"github.com/go42-dev/go42x/internal/config"
 	"github.com/go42-dev/go42x/internal/fspatch"
 )
 
@@ -16,5 +15,5 @@ type collectorAccessor interface {
 }
 
 type providerAccessor interface {
-	Prepare(plan *fspatch.Plan, ctxData map[string]any, cfg config.Provider) error
+	Prepare(plan *fspatch.Plan, ctxData map[string]any) error
 }

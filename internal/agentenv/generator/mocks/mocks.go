@@ -13,7 +13,6 @@ import (
 	context "context"
 	reflect "reflect"
 
-	config "github.com/go42-dev/go42x/internal/config"
 	fspatch "github.com/go42-dev/go42x/internal/fspatch"
 	gomock "go.uber.org/mock/gomock"
 )
@@ -110,15 +109,15 @@ func (m *MockproviderAccessor) EXPECT() *MockproviderAccessorMockRecorder {
 }
 
 // Prepare mocks base method.
-func (m *MockproviderAccessor) Prepare(plan *fspatch.Plan, ctxData map[string]any, cfg config.Provider) error {
+func (m *MockproviderAccessor) Prepare(plan *fspatch.Plan, ctxData map[string]any) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Prepare", plan, ctxData, cfg)
+	ret := m.ctrl.Call(m, "Prepare", plan, ctxData)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Prepare indicates an expected call of Prepare.
-func (mr *MockproviderAccessorMockRecorder) Prepare(plan, ctxData, cfg any) *gomock.Call {
+func (mr *MockproviderAccessorMockRecorder) Prepare(plan, ctxData any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Prepare", reflect.TypeOf((*MockproviderAccessor)(nil).Prepare), plan, ctxData, cfg)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Prepare", reflect.TypeOf((*MockproviderAccessor)(nil).Prepare), plan, ctxData)
 }

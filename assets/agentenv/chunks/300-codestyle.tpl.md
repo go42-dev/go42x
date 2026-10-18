@@ -9,8 +9,22 @@ conventions.
 
 ### Comments
 
+- Start declaration documentation comments with the declared identifier and a
+  complete descriptive sentence. Put supplementary tags such as `@see`, `@note`,
+  `@todo`, and `@fixme` directly on following lines, without a blank comment line.
 - Use comment tags such as `@see`, `@todo`, `@fixme`, and `@note` where useful.
 - Use `@see` for links to related documentation, articles, or blog posts.
+- Use `// ---` comments to separate sections in code files.
+
+Declaration comments describe the symbol before adding supplementary tags:
+
+```go
+// MCPServer describes an MCP server in Claude's configuration.
+// @see https://docs.anthropic.com/en/docs/claude-code/mcp
+type MCPServer struct {
+    Command string `json:"command,omitempty"`
+}
+```
 
 Tags explain constraints, link supporting documentation, or record outstanding
 work. For example:
@@ -139,6 +153,22 @@ type Service struct {
   type assertions to anonymous interfaces, are allowed only in tests.
 - Define types and constants at package scope. Function-local type and constant
   declarations are allowed only in tests.
+- Name intentionally unused parameters `_` in function and method
+  implementations, including parameters retained for a common constructor
+  signature. Keep descriptive parameter names in interface declarations.
+
+Keep common constructor signatures explicit even when some parameters are unused:
+
+```go
+func New(
+    _ *slog.Logger,
+    settings Settings,
+    _ provider.TemplateEngineAccessor,
+    _ string,
+) *Provider {
+    return &Provider{settings: settings}
+}
+```
 
 Reuse standard interfaces such as `io.Closer` when they describe the capability.
 For a custom capability, declare the interface once and use its name in type

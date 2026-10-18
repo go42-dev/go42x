@@ -6,6 +6,7 @@ name: security
 # @see https://github.com/gitleaks/gitleaks
 # @see https://github.com/securego/gosec
 # @see https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck
+# @see https://codeql.github.com/
 
 on:
   workflow_call:
@@ -20,6 +21,10 @@ on:
         required: false
         type: number
         default: 15
+      codeql_timeout_minutes:
+        required: false
+        type: number
+        default: 30
 
 permissions: {}
 
@@ -45,10 +50,9 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: 'Install pinned Gitleaks'
-        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        uses: ./.github/actions/setup-tools
         with:
-          version: '2026.9.1'
-          install_args: --locked gitleaks
+          install-args: --locked gitleaks
       - name: 'Run Gitleaks scan'
         shell: bash
         run: gitleaks git --config etc/gitleaks.toml --no-banner --redact -v
@@ -76,12 +80,12 @@ jobs:
         with:
           go-version-file: 'go.mod'
       - name: 'Install pinned security tools'
-        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        uses: ./.github/actions/setup-tools
         with:
-          version: '2026.9.1'
-          install_args: --locked task go:github.com/securego/gosec/v2/cmd/gosec
+          install-task: 'true'
+          install-args: --locked go:github.com/securego/gosec/v2/cmd/gosec
           # Rebuild the cached binary when the project's Go version changes.
-          cache_key_prefix: mise-gosec-v1-${{ hashFiles('go.mod') }}
+          cache-key-prefix: mise-gosec-v1-${{ hashFiles('go.mod') }}
       - name: 'Run Gosec security scanner'
         shell: bash
         run: task lint:go-security
@@ -109,12 +113,11 @@ jobs:
         with:
           go-version-file: 'go.mod'
       - name: 'Install pinned govulncheck'
-        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        uses: ./.github/actions/setup-tools
         with:
-          version: '2026.9.1'
-          install_args: --locked go:golang.org/x/vuln/cmd/govulncheck
+          install-args: --locked go:golang.org/x/vuln/cmd/govulncheck
           # Rebuild the cached binary when the project's Go version changes.
-          cache_key_prefix: mise-govulncheck-v1-${{ hashFiles('go.mod') }}
+          cache-key-prefix: mise-govulncheck-v1-${{ hashFiles('go.mod') }}
       # Match the CLI entry point and all GoReleaser build platforms.
       - name: 'Run Go vulnerability check (linux/amd64)'
         shell: bash
@@ -128,3 +131,37 @@ jobs:
       - name: 'Run Go vulnerability check (darwin/arm64)'
         shell: bash
         run: CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 govulncheck .
+
+  # CI analysis stays read-only; master results are published by 206-codeql-publish.yaml.
+  codeql:
+    name: codeql
+    runs-on: ${{ inputs.runs_on }}
+    continue-on-error: ${{ inputs.continue_on_error }}
+    timeout-minutes: ${{ inputs.codeql_timeout_minutes }}
+    permissions:
+      actions: read
+      contents: read
+      security-events: read
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - name: 'Checkout repository'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: 'Setup Go'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: 'Initialize CodeQL'
+        uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        with:
+          languages: go
+      - name: 'Build'
+        uses: github/codeql-action/autobuild@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+      - name: 'Perform CodeQL analysis'
+        uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        with:
+          category: '.github/workflows/100-unified-workflow.yaml:codeql'
+          upload: never
+          upload-database: false

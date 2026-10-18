@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider"
 )
 
 const sharedConfig = `version: "1.0"
@@ -45,6 +47,44 @@ func writeConfigFixture(t *testing.T, shared, local string) string {
 		}
 	}
 	return path
+}
+
+func TestProjectConfigContainerOverrides(t *testing.T) {
+	shared := sharedConfig + `    container:
+      image: example/tools
+      version: v1
+      command: gopls
+      args: [mcp]
+`
+	for _, tt := range []struct {
+		name, local string
+		want        *provider.MCPContainer
+	}{
+		{"inherit", "", &provider.MCPContainer{
+			Image:   "example/tools",
+			Version: "v1",
+			Command: "gopls",
+			Args:    []string{"mcp"},
+		}},
+		{"override", "mcp: {server: {container: {version: v2}}}", &provider.MCPContainer{
+			Image:   "example/tools",
+			Version: "v2",
+			Command: "gopls",
+			Args:    []string{"mcp"},
+		}},
+		{"clear", "mcp: {server: {container: null}}", nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := LoadProjectConfig(writeConfigFixture(t, shared, tt.local), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			server := cfg.MCP["server"]
+			if !reflect.DeepEqual(server.Container, tt.want) || server.Command != "task" {
+				t.Fatalf("merged MCP server = %+v, want container %+v and local task command", server, tt.want)
+			}
+		})
+	}
 }
 
 func TestProjectConfigGoEnv(t *testing.T) {
@@ -130,6 +170,7 @@ func TestProjectConfigExactProviderSelection(t *testing.T) {
 		{"configuration fallback", nil, []string{"claude", "codex"}},
 		{"override local and project", []string{"codex"}, []string{"codex"}},
 		{"supported but unconfigured", []string{"antigravity"}, []string{"antigravity"}},
+		{"agentic workflow fragment", []string{"gh-aw"}, []string{"gh-aw"}},
 		{"multiple", []string{"codex", "copilot"}, []string{"codex", "copilot"}},
 		{"explicit none", []string{}, []string{}},
 	} {
@@ -138,7 +179,7 @@ func TestProjectConfigExactProviderSelection(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			for _, name := range []string{"claude", "codex", "antigravity", "crush", "copilot"} {
+			for _, name := range []string{"claude", "codex", "antigravity", "crush", "copilot", "gh-aw"} {
 				if cfg.ProviderEnabled(name) != slices.Contains(tt.want, name) {
 					t.Errorf("provider %s enabled = %v; selection %v", name, cfg.ProviderEnabled(name), tt.selection)
 				}
@@ -147,21 +188,6 @@ func TestProjectConfigExactProviderSelection(t *testing.T) {
 				t.Fatal("selection discarded the provider's settings")
 			}
 		})
-	}
-}
-
-func TestProjectConfigCompatibilityValidationAfterSelection(t *testing.T) {
-	path := writeConfigFixture(t, sharedConfig, "mcp: {server: {cwd: src}}\n")
-	if _, err := LoadProjectConfig(path, nil); err == nil || !strings.Contains(err.Error(), "does not support cwd") {
-		t.Fatalf("enabled incompatible provider: %v", err)
-	}
-	if _, err := LoadProjectConfig(path, []string{"codex"}); err != nil {
-		t.Fatalf("unselected provider rejected the effective configuration: %v", err)
-	}
-	path = writeConfigFixture(t, strings.Replace(sharedConfig, "command: task", "command: task\n    cwd: src", 1),
-		"providers: {claude: {enabled: false}}\n")
-	if _, err := LoadProjectConfig(path, nil); err != nil {
-		t.Fatalf("shared compatibility validation ran before the local override: %v", err)
 	}
 }
 
@@ -190,9 +216,6 @@ func TestProjectConfigMissingAndInvalidFiles(t *testing.T) {
 		{"wrong value type", "providers: {codex: {enabled: definitely}}", "cannot unmarshal"},
 		{"duplicate keys", "env: []\nenv: []", "already defined"},
 		{"extra document", "providers: {}\n---\n", "exactly one YAML document"},
-		{"unknown provider", "providers: {typo: {enabled: false}}", "unknown provider"},
-		{"retired provider", "providers: {gemini: {enabled: false}}", "unknown provider \"gemini\""},
-		{"invalid effective value", "providers: {codex: {approval-policy: invalid}}", "invalid approval-policy"},
 		{"clear required field", "context: {template: null}", "context.template is required"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

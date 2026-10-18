@@ -95,6 +95,38 @@ func TestDoctorRedactsInvalidConfiguration(t *testing.T) {
 	}
 }
 
+func TestDoctorGHAWFragmentDrift(t *testing.T) {
+	root := t.TempDir()
+	service := testService(t, root, false)
+	writeFile(t, filepath.Join(root, ".go42x/go42x.yaml"),
+		"version: '1.0'\nproject: {name: test}\ncontext: {template: agents.tpl.md}\n"+
+			"providers: {gh-aw: {enabled: true}}\nmcp: {local: {enabled: true, name: local, command: npx}}\n")
+	writeFile(t, filepath.Join(root, ".go42x/agents.tpl.md"), "# Test\n")
+	if _, err := service.Generate(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	before := snapshotTree(t, root)
+
+	report, err := check.Run(t.Context(), service.DoctorChecks(root)...)
+	if err != nil || report.Status != check.Pass {
+		t.Fatalf("generated fragment check = %+v, %v", report, err)
+	}
+	if !reflect.DeepEqual(before, snapshotTree(t, root)) {
+		t.Fatal("doctor changed generated files")
+	}
+
+	writeFile(t, filepath.Join(root, ".github/workflows/900-aw-mcp.md"), "outdated declarations\n")
+	before = snapshotTree(t, root)
+	report, err = check.Run(t.Context(), service.DoctorChecks(root)...)
+	if err != nil || report.Checks[1].Status != check.Warn ||
+		!strings.Contains(strings.Join(report.Checks[1].Evidence, "\n"), ".github/workflows/900-aw-mcp.md") {
+		t.Fatalf("fragment drift check = %+v, %v", report, err)
+	}
+	if !reflect.DeepEqual(before, snapshotTree(t, root)) {
+		t.Fatal("doctor repaired drift without authorization")
+	}
+}
+
 func TestDoctorChecksUseExplicitCheckout(t *testing.T) {
 	root := t.TempDir()
 	service := testService(t, root, false)

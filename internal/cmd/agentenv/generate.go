@@ -9,6 +9,7 @@ import (
 
 	"github.com/go42-dev/go42x/internal/agentenv"
 	"github.com/go42-dev/go42x/internal/agentenv/adapters/cli"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider"
 	"github.com/go42-dev/go42x/internal/cmdutil"
 	"github.com/go42-dev/go42x/internal/config"
 )
@@ -18,14 +19,14 @@ func newGenerateCommand(f *cmdutil.Factory) *cobra.Command {
 		Use:   "generate",
 		Short: "Generate ai agent configuration",
 		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			settings := &agentenv.Settings{
 				Clean: viper.GetBool("clean"),
 				JSON:  viper.GetBool("json"),
 			}
 			if cmdutil.ExplicitFlag(cmd, "providers") {
 				var err error
-				settings.Providers, err = config.ParseProviders(viper.GetString("providers"))
+				settings.Providers, err = provider.ParseProviders(viper.GetString("providers"), config.ProviderNames())
 				if err != nil {
 					return cmdutil.UsageError(err)
 				}

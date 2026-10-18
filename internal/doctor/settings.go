@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider"
 	"github.com/go42-dev/go42x/internal/config"
 )
 
@@ -33,5 +34,5 @@ func (s *Settings) Validate() error {
 	if s.Timeout <= 0 {
 		return fmt.Errorf("timeout must be positive")
 	}
-	return config.ValidateProviders(s.Providers)
+	return provider.ValidateProviders(s.Providers, config.ProviderNames())
 }

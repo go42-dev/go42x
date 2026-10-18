@@ -48,6 +48,13 @@ allOf:
                   properties:
                     enabled:
                       const: true
+            - required:
+                - gh-aw
+              properties:
+                gh-aw:
+                  properties:
+                    enabled:
+                      const: true
     then:
       properties:
         mcp:
@@ -205,6 +212,13 @@ properties:
           enabled:
             $ref: '#/definitions/providerEnabled'
         additionalProperties: false
+      gh-aw:
+        type: object
+        description: Importable MCP Markdown fragment for GitHub Agentic Workflows. Workflow configuration remains repository-owned.
+        properties:
+          enabled:
+            $ref: '#/definitions/providerEnabled'
+        additionalProperties: false
   mcp:
     type: object
     description: MCP (Model Context Protocol) server configurations
@@ -242,6 +256,38 @@ properties:
           description: Command arguments
           items:
             type: string
+        container:
+          type: object
+          description: Optional container execution for this stdio server. Currently used by gh-aw; other providers retain
+            command and args.
+          required:
+            - image
+            - command
+          properties:
+            image:
+              type: string
+              minLength: 1
+            version:
+              type: string
+            command:
+              type: string
+              minLength: 1
+            args:
+              type: array
+              items:
+                type: string
+            workdir:
+              type: string
+            mounts:
+              type: array
+              items:
+                type: string
+            env:
+              type: object
+              description: Environment values overriding shared stdio settings for this container.
+              additionalProperties:
+                type: string
+          additionalProperties: false
         env:
           type: object
           description: Environment variables for the server
@@ -289,6 +335,9 @@ properties:
             required:
               - type
           then:
+            not:
+              required:
+                - container
             required:
               - url
             properties:
