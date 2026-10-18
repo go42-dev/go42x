@@ -348,6 +348,7 @@ tasks:
         msg: "Use a lint:* task for file or package arguments."
     cmds:
       - task: "lint:go"
+      - task: "lint:nilaway"
       - task: "lint:go-security"
       - task: "lint:vulnerabilities"
       - task: "lint:secrets"
@@ -356,6 +357,7 @@ tasks:
       - task: "lint:toml"
       - task: "lint:docker"
       - task: "lint:actions"
+      - task: "lint:editorconfig"
       - task: "agentic:lint"
       - task: "docs:check"
 
@@ -369,6 +371,18 @@ tasks:
         set -- {{.CLI_ARGS}}
         "{{.TOOLS_BIN}}/golangci-lint" config verify --config etc/golangci.yml
         "{{.TOOLS_BIN}}/golangci-lint" run --config etc/golangci.yml "$@"
+
+  lint:nilaway:
+    desc: "Run advisory nil-safety analysis on all Go packages"
+    cmds:
+      - |
+        go vet -vettool="$(mise which nilaway)" \
+          -include-pkgs=github.com/go42-dev/go42x \
+          -exclude-file-docstrings='Code generated' \
+          -include-errors-in-files="$(pwd -P)" \
+          -pretty-print=false \
+          -print-full-file-path=true \
+          ./... || true
 
   lint:go-security:
     desc: "Check Go code with gosec"
@@ -399,12 +413,29 @@ tasks:
       - '"{{.TOOLS_BIN}}/hadolint" --failure-threshold info Dockerfile'
 
   lint:actions:
-    desc: "Check all GitHub Actions workflows"
-    summary: "Usage: task lint:actions [-- FILE.yaml ...]."
+    desc: "Check all GitHub Actions, or explicit workflow files (read only)"
+    summary: "Usage: task lint:actions [-- .github/workflows/FILE.yaml ...]; defaults include composite actions in Zizmor."
     preconditions:
       - *file_paths
     cmds:
-      - '"{{.TOOLS_BIN}}/actionlint" -config-file etc/actionlint.yaml -oneline {{.CLI_ARGS}}'
+      - |
+        set -- {{.CLI_ARGS}}
+        "{{.TOOLS_BIN}}/actionlint" -oneline --config-file etc/actionlint.yaml "$@"
+        if [ "$#" -eq 0 ]; then set -- .; fi
+        "{{.TOOLS_BIN}}/zizmor" -q --persona regular --min-severity high --min-confidence high \
+          --offline --format plain --color never --no-progress "$@"
+
+  lint:editorconfig:
+    desc: "Check EditorConfig rules for the project, or explicit files (read only)"
+    summary: "Usage: task lint:editorconfig [-- FILE ...]"
+    preconditions:
+      - *file_paths
+    cmds:
+      - |
+        set -- {{.CLI_ARGS}}
+        # Language formatters handle indentation, including content inside Go strings.
+        # The checker config also excludes vendored upstream snapshots.
+        "{{.TOOLS_BIN}}/ec" -config etc/editorconfig.json "$@"
 
   lint:yaml:
     desc: "Check plain YAML source formatting, or explicit files (read only)"

@@ -60,6 +60,35 @@ url = "https://github.com/sigstore/cosign/releases/download/v3.1.3/cosign-darwin
 url_api = "https://api.github.com/repos/sigstore/cosign/releases/assets/503286177"
 provenance = "cosign"
 
+[[tools.editorconfig-checker]]
+version = "3.11.3"
+backend = "github:editorconfig-checker/editorconfig-checker"
+specifiers = ["3.11.3"]
+
+[tools.editorconfig-checker."platforms.linux-arm64"]
+checksum = "sha256:6646317558facabd6ab1395bb0b212bdb7e3ed130b91c31ff92fa5372d2bf604"
+url = "https://github.com/editorconfig-checker/editorconfig-checker/releases/download/v3.11.3/editorconfig-checker-linux-arm64.tar.gz"
+url_api = "https://api.github.com/repos/editorconfig-checker/editorconfig-checker/releases/assets/543324012"
+provenance = "github-attestations"
+
+[tools.editorconfig-checker."platforms.linux-x64"]
+checksum = "sha256:7b7c828bd4bd7976f66d91f288cb1319b5f27c7fb5faa6b8cca9a0a7ff182578"
+url = "https://github.com/editorconfig-checker/editorconfig-checker/releases/download/v3.11.3/editorconfig-checker-linux-amd64.tar.gz"
+url_api = "https://api.github.com/repos/editorconfig-checker/editorconfig-checker/releases/assets/543324020"
+provenance = "github-attestations"
+
+[tools.editorconfig-checker."platforms.macos-arm64"]
+checksum = "sha256:eeb0e5d1db4a913277da781bc40802542eb42c4f3f43b7c87c000714dd905faf"
+url = "https://github.com/editorconfig-checker/editorconfig-checker/releases/download/v3.11.3/ec-darwin-arm64.tar.gz"
+url_api = "https://api.github.com/repos/editorconfig-checker/editorconfig-checker/releases/assets/543324096"
+provenance = "github-attestations"
+
+[tools.editorconfig-checker."platforms.macos-x64"]
+checksum = "sha256:126c8fa83500389078f6b2072a04170f063787ec9905e5d1ab69a5a62ee5b10d"
+url = "https://github.com/editorconfig-checker/editorconfig-checker/releases/download/v3.11.3/ec-darwin-amd64.tar.gz"
+url_api = "https://api.github.com/repos/editorconfig-checker/editorconfig-checker/releases/assets/543324099"
+provenance = "github-attestations"
+
 [[tools."github:github/gh-aw"]]
 version = "0.91.12"
 backend = "github:github/gh-aw"
@@ -175,10 +204,15 @@ version = "0.6.0"
 backend = "go:go.uber.org/mock/mockgen"
 specifiers = ["0.6.0"]
 
+[[tools."go:go.uber.org/nilaway/cmd/nilaway"]]
+version = "0.0.0-20260808063849-8649a03c818a"
+backend = "go:go.uber.org/nilaway/cmd/nilaway"
+specifiers = ["v0.0.0-20260808063849-8649a03c818a"]
+
 [[tools."go:golang.org/x/tools/gopls"]]
-version = "0.23.0"
+version = "0.24.0"
 backend = "go:golang.org/x/tools/gopls"
-specifiers = ["0.23.0"]
+specifiers = ["0.24.0"]
 
 [[tools."go:golang.org/x/vuln/cmd/govulncheck"]]
 version = "1.7.0"
@@ -375,4 +409,33 @@ provenance = "github-attestations"
 checksum = "sha256:a4a79dca35dcaa9bc535eef05ebd164829023977f97ba4e3b88f63468d9d6762"
 url = "https://github.com/tombi-toml/tombi/releases/download/v1.5.4/tombi-cli-1.5.4-x86_64-apple-darwin.tar.gz"
 url_api = "https://api.github.com/repos/tombi-toml/tombi/releases/assets/552962825"
+provenance = "github-attestations"
+
+[[tools.zizmor]]
+version = "1.30.0"
+backend = "aqua:zizmorcore/zizmor"
+specifiers = ["1.30.0"]
+
+[tools.zizmor."platforms.linux-arm64"]
+checksum = "sha256:018a024d6b6d09733b07f6ef42838d984c23ec04bc9b2acd55f7d67826aeafe5"
+url = "https://github.com/zizmorcore/zizmor/releases/download/v1.30.0/zizmor-aarch64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/zizmorcore/zizmor/releases/assets/537081734"
+provenance = "github-attestations"
+
+[tools.zizmor."platforms.linux-x64"]
+checksum = "sha256:ec8c95cd800845abb9bbc5f377ec7c57d2eb8e2386a00a201d3a74ee4092e5ed"
+url = "https://github.com/zizmorcore/zizmor/releases/download/v1.30.0/zizmor-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/zizmorcore/zizmor/releases/assets/537081732"
+provenance = "github-attestations"
+
+[tools.zizmor."platforms.macos-arm64"]
+checksum = "sha256:c9c5d83730efb86f2cd71b487605c00a4d63903e4f9458485ed5eac3b1924ab1"
+url = "https://github.com/zizmorcore/zizmor/releases/download/v1.30.0/zizmor-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/zizmorcore/zizmor/releases/assets/537081737"
+provenance = "github-attestations"
+
+[tools.zizmor."platforms.macos-x64"]
+checksum = "sha256:343c85c8f709edf14bf3c8781d53574975ecbb2d23c80ed1eab4932ab0a72343"
+url = "https://github.com/zizmorcore/zizmor/releases/download/v1.30.0/zizmor-x86_64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/zizmorcore/zizmor/releases/assets/537081736"
 provenance = "github-attestations"

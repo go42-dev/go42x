@@ -62,9 +62,7 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      # Keep a complete, non-blocking inventory in the job log. This includes
-      # every severity and unfixed findings, so the enforcement policy below
-      # does not hide vulnerabilities that currently have no remediation.
+      # Keep every severity and unfixed finding visible in the advisory report.
       - name: 'Report all image vulnerabilities'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -77,10 +75,8 @@ jobs:
           ignore-unfixed: false
           vuln-type: 'os,library'
           severity: 'UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL'
-      # Trivy has one severity/fixability policy per invocation. Run it again
-      # to enforce the narrower merge policy while reusing the installation
-      # from the reporting pass above.
-      - name: 'Enforce fixable high and critical image vulnerabilities'
+      # Highlight fixable high and critical findings. Callers keep this job advisory.
+      - name: 'Report fixable high and critical image vulnerabilities (advisory)'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ inputs.image_reference }}

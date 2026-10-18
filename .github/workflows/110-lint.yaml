@@ -84,6 +84,74 @@ jobs:
       - name: 'Run golangci-lint'
         run: golangci-lint run --config etc/golangci.yml --verbose
 
+  # Detect potential nil panics with NilAway through Go's cached vet driver.
+  # @see https://github.com/uber-go/nilaway
+  nilaway-lint:
+    name: nilaway-lint
+    runs-on: ${{ inputs.runs_on }}
+    # NilAway findings remain advisory.
+    continue-on-error: true
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    permissions:
+      contents: read
+    env:
+      MISE_DEFAULT_CONFIG_FILENAME: etc/mise.toml
+      MISE_DATA_DIR: ${{ github.workspace }}/.tools
+      MISE_CACHE_DIR: ${{ github.workspace }}/.tools/cache
+      MISE_STATE_DIR: ${{ github.workspace }}/.tools/state
+    steps:
+      - name: 'Checkout repository'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: 'Setup Go'
+        id: setup-go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: 'go.mod'
+          # Save Go build outputs and NilAway facts in the dedicated cache below.
+          cache: false
+      - name: 'Install pinned NilAway'
+        uses: ./.github/actions/setup-tools
+        with:
+          install-args: --locked go:go.uber.org/nilaway/cmd/nilaway
+          # Rebuild the cached binary when the project's Go version changes.
+          cache-key-prefix: mise-nilaway-v1-${{ hashFiles('go.mod') }}
+      - name: 'Get NilAway cache metadata'
+        id: nilaway-cache
+        shell: bash
+        run: |-
+          {
+            echo "go-build=$(go env GOCACHE)"
+            echo "go-mod=$(go env GOMODCACHE)"
+            echo "nilaway-version=$(mise current go:go.uber.org/nilaway/cmd/nilaway)"
+          } >> "$GITHUB_OUTPUT"
+      - name: 'Restore and save Go and NilAway caches'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        env:
+          NILAWAY_CACHE_PREFIX: nilaway-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.setup-go.outputs.go-version }}-${{
+            steps.nilaway-cache.outputs.nilaway-version }}
+        with:
+          # go vet stores both compiled packages and analysis facts in GOCACHE.
+          path: |-
+            ${{ steps.nilaway-cache.outputs.go-build }}
+            ${{ steps.nilaway-cache.outputs.go-mod }}
+          # Refresh per commit; reuse compatible entries after dependency/config changes.
+          key: ${{ env.NILAWAY_CACHE_PREFIX }}-${{ hashFiles('Taskfile.yaml', 'go.mod', 'go.sum') }}-${{ github.sha }}
+          restore-keys: |-
+            ${{ env.NILAWAY_CACHE_PREFIX }}-${{ hashFiles('Taskfile.yaml', 'go.mod', 'go.sum') }}-
+            ${{ env.NILAWAY_CACHE_PREFIX }}-
+      - name: 'Run NilAway'
+        shell: bash
+        run: |-
+          go vet -vettool="$(mise which nilaway)" \
+            -include-pkgs=github.com/go42-dev/go42x \
+            -exclude-file-docstrings='Code generated' \
+            -include-errors-in-files="$(pwd -P)" \
+            -pretty-print=false \
+            -print-full-file-path=true \
+            ./...
+
   # JSON, YAML, and TOML formatting and lint rules.
   # @see https://github.com/caarlos0/jsonfmt
   # @see https://github.com/google/yamlfmt
@@ -145,10 +213,38 @@ jobs:
       - name: 'Install pinned Actionlint'
         uses: ./.github/actions/setup-tools
         with:
-          install-task: 'true'
           install-args: --locked actionlint
       - name: 'Check all GitHub Actions workflows'
-        run: task --exit-code lint:actions
+        run: actionlint -oneline --config-file etc/actionlint.yaml
+
+  # Action security audit.
+  # @see https://github.com/zizmor-labs/zizmor
+  zizmor-lint:
+    name: zizmor-lint
+    runs-on: ${{ inputs.runs_on }}
+    continue-on-error: ${{ inputs.continue_on_error }}
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    permissions:
+      contents: read
+    env:
+      MISE_DEFAULT_CONFIG_FILENAME: etc/mise.toml
+      MISE_DATA_DIR: ${{ github.workspace }}/.tools
+      MISE_CACHE_DIR: ${{ github.workspace }}/.tools/cache
+      MISE_STATE_DIR: ${{ github.workspace }}/.tools/state
+    # ----
+    steps:
+      - name: 'Checkout repository'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: 'Install pinned Zizmor'
+        uses: ./.github/actions/setup-tools
+        with:
+          install-args: --locked zizmor
+      - name: 'Run zizmor security audit'
+        shell: bash
+        run: zizmor -q --persona regular --min-severity high --min-confidence high --offline --format plain --color never
+          --no-progress .
 
   # Agentic workflow sources and compiler-owned lock files.
   # @see https://github.github.com/gh-aw/
@@ -198,6 +294,35 @@ jobs:
           fi
       - name: 'Check compiled GitHub Agentic Workflows'
         run: task --exit-code agentic:lint
+
+  # EditorConfig linter.
+  # @see https://editorconfig-checker.github.io/
+  editorconfig-lint:
+    name: editorconfig-lint
+    runs-on: ${{ inputs.runs_on }}
+    continue-on-error: ${{ inputs.continue_on_error }}
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    permissions:
+      contents: read
+    env:
+      MISE_DEFAULT_CONFIG_FILENAME: etc/mise.toml
+      MISE_DATA_DIR: ${{ github.workspace }}/.tools
+      MISE_CACHE_DIR: ${{ github.workspace }}/.tools/cache
+      MISE_STATE_DIR: ${{ github.workspace }}/.tools/state
+    # ----
+    steps:
+      - name: 'Checkout repository'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: 'Install pinned EditorConfig Checker'
+        uses: ./.github/actions/setup-tools
+        with:
+          install-task: 'true'
+          install-args: --locked editorconfig-checker
+      - name: 'Run editorconfig-checker'
+        shell: bash
+        run: task lint:editorconfig
 
   # Documentation checks use the same Task entrypoint locally and in CI.
   documentation-lint:

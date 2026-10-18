@@ -179,12 +179,14 @@ func TestDockerCleanupProtectsOtherTags(t *testing.T) {
 	script := dockerWorkflowScript(t, "160-cleanup.yaml", "cleanup", "Delete temporary Docker image")
 	version := dockerRegistryVersion(1, "2026-01-01T00:00:00Z", "ci-123-1")
 	for _, tt := range []struct {
-		name     string
-		tag      string
-		versions []map[string]any
-		current  map[string]any
-		valid    bool
-		deleted  bool
+		name        string
+		tag         string
+		versions    []map[string]any
+		current     map[string]any
+		deleteError string
+		valid       bool
+		deleted     bool
+		warning     bool
 	}{
 		{
 			name:     "exact CI tag",
@@ -193,6 +195,29 @@ func TestDockerCleanupProtectsOtherTags(t *testing.T) {
 			current:  version,
 			valid:    true,
 			deleted:  true,
+		},
+		{
+			name:        "last tagged version",
+			tag:         "ci-123-1",
+			versions:    []map[string]any{version},
+			current:     version,
+			deleteError: "gh: You cannot delete the last tagged version of a package. You must delete the package instead. (HTTP 400)",
+			valid:       true,
+			warning:     true,
+		},
+		{
+			name:        "other bad request",
+			tag:         "ci-123-1",
+			versions:    []map[string]any{version},
+			current:     version,
+			deleteError: "gh: Invalid package version (HTTP 400)",
+		},
+		{
+			name:        "permission denied",
+			tag:         "ci-123-1",
+			versions:    []map[string]any{version},
+			current:     version,
+			deleteError: "gh: Resource not accessible by integration (HTTP 403)",
 		},
 		{
 			name:     "already absent",
@@ -242,7 +267,10 @@ func TestDockerCleanupProtectsOtherTags(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := dockerRegistryFixture(t, tt.versions, tt.current)
-			output, err := runDockerCleanup(t, dir, script, map[string]string{"TARGET_TAG": tt.tag})
+			output, err := runDockerCleanup(t, dir, script, map[string]string{
+				"TARGET_TAG":   tt.tag,
+				"DELETE_ERROR": tt.deleteError,
+			})
 			if (err == nil) != tt.valid {
 				t.Fatalf("cleanup: %v\n%s", err, output)
 			}
@@ -252,6 +280,12 @@ func TestDockerCleanupProtectsOtherTags(t *testing.T) {
 			}
 			if (len(deleted) > 0) != tt.deleted {
 				t.Fatalf("unexpected deletions: %s\n%s", deleted, output)
+			}
+			if strings.Contains(string(output), "::warning::Retaining CI tag") != tt.warning {
+				t.Fatalf("unexpected cleanup warning: %s", output)
+			}
+			if len(tt.deleteError) > 0 && !tt.warning && !strings.Contains(string(output), tt.deleteError) {
+				t.Fatalf("cleanup hid the API error: %s", output)
 			}
 		})
 	}
@@ -333,85 +367,79 @@ func TestDockerScanInputs(t *testing.T) {
 	script := dockerWorkflowScript(
 		t,
 		"140-security-extra.yaml",
-		"configure",
-		"Validate image reference and select platforms",
+		"trivy",
+		"Validate image reference",
 	)
 	reference := "ghcr.io/go42-dev/go42x@sha256:" + strings.Repeat("a", 64)
 	for _, tt := range []struct {
 		name      string
-		platforms string
 		reference string
-		want      []string
+		valid     bool
 	}{
 		{
-			name:      "both architectures",
-			platforms: "linux/amd64,linux/arm64",
+			name:      "immutable digest",
 			reference: reference,
-			want:      []string{"linux/amd64", "linux/arm64"},
-		},
-		{
-			name:      "single architecture",
-			platforms: "linux/arm64",
-			reference: reference,
-			want:      []string{"linux/arm64"},
-		},
-		{
-			name:      "unsupported architecture",
-			platforms: "linux/386",
-			reference: reference,
-		},
-		{
-			name:      "duplicate architecture",
-			platforms: "linux/amd64,linux/amd64",
-			reference: reference,
+			valid:     true,
 		},
 		{
 			name:      "mutable tag",
-			platforms: "linux/amd64",
 			reference: "ghcr.io/go42-dev/go42x:latest",
+		},
+		{
+			name:      "different registry",
+			reference: "docker.io/go42-dev/go42x@sha256:" + strings.Repeat("a", 64),
+		},
+		{
+			name:      "short digest",
+			reference: strings.TrimSuffix(reference, "a"),
+		},
+		{
+			name:      "invalid digest",
+			reference: "ghcr.io/go42-dev/go42x@sha256:" + strings.Repeat("g", 64),
+		},
+		{
+			name: "empty reference",
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "output")
 			command := exec.CommandContext(t.Context(), "bash", "-c", script)
 			command.Env = []string{
 				"PATH=" + os.Getenv("PATH"),
 				"IMAGE_REFERENCE=" + tt.reference,
-				"PLATFORMS=" + tt.platforms,
-				"GITHUB_OUTPUT=" + path,
 			}
 			output, err := command.CombinedOutput()
-			if (err == nil) != (tt.want != nil) {
+			if (err == nil) != tt.valid {
 				t.Fatalf("scan input validation: %v\n%s", err, output)
 			}
-			if err != nil {
-				return
-			}
-
-			data, err := os.ReadFile(path)
-			if err != nil {
-				t.Fatal(err)
-			}
-			var matrix struct {
-				Include []struct {
-					Platform string `json:"platform"`
-				} `json:"include"`
-			}
-			if err := json.Unmarshal(
-				[]byte(strings.TrimSpace(strings.TrimPrefix(string(data), "matrix="))),
-				&matrix,
-			); err != nil {
-				t.Fatal(err)
-			}
-			if len(matrix.Include) != len(tt.want) {
-				t.Fatalf("scan matrix = %+v, want %v", matrix, tt.want)
-			}
-			for i, platform := range matrix.Include {
-				if platform.Platform != tt.want[i] {
-					t.Errorf("platform %d = %q, want %q", i, platform.Platform, tt.want[i])
-				}
-			}
 		})
+	}
+}
+
+func TestDockerScanArchitectures(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("../..", ".github/workflows/140-security-extra.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var workflow struct {
+		Jobs map[string]struct {
+			Strategy struct {
+				Matrix struct {
+					Arch []string `yaml:"arch"`
+				} `yaml:"matrix"`
+			} `yaml:"strategy"`
+			Env map[string]string `yaml:"env"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal(data, &workflow); err != nil {
+		t.Fatal(err)
+	}
+
+	scan := workflow.Jobs["trivy"]
+	if !slices.Equal(scan.Strategy.Matrix.Arch, []string{"amd64", "arm64"}) {
+		t.Fatalf("scan architectures = %v, want amd64 and arm64", scan.Strategy.Matrix.Arch)
+	}
+	if scan.Env["TRIVY_PLATFORM"] != "linux/${{ matrix.arch }}" {
+		t.Fatalf("scan platform = %q, want the matrix architecture", scan.Env["TRIVY_PLATFORM"])
 	}
 }
 
@@ -435,7 +463,9 @@ func TestDockerLatestPromotion(t *testing.T) {
 			t.Errorf("latest promotion does not wait for %s", dependency)
 		}
 	}
-	if promotion.If != "${{ needs.validate-release.outputs.is_prerelease == 'false' }}" {
+	const promotionCondition = "${{ !cancelled() && needs.validate-release.result == 'success' && " +
+		"needs.publish-docker.result == 'success' && needs.validate-release.outputs.is_prerelease == 'false' }}"
+	if promotion.If != promotionCondition {
 		t.Fatalf("latest promotion must require a successful stable release: %s", promotion.If)
 	}
 
@@ -545,7 +575,13 @@ case "$*" in
   'api users/go42-dev --jq .type') echo Organization ;;
   'api --paginate orgs/go42-dev/packages/container/go42x/versions?per_page=100') cat "$FIXTURE/versions.json" ;;
   'api orgs/go42-dev/packages/container/go42x/versions/'*) cat "$FIXTURE/current.json" ;;
-  'api --method DELETE orgs/go42-dev/packages/container/go42x/versions/'*) echo "$4" >> "$FIXTURE/deleted" ;;
+  'api --method DELETE orgs/go42-dev/packages/container/go42x/versions/'*)
+    if [ -n "${DELETE_ERROR:-}" ]; then
+      printf '%s\n' "$DELETE_ERROR" >&2
+      exit 1
+    fi
+    echo "$4" >> "$FIXTURE/deleted"
+    ;;
   *) echo "Unexpected API request: $*" >&2; exit 1 ;;
 esac
 `,

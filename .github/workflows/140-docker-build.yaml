@@ -52,7 +52,7 @@ on:
 permissions: {}
 
 jobs:
-  # Publication is shared; callers scan the digest and own cleanup or promotion.
+  # CI callers scan the published digest and clean up temporary images.
   docker-build:
     name: docker-build
     runs-on: ${{ inputs.runs_on }}
@@ -347,6 +347,21 @@ jobs:
           subject-digest: ${{ steps.build.outputs.digest }}
           sbom-path: sbom-${{ inputs.service_name }}-${{ inputs.image_tag }}.spdx.json
           show-summary: true
+      - name: 'Publish stable image as latest'
+        if: startsWith(inputs.image_tag, 'v') && !contains(inputs.image_tag, '-')
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/${{ inputs.service_name }}
+          IMAGE_REFERENCE: ${{ steps.validate-digest.outputs.image_reference }}
+          IMAGE_DIGEST: ${{ steps.validate-digest.outputs.image_digest }}
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create --tag "$IMAGE_NAME:latest" "$IMAGE_REFERENCE"
+          latest_digest=$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$IMAGE_NAME:latest")
+          if [ "$latest_digest" != "$IMAGE_DIGEST" ]; then
+            echo '::error::The latest tag does not identify the published image.'
+            exit 1
+          fi
+          echo "Latest Docker image: $IMAGE_NAME:latest ($IMAGE_DIGEST)" >> "$GITHUB_STEP_SUMMARY"
       - name: 'Summarize published image'
         env:
           IMAGE_REFERENCE: ${{ steps.validate-digest.outputs.image_reference }}
