@@ -77,19 +77,11 @@ RUN --mount=type=cache,target=/root/.cache/go-build,id=gobuildcache \
 
 # ---
 
-# Copy the target architecture's SDK without executing it under emulation.
-FROM golang:${GO_VERSION}-alpine3.24 AS sdk
-
 # Copy the target architecture's static mise binary without executing it.
 FROM ghcr.io/jdx/mise:${MISE_VERSION} AS mise
 
-# Pin the runtime image digest and package versions together.
-# @note Image updates do not update the package pins below.
-FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
-
-ENV GOTOOLCHAIN=local \
-    PATH="/usr/local/go/bin:${PATH}" \
-    MISE_DEFAULT_CONFIG_FILENAME=etc/mise.toml
+# We need Go runtime in final image to run tools like gopls.
+FROM golang:${GO_VERSION}-alpine3.24
 
 # Install runtime tools and CGO dependencies for projects inspected by gopls.
 # Pin the patched OpenSSL runtime libraries explicitly.
@@ -111,7 +103,6 @@ RUN addgroup -g 1001 appuser && \
     adduser -u 1001 -G appuser -s /bin/sh -D appuser
 
 # Copy stable runtime files before the application binary.
-COPY --from=sdk /usr/local/go /usr/local/go
 COPY --from=mise /usr/local/bin/mise /usr/local/bin/mise
 COPY --from=builder /out/gopls /usr/local/bin/
 

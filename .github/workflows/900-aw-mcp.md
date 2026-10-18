@@ -57,6 +57,7 @@ mcp-servers:
       - --workdir
       - ${{ github.workspace }}
     env:
+      MISE_DEFAULT_CONFIG_FILENAME: etc/mise.toml
       MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}/etc/mise.toml
     allowed:
       - '*'
