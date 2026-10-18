@@ -15,8 +15,7 @@ func NewKnowledgeBaseCommand(f *cmdutil.Factory) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "kwb",
-		Short: "Manage the knowledge base",
-		Long:  "Build, search, and read the knowledge base index.",
+		Short: "Manage the project knowledge base",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
@@ -28,10 +27,10 @@ func NewKnowledgeBaseCommand(f *cmdutil.Factory) *cobra.Command {
 		"path to the index")
 	cmd.PersistentFlags().String(
 		"root", defaults.RootPath,
-		"root directory to index")
+		"project root")
 	cmd.PersistentFlags().Duration(
 		"search-timeout", defaults.SearchTimeout,
-		"maximum duration of a knowledge-base read")
+		"maximum duration of knowledge-base reads and freshness checks")
 
 	cmd.AddCommand(
 		newBuildCommand(f),

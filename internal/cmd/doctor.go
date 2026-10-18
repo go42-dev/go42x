@@ -17,8 +17,10 @@ func NewDoctorCommand(f *cmdutil.Factory) *cobra.Command {
 	defaults := doctor.NewSettings()
 	cmd := &cobra.Command{
 		Use:   "doctor",
-		Short: "Troubleshoot go42x systems",
-		Args:  cobra.NoArgs,
+		Short: "Diagnose project configuration and setup",
+		Long: `Check agent configuration, generated files, MCP server setup, and index freshness.
+Use --probe-mcp to test MCP server connections.`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			settings := &doctor.Settings{
 				RootPath:  viper.GetString("root"),

@@ -24,6 +24,14 @@ func AgentEnvGitIgnore() string {
 	return agentEnvGitIgnore
 }
 
+//go:embed kwb/kwb.ignore.tpl
+var kwbIgnore string
+
+// KWBIgnore returns the starter template for .go42x/kwb.ignore.
+func KWBIgnore() string {
+	return kwbIgnore
+}
+
 //go:embed vendoring/.vendor.yaml.tpl
 var vendorManifestTemplate string
 

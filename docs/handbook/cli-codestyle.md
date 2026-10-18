@@ -32,6 +32,32 @@ feature behavior, and result formatting with their owners. Follow
   Small result types can live beside their service; a helper or type does not
   require its own file.
 
+## Command help
+
+Describe what a command accomplishes and what the user needs to know to use it.
+
+- Use `Short` for a single line describing the command's purpose.
+- Use `Long` for context that helps someone use the command, such as its scope,
+  significant defaults, or behavior that might surprise them. Omit it when it
+  adds nothing useful beyond `Short`.
+- Put invocation examples in `Example` and explain individual options in their
+  flag descriptions.
+- Keep detailed behavior, routine file maintenance, backup mechanics, and
+  implementation details in the handbook. Include them in help only when they
+  affect a user's decision about running the command.
+
+For example, describe indexing and its incremental behavior without listing the
+files maintained during a build:
+
+```go
+cmd := &cobra.Command{
+    Use:   "build",
+    Short: "Build or update the project knowledge-base index",
+    Long: `Index project documentation and source files for knowledge-base search.
+Only changed files are reindexed. Use --rebuild to rebuild the entire index.`,
+}
+```
+
 ## Typed settings and validation
 
 Construct feature settings explicitly in `RunE`. Keep feature flags, including

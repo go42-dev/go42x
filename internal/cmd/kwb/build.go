@@ -18,9 +18,10 @@ func newBuildCommand(f *cmdutil.Factory) *cobra.Command {
 	defaults := kwb.NewSettings()
 	cmd := &cobra.Command{
 		Use:   "build",
-		Short: "Update the knowledge base index",
-		Long:  "Index changed documentation and source files. Create .go42x/kwb.ignore with a comment header if missing.",
-		Args:  cobra.NoArgs,
+		Short: "Build or update the project knowledge-base index",
+		Long: `Index project documentation and source files for knowledge-base search.
+Only changed files are reindexed. Use --rebuild to rebuild the entire index.`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			settings := &kwb.Settings{
 				RootPath:            viper.GetString("root"),
@@ -51,7 +52,7 @@ func newBuildCommand(f *cmdutil.Factory) *cobra.Command {
 	}
 
 	cmd.Flags().
-		Bool("rebuild", false, "rebuild the full index before replacing the current generation")
+		Bool("rebuild", false, "rebuild the entire index")
 	cmd.Flags().
 		Int("max-file-size", defaults.MaxFileSize, "maximum file size to index in bytes")
 	cmd.Flags().
@@ -63,7 +64,7 @@ func newBuildCommand(f *cmdutil.Factory) *cobra.Command {
 	cmd.Flags().
 		StringSlice("exclude-file", nil, "additional root-relative gitignore patterns (also reads .go42x/kwb.ignore)")
 	cmd.Flags().
-		StringSlice("include-ext", defaults.ExtraExtensions, "additional file extensions to index")
+		StringSlice("include-ext", defaults.ExtraExtensions, "additional file extensions or filenames to index")
 
 	cmd.Flags().Bool("json", false, "print structured build results")
 

@@ -1,4 +1,5 @@
 # go42x knowledgebase will ignore the following files and directories
 
+# go42x -- START
 .github/workflows/*.lock.yml
-.github/aw/actions-lock.json
+# go42x -- END

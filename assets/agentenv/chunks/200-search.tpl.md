@@ -182,11 +182,16 @@ binary files, symlinks, generated Go files, and common lockfiles. Use
 Authored `.go42x/go42x.yaml`, instruction templates, `.env.example`, and Markdown
 references under `.go42x/upstream/` are eligible. Generated state, backups, local
 overrides, and the index are excluded.
-`kwb build` creates `.go42x/kwb.ignore` with a comment header when missing;
-existing files are preserved. Add root-relative Git ignore patterns to omit
-generated bundles while retaining handwritten files, or pass `--exclude-file`
-at build time.
-These exclusions cannot re-include files excluded by `.gitignore` or defaults.
+`kwb build` creates `.go42x/kwb.ignore` from the bundled template when missing and
+refreshes its managed `# go42x -- START` / `# go42x -- END` block before indexing.
+The block excludes compiled `.github/workflows/*.lock.yml` files by default.
+Existing files are backed up under `.go42x/backups/updates/` only when changed;
+the build result includes the backup directory. All text outside the block is
+preserved. Malformed markers fail the build before a new index is published.
+Agent environment commands and knowledge-base reads leave this file unchanged.
+Keep custom root-relative Git ignore patterns after the block,
+including `!` exceptions to bundled rules, or pass `--exclude-file` at build time.
+Ignore-file exceptions cannot override `.gitignore` or built-in indexing filters.
 Changing exclusions takes effect on the next incremental build.
 The index is local and requires no embedding service.
 

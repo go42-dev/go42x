@@ -16,7 +16,9 @@ func newSearchCommand(f *cmdutil.Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "search QUERY",
 		Short: "Search indexed source and documentation",
-		Args:  cobra.ExactArgs(1),
+		Long: `Search the last completed index using a plain-text query.
+Run 'go42x kwb build' to include recent file changes.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			settings := &kwb.SearchSettings{
 				KnowledgeBase: queryKnowledgeBaseSettings(cmd),
@@ -37,7 +39,7 @@ func newSearchCommand(f *cmdutil.Factory) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().Bool("json", false, "print the same structured result as the MCP tool")
+	cmd.Flags().Bool("json", false, "print structured search results")
 	cmd.Flags().String("kind", "", "file kind: code, documentation, config")
 	cmd.Flags().String("language", "", "language or format, such as go or md")
 	cmd.Flags().String("path-prefix", "", "project-relative path prefix")

@@ -16,8 +16,10 @@ func newSyncCommand(f *cmdutil.Factory) *cobra.Command {
 	defaults := vendoring.NewSettings()
 	cmd := &cobra.Command{
 		Use:   "sync",
-		Short: "Restore files from locked sources",
-		Args:  cobra.NoArgs,
+		Short: "Restore vendored files from the lockfile",
+		Long: `Restore the source versions recorded in the lockfile without updating it.
+The manifest must match the lockfile. Sources may be downloaded.`,
+		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			settings := &vendoring.Settings{
 				RootPath:     viper.GetString("root"),

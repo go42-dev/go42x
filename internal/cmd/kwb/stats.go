@@ -15,7 +15,7 @@ import (
 func newStatsCommand(f *cmdutil.Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "stats",
-		Short: "Show index counts and project root",
+		Short: "Show knowledge-base index statistics",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			settings := &kwb.StatsSettings{KnowledgeBase: queryKnowledgeBaseSettings(cmd), JSON: viper.GetBool("json")}
@@ -25,7 +25,7 @@ func newStatsCommand(f *cmdutil.Factory) *cobra.Command {
 			return runStatsCommand(f, settings)
 		},
 	}
-	cmd.Flags().Bool("json", false, "print the same structured result as the MCP tool")
+	cmd.Flags().Bool("json", false, "print structured index statistics")
 	return cmd
 }
 

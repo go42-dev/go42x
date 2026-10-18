@@ -25,8 +25,7 @@ const envPrefix = "GO42X"
 func NewGo42Command(ctx context.Context, f *cmdutil.Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "go42x",
-		Short: "Helper tool for go42 project",
-		Long:  `Helper tool for go42 project`,
+		Short: "Manage AI agent environments, project knowledge, and upstream files",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()

@@ -3,7 +3,6 @@ package kwb
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -13,6 +12,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/go-git/go-git/v5/plumbing/format/gitignore"
+
+	"github.com/go42-dev/go42x/assets"
+	"github.com/go42-dev/go42x/internal/buildinfo"
+	"github.com/go42-dev/go42x/internal/fspatch"
 )
 
 var defaultExcludedDirs = []string{
@@ -58,8 +61,6 @@ const (
 	sourceIgnorePath       = agentEnvDir + "/" + sourceIgnoreFile
 )
 
-const sourceIgnoreHeader = "# go42x knowledgebase will ignore the following files and directories\n\n"
-
 // Include authored configuration, instruction templates, and upstream Markdown references.
 func authoredAgentFile(relative string, directory bool) bool {
 	parts := strings.Split(filepath.ToSlash(relative), "/")
@@ -87,35 +88,34 @@ func authoredAgentFile(relative string, directory bool) bool {
 	return true
 }
 
-// ensureSourceIgnore creates the editable project exclusions on the first build.
-// Read operations never call it, and existing paths are left untouched.
-func ensureSourceIgnore(ctx context.Context, rootPath string) error {
+// ensureSourceIgnore refreshes bundled exclusions while holding the build lock.
+// Existing files are backed up only when changed. Reads never call this method.
+func (m *indexManager) ensureSourceIgnore(ctx context.Context, root string) (string, error) {
 	if err := ctx.Err(); err != nil {
-		return err
+		return "", err
 	}
-	root, err := os.OpenRoot(rootPath)
+
+	plan := fspatch.NewPlan(m.logger, root, filepath.Join(root, agentEnvDir, "backups"))
+	path := filepath.Join(root, sourceIgnorePath)
+	_, exists, err := plan.Read(path)
 	if err != nil {
-		return err
+		return "", err
 	}
-	defer root.Close() //nolint:errcheck
-	if _, err := root.Lstat(sourceIgnorePath); !os.IsNotExist(err) {
-		return err
+	if err := plan.WriteManagedBlock(path, assets.KWBIgnore(), fspatch.Sources); err != nil {
+		return "", err
 	}
-	if err := root.MkdirAll(agentEnvDir, 0755); err != nil {
-		return err
+	if err := ctx.Err(); err != nil {
+		return "", err
 	}
-	file, err := root.OpenFile(sourceIgnorePath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
-	if os.IsExist(err) {
-		return nil
+	if !exists {
+		return "", plan.Apply()
 	}
-	if err != nil {
-		return fmt.Errorf("creating %s: %w", sourceIgnorePath, err)
+
+	result, err := plan.ApplyUpdate(ctx, buildinfo.GetVersion())
+	if result == nil {
+		return "", err
 	}
-	_, writeErr := file.WriteString(sourceIgnoreHeader)
-	if err := errors.Join(writeErr, file.Close()); err != nil {
-		return fmt.Errorf("writing %s: %w", sourceIgnorePath, err)
-	}
-	return nil
+	return result.BackupDir, err
 }
 
 func (m *indexManager) sourceExclusions(ctx context.Context, root string) (gitignore.Matcher, error) {

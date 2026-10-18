@@ -17,7 +17,7 @@ import (
 func newGenerateCommand(f *cmdutil.Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "generate",
-		Short: "Generate ai agent configuration",
+		Short: "Generate AI agent instructions and settings",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			settings := &agentenv.Settings{
@@ -40,7 +40,7 @@ func newGenerateCommand(f *cmdutil.Factory) *cobra.Command {
 
 	cmd.Flags().Bool(
 		"clean", false,
-		"regenerate owned instruction files after all outputs are prepared")
+		"rewrite generated instructions even when unchanged")
 	cmd.Flags().String(
 		"providers", "",
 		"exact comma-separated provider list (empty selects none); overrides GO42X_PROVIDERS")

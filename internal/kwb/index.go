@@ -266,6 +266,8 @@ func (m *indexManager) ProjectRoot() (string, error) {
 }
 
 type BuildResult struct {
+	// BackupDir contains the original exclusions when a managed block changed.
+	BackupDir string        `json:"backup_dir,omitempty"`
 	Indexed   int           `json:"indexed"`
 	Unchanged int           `json:"unchanged"`
 	Deleted   int           `json:"deleted"`
@@ -319,8 +321,9 @@ func (m *indexManager) BuildIndex(ctx context.Context, root string) (report Buil
 			return report, err
 		}
 	}
-	if err := ensureSourceIgnore(ctx, root); err != nil {
-		return report, err
+	report.BackupDir, err = m.ensureSourceIgnore(ctx, root)
+	if err != nil {
+		return report, fmt.Errorf("refresh source exclusions: %w", err)
 	}
 	report.Rebuilt = m.settings.Rebuild || previous == nil || previous.Version != schemaVersion ||
 		previous.Root != root ||

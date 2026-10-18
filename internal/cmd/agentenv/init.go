@@ -15,8 +15,11 @@ import (
 func newInitCommand(f *cmdutil.Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Initialise ai agent configuration",
-		Args:  cobra.NoArgs,
+		Short: "Initialize AI agent configuration and templates",
+		Long: `Install missing configuration and templates in the current project.
+Existing configuration and templates are preserved.
+Run 'go42x agentenv generate' to generate agent instructions and settings.`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			settings := &agentenv.Settings{JSON: viper.GetBool("json")}
 			if err := settings.Validate(); err != nil {

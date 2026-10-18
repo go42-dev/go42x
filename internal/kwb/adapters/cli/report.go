@@ -12,6 +12,11 @@ func ReportBuild(output io.Writer, settings *kwb.Settings, result *kwb.BuildResu
 	var text func(io.Writer) error
 	if !settings.JSON {
 		text = func(w io.Writer) error {
+			if result != nil && len(result.BackupDir) > 0 {
+				if _, err := fmt.Fprintf(w, "Backup: %s\n", result.BackupDir); err != nil {
+					return err
+				}
+			}
 			if runErr != nil {
 				return nil
 			}

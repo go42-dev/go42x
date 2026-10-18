@@ -16,8 +16,10 @@ func newCheckCommand(f *cmdutil.Factory) *cobra.Command {
 	defaults := vendoring.NewSettings()
 	return &cobra.Command{
 		Use:   "check",
-		Short: "Verify locked files offline without modifying them",
-		Args:  cobra.NoArgs,
+		Short: "Check vendored files against the lockfile",
+		Long: `Verify that the manifest matches the lockfile and that vendored files match
+their recorded checksums. Runs offline without modifying files.`,
+		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			settings := &vendoring.Settings{
 				RootPath:     viper.GetString("root"),

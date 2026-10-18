@@ -13,8 +13,7 @@ import (
 func NewVersionCommand(f *cmdutil.Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "version",
-		Short: "Version information",
-		Long:  `Version information`,
+		Short: "Show version and runtime information",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runVersionCommand(f)

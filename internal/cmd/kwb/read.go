@@ -15,7 +15,8 @@ import (
 func newReadCommand(f *cmdutil.Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "read PATH",
-		Short: "Read current project source lines",
+		Short: "Read lines from current project files",
+		Long:  "Read current file contents from disk. Relative paths resolve from the project root.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			settings := &kwb.ReadSettings{
@@ -35,7 +36,7 @@ func newReadCommand(f *cmdutil.Factory) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().Bool("json", false, "print the same structured result as the MCP tool")
+	cmd.Flags().Bool("json", false, "print structured file content")
 	cmd.Flags().Int("start-line", 1, "first line, one-based")
 	cmd.Flags().Int("end-line", 0, "last line, inclusive (default start-line + 199)")
 

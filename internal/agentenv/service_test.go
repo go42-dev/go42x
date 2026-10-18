@@ -129,6 +129,11 @@ func TestInitExtractsTemplatesAndPreservesCustomFiles(t *testing.T) {
 	if strings.Count(string(before), assets.AgentEnvGitIgnore()) != 1 {
 		t.Fatal("bundled gitignore block missing or duplicated")
 	}
+	kwbIgnorePath := filepath.Join(dir, ".go42x/kwb.ignore")
+	if _, err := os.Stat(kwbIgnorePath); !os.IsNotExist(err) {
+		t.Fatalf("init created knowledge-base exclusions: %v", err)
+	}
+	writeFile(t, kwbIgnorePath, "# go42x -- START\ncustom/\n")
 	writeFile(t, filepath.Join(dir, ".go42x/go42x.yaml"), "custom configuration")
 	customTemplate := filepath.Join(dir, ".go42x/agents.tpl.md")
 	writeFile(t, customTemplate, "custom instructions")
@@ -156,6 +161,9 @@ func TestInitExtractsTemplatesAndPreservesCustomFiles(t *testing.T) {
 	if !bytes.Equal(before, readFile(t, filepath.Join(dir, ".gitignore"))) {
 		t.Fatal("repeated init changed gitignore")
 	}
+	if got := string(readFile(t, kwbIgnorePath)); got != "# go42x -- START\ncustom/\n" {
+		t.Fatalf("repeated init changed custom knowledge-base ignore rules: %q", got)
+	}
 	if string(readFile(t, localPath)) != "providers: {codex: {enabled: true}}\n" {
 		t.Fatal("repeated init changed local preferences")
 	}
@@ -177,7 +185,7 @@ func TestInitFilesystemErrors(t *testing.T) {
 				if err := os.Mkdir(filepath.Join(dir, ".gitignore"), 0755); err != nil {
 					t.Fatal(err)
 				}
-				want = "update .gitignore"
+				want = "prepare .gitignore"
 			}
 			if _, err := testService(
 				t,
@@ -188,20 +196,6 @@ func TestInitFilesystemErrors(t *testing.T) {
 				t.Fatalf("Init() = %v, want %s", err, want)
 			}
 		})
-	}
-}
-
-func TestGitignoreIdempotence(t *testing.T) {
-	dir := t.TempDir()
-	if err := updateGitIgnore(dir); err != nil {
-		t.Fatal(err)
-	}
-	first := readFile(t, filepath.Join(dir, ".gitignore"))
-	if err := updateGitIgnore(dir); err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(first, readFile(t, filepath.Join(dir, ".gitignore"))) {
-		t.Fatal("ignore rules duplicated")
 	}
 }
 
@@ -355,6 +349,7 @@ func TestUpdateReplacesOnlyBundledSources(t *testing.T) {
 		".go42x/.vendor.lock.yaml":           "old upstream lock",
 	}
 	preserved := map[string]string{
+		".go42x/kwb.ignore":                         "# go42x -- START\ncustom/\n",
 		".go42x/go42x.schema.json":                  "old schema",
 		".go42x/go42x.local.yaml":                   local,
 		".go42x/chunks/900-custom.tpl.md":           "{{ if }}",
@@ -386,7 +381,7 @@ func TestUpdateReplacesOnlyBundledSources(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantSources := 1 // The managed .gitignore is an additional source.
+	wantSources := 1 // The managed .gitignore block is an additional source.
 	err = fs.WalkDir(bundle, ".", func(path string, entry fs.DirEntry, err error) error {
 		if err != nil || entry.IsDir() {
 			return err

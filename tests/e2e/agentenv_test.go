@@ -429,6 +429,16 @@ func TestGenerationFailurePreservesProject(t *testing.T) {
 	}
 }
 
+func TestAgentEnvDoesNotCreateKnowledgeBaseExclusions(t *testing.T) {
+	t.Parallel()
+	p := newProject(t)
+	p.configure(t)
+	p.run(t, 0, "agentenv", "update")
+	if _, err := os.Stat(filepath.Join(p.root, ".go42x", "kwb.ignore")); !os.IsNotExist(err) {
+		t.Fatalf("agentenv created knowledge-base exclusions: %v", err)
+	}
+}
+
 func TestAgentEnvUpdate(t *testing.T) {
 	t.Parallel()
 	p := newProject(t)
@@ -436,6 +446,7 @@ func TestAgentEnvUpdate(t *testing.T) {
 	p.write(t, ".go42x/go42x.local.yaml", "project: {name: local-project}\nproviders: {claude: {enabled: true}}\n")
 	preserved := map[string]string{
 		".go42x/go42x.local.yaml":                   p.read(t, ".go42x/go42x.local.yaml"),
+		".go42x/kwb.ignore":                         "# go42x -- START\ncustom/\n",
 		".go42x/chunks/900-custom.tpl.md":           "Additional project instructions",
 		"AGENTS.md":                                 "Original instructions",
 		".claude/settings.local.json":               `{"user_setting":"preserved"}`,
@@ -454,7 +465,7 @@ func TestAgentEnvUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sourceCount := 1 // Managed .gitignore block.
+	sourceCount := 1 // The managed .gitignore block.
 	if err := fs.WalkDir(templates, ".", func(_ string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err

@@ -16,8 +16,9 @@ func newCheckCommand(f *cmdutil.Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "check",
 		Short: "Check index freshness without updating it",
-		Long:  "Hash eligible source using recorded build settings and current ignore files.",
-		Args:  cobra.NoArgs,
+		Long: `Compare the index with current project files without updating it.
+Exit with status 1 unless a complete scan confirms the index is fresh.`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			settings := &kwb.CheckSettings{
 				KnowledgeBase: queryKnowledgeBaseSettings(cmd),

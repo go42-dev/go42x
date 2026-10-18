@@ -15,8 +15,11 @@ import (
 func newUpdateCommand(f *cmdutil.Factory) *cobra.Command {
 	return &cobra.Command{
 		Use:   "update",
-		Short: "Validate, back up, and replace bundled agentenv sources",
-		Args:  cobra.NoArgs,
+		Short: "Update bundled AI agent configuration and templates",
+		Long: `Replace bundled configuration and templates with the versions shipped in this binary.
+Local overrides and additional files are preserved.
+Run 'go42x agentenv generate' afterward to refresh generated agent files.`,
+		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			settings := &agentenv.Settings{JSON: viper.GetBool("json")}
 			if err := settings.Validate(); err != nil {
