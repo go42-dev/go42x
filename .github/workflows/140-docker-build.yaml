@@ -334,23 +334,8 @@ jobs:
           subject-digest: ${{ steps.build.outputs.digest }}
           sbom-path: sbom-${{ inputs.service_name }}-${{ inputs.image_tag }}.spdx.json
           show-summary: true
-      - name: 'Publish stable image as latest'
-        if: startsWith(inputs.image_tag, 'v') && !contains(inputs.image_tag, '-')
-        env:
-          IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/${{ inputs.service_name }}
-          IMAGE_REFERENCE: ${{ steps.validate-digest.outputs.image_reference }}
-          IMAGE_DIGEST: ${{ steps.validate-digest.outputs.image_digest }}
-        run: |
-          set -euo pipefail
-          docker buildx imagetools create --tag "$IMAGE_NAME:latest" "$IMAGE_REFERENCE"
-          latest_digest=$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$IMAGE_NAME:latest")
-          if [ "$latest_digest" != "$IMAGE_DIGEST" ]; then
-            echo '::error::The latest tag does not identify the published image.'
-            exit 1
-          fi
       - name: 'Summarize published image'
         env:
-          IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/${{ inputs.service_name }}
           IMAGE_REFERENCE: ${{ steps.validate-digest.outputs.image_reference }}
           IMAGE_TAG: ${{ inputs.image_tag }}
           SOURCE_SHA: ${{ inputs.source_sha }}
@@ -361,8 +346,5 @@ jobs:
             printf -- "- Tag: \`%s\`\n" "$IMAGE_TAG"
             printf -- "- Image: \`%s\`\n" "$IMAGE_REFERENCE"
             printf -- "- Source: \`%s\`\n" "$SOURCE_SHA"
-            if [[ "$IMAGE_TAG" == v* && "$IMAGE_TAG" != *-* ]]; then
-              printf -- "- Latest: \`%s:latest\`\n" "$IMAGE_NAME"
-            fi
             echo
           } >> "$GITHUB_STEP_SUMMARY"

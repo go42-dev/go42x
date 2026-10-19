@@ -444,39 +444,62 @@ func TestDockerScanArchitectures(t *testing.T) {
 }
 
 func TestDockerLatestPromotion(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("../..", ".github/workflows/140-docker-build.yaml"))
+	data, err := os.ReadFile(filepath.Join("../..", ".github/workflows/300-release.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	var workflow struct {
 		Jobs map[string]struct {
-			Steps []struct {
-				Name string `yaml:"name"`
-				If   string `yaml:"if"`
-			} `yaml:"steps"`
+			If    string   `yaml:"if"`
+			Needs []string `yaml:"needs"`
+			Uses  string   `yaml:"uses"`
 		} `yaml:"jobs"`
 	}
 	if err := yaml.Unmarshal(data, &workflow); err != nil {
 		t.Fatal(err)
 	}
-	var condition string
-	for _, step := range workflow.Jobs["docker-build"].Steps {
-		if step.Name == "Publish stable image as latest" {
-			condition = step.If
-			break
+	promotion := workflow.Jobs["promote-docker"]
+	const promotionCondition = "needs.validate-release.outputs.is_prerelease == 'false'"
+	if promotion.If != promotionCondition {
+		t.Fatalf("latest promotion must require a successful stable release: %s", promotion.If)
+	}
+	if len(promotion.Uses) > 0 {
+		t.Fatal("latest promotion must be defined in the release workflow")
+	}
+	for _, dependency := range []string{"validate-release", "docker-build", "publish-release"} {
+		if !slices.Contains(promotion.Needs, dependency) {
+			t.Fatalf("latest promotion must wait for %s", dependency)
 		}
 	}
-	const promotionCondition = "startsWith(inputs.image_tag, 'v') && !contains(inputs.image_tag, '-')"
-	if condition != promotionCondition {
-		t.Fatalf("latest promotion must require a successful stable release: %s", condition)
+
+	if !slices.Equal(workflow.Jobs["docker-build"].Needs, []string{"validate-release"}) {
+		t.Fatal("Docker publication must follow validation and precede release publication")
+	}
+	if !slices.Contains(workflow.Jobs["publish-release"].Needs, "docker-build") {
+		t.Fatal("release publication must wait for Docker publication and attestations")
 	}
 
-	script := dockerWorkflowScript(t, "140-docker-build.yaml", "docker-build", "Publish stable image as latest")
+	data, err = os.ReadFile(filepath.Join("../..", ".github/workflows/140-docker-build.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var build compiledWorkflow
+	if err := yaml.Unmarshal(data, &build); err != nil {
+		t.Fatal(err)
+	}
+	for _, step := range build.Jobs["docker-build"].Steps {
+		if step.Name == "Publish stable image as latest" {
+			t.Fatal("the reusable Docker build workflow must not promote latest")
+		}
+	}
+
+	script := dockerWorkflowScript(t, "300-release.yaml", "promote-docker", "Publish stable image as latest")
 	digest := "sha256:" + strings.Repeat("a", 64)
 	for _, tt := range []struct {
-		name   string
-		latest string
-		valid  bool
+		name    string
+		latest  string
+		failure string
+		valid   bool
 	}{
 		{
 			name:   "same manifest",
@@ -487,14 +510,29 @@ func TestDockerLatestPromotion(t *testing.T) {
 			name:   "different manifest",
 			latest: "sha256:" + strings.Repeat("b", 64),
 		},
+		{
+			name:    "registry promotion failure",
+			latest:  digest,
+			failure: "create",
+		},
+		{
+			name:    "registry verification failure",
+			latest:  digest,
+			failure: "inspect",
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
 			mock := `#!/bin/bash
 set -euo pipefail
 case "$*" in
-  'buildx imagetools create --tag ghcr.io/go42-dev/go42x:latest ghcr.io/go42-dev/go42x@'*) ;;
-  'buildx imagetools inspect --format {{.Manifest.Digest}} ghcr.io/go42-dev/go42x:latest') echo "$MOCK_LATEST_DIGEST" ;;
+  'buildx imagetools create --tag ghcr.io/go42-dev/go42x:latest ghcr.io/go42-dev/go42x@'*)
+    if [ "$MOCK_FAILURE" = create ]; then exit 1; fi
+    ;;
+  'buildx imagetools inspect --format {{.Manifest.Digest}} ghcr.io/go42-dev/go42x:latest')
+    if [ "$MOCK_FAILURE" = inspect ]; then exit 1; fi
+    echo "$MOCK_LATEST_DIGEST"
+    ;;
   *) echo "Unexpected Docker command: $*" >&2; exit 1 ;;
 esac
 `
@@ -508,11 +546,25 @@ esac
 				"IMAGE_REFERENCE=ghcr.io/go42-dev/go42x@" + digest,
 				"IMAGE_DIGEST=" + digest,
 				"MOCK_LATEST_DIGEST=" + tt.latest,
+				"MOCK_FAILURE=" + tt.failure,
 				"GITHUB_STEP_SUMMARY=" + filepath.Join(dir, "summary"),
 			}
 			output, err := command.CombinedOutput()
 			if (err == nil) != tt.valid {
 				t.Fatalf("latest promotion: %v\n%s", err, output)
+			}
+
+			summary, err := os.ReadFile(filepath.Join(dir, "summary"))
+			if tt.valid {
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !strings.Contains(string(summary), "## Docker image promotion") ||
+					!strings.Contains(string(summary), "ghcr.io/go42-dev/go42x@"+digest) {
+					t.Fatalf("promotion summary must identify the promoted image: %s", summary)
+				}
+			} else if !os.IsNotExist(err) {
+				t.Fatalf("failed promotion must not publish a success summary: %v\n%s", err, summary)
 			}
 		})
 	}

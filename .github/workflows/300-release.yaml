@@ -3,7 +3,7 @@
 name: release
 run-name: 'release ${{ inputs.version }}'
 
-# Require successful Unified CI for the selected master commit, then build and publish signed CLI artifacts.
+# Require successful Unified CI, publish the image and signed CLI artifacts, then promote stable images to latest.
 
 on:
   workflow_dispatch:
@@ -147,11 +147,35 @@ jobs:
               .addLink('Successful Unified CI', ciRun.html_url)
               .write();
 
+  docker-build:
+    name: docker-build
+    needs:
+      - validate-release
+    uses: ./.github/workflows/140-docker-build.yaml
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+      attestations: write
+      id-token: write
+    with:
+      runs_on: ubuntu-latest
+      continue_on_error: false
+      service_name: go42x
+      platforms: linux/amd64,linux/arm64
+      attestation: true
+      generate_sbom: true
+      attestation_sbom: true
+      timeout_minutes: 30
+      image_tag: ${{ needs.validate-release.outputs.release_version }}
+      source_sha: ${{ needs.validate-release.outputs.source_sha }}
+
   publish-release:
     name: publish-release
     environment: release
     needs:
       - validate-release
+      - docker-build
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -241,25 +265,44 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-  publish-docker:
+  promote-docker:
+    name: promote-docker
     needs:
       - validate-release
+      - docker-build
       - publish-release
-    uses: ./.github/workflows/140-docker-build.yaml
+    if: needs.validate-release.outputs.is_prerelease == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
-      contents: read
-      actions: read
       packages: write
-      attestations: write
-      id-token: write
-    with:
-      runs_on: ubuntu-latest
-      continue_on_error: false
-      service_name: go42x
-      platforms: linux/amd64,linux/arm64
-      attestation: true
-      generate_sbom: true
-      attestation_sbom: true
-      timeout_minutes: 30
-      image_tag: ${{ needs.validate-release.outputs.release_version }}
-      source_sha: ${{ needs.validate-release.outputs.source_sha }}
+    steps:
+      - name: 'Set up Docker Buildx'
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - name: 'Log in to GitHub Container Registry'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: 'Publish stable image as latest'
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/go42x
+          IMAGE_REFERENCE: ${{ needs.docker-build.outputs.image_reference }}
+          IMAGE_DIGEST: ${{ needs.docker-build.outputs.image_digest }}
+        run: |-
+          set -euo pipefail
+          docker buildx imagetools create --tag "$IMAGE_NAME:latest" "$IMAGE_REFERENCE"
+          latest_digest=$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$IMAGE_NAME:latest")
+          if [ "$latest_digest" != "$IMAGE_DIGEST" ]; then
+            echo '::error::The latest tag does not identify the published image.'
+            exit 1
+          fi
+
+          {
+            echo '## Docker image promotion'
+            echo
+            printf -- "- Latest: \`%s:latest\`\n" "$IMAGE_NAME"
+            printf -- "- Image: \`%s\`\n" "$IMAGE_REFERENCE"
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
