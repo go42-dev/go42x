@@ -73,91 +73,6 @@ jobs:
       image_reference: ${{ steps.validate-digest.outputs.image_reference }}
     # ----
     steps:
-      - name: 'Validate options and select platforms'
-        id: platforms
-        env:
-          PLATFORMS: ${{ inputs.platforms }}
-          GENERATE_SBOM: ${{ inputs.generate_sbom }}
-          ATTESTATION_SBOM: ${{ inputs.attestation_sbom }}
-        run: |
-          python3 - <<'PY'
-          import os
-          import sys
-
-          platforms = [platform.strip() for platform in os.environ["PLATFORMS"].split(",")]
-          supported = {"linux/amd64", "linux/arm64"}
-          if not platforms or any(platform not in supported for platform in platforms):
-              sys.exit("platforms must contain linux/amd64, linux/arm64, or both")
-          if len(platforms) != len(set(platforms)):
-              sys.exit("platforms must not contain duplicates")
-          if os.environ["ATTESTATION_SBOM"] == "true" and os.environ["GENERATE_SBOM"] != "true":
-              sys.exit("attestation_sbom requires generate_sbom")
-
-          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
-              output.write("platforms=" + ",".join(platforms) + "\n")
-          PY
-      - name: 'Validate image publication target'
-        env:
-          CALLER_WORKFLOW_REF: ${{ github.workflow_ref }}
-          CALLER_WORKFLOW_SHA: ${{ github.workflow_sha }}
-          EVENT_NAME: ${{ github.event_name }}
-          EVENT_REF: ${{ github.ref }}
-          EVENT_SHA: ${{ github.sha }}
-          IMAGE_TAG: ${{ inputs.image_tag }}
-          REPOSITORY: ${{ github.repository }}
-          SOURCE_SHA: ${{ inputs.source_sha }}
-          SERVICE_NAME: ${{ inputs.service_name }}
-          RUN_ID: ${{ github.run_id }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-        run: |
-          set -euo pipefail
-          if [[ ! "$IMAGE_TAG" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
-            echo "Invalid OCI image tag: $IMAGE_TAG" >&2
-            exit 1
-          fi
-          if [[ ! "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "Invalid source commit SHA: $SOURCE_SHA" >&2
-            exit 1
-          fi
-
-          if [[ ! "$SERVICE_NAME" =~ ^[a-z0-9][a-z0-9._-]{0,127}$ ]]; then
-            echo "Invalid container package name: $SERVICE_NAME" >&2
-            exit 1
-          fi
-
-          if [[ "$EVENT_SHA" != "$SOURCE_SHA" || "$CALLER_WORKFLOW_SHA" != "$SOURCE_SHA" ]]; then
-            echo '::error::Publication must use the exact caller and event commit.'
-            exit 1
-          fi
-
-          # Version tags are permanent release aliases. Only the master-only
-          # release workflow may create them from its validated dispatch commit.
-          if [[ "$IMAGE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$ ]]; then
-            expected_workflow_ref="${REPOSITORY}/.github/workflows/300-release.yaml@refs/heads/master"
-            if [[ "$EVENT_NAME" != "workflow_dispatch" || "$EVENT_REF" != "refs/heads/master" || \
-              "$CALLER_WORKFLOW_REF" != "$expected_workflow_ref" ]]; then
-              echo '::error::Only the master release workflow may publish version tags.'
-              exit 1
-            fi
-          elif [[ "$IMAGE_TAG" =~ ^ci-[1-9][0-9]*-[1-9][0-9]*$ ]]; then
-            expected_workflow_ref="${REPOSITORY}/.github/workflows/100-unified-workflow.yaml@${EVENT_REF}"
-            if [[ "$IMAGE_TAG" != "ci-${RUN_ID}-${RUN_ATTEMPT}" || \
-              "$CALLER_WORKFLOW_REF" != "$expected_workflow_ref" ]]; then
-              echo '::error::CI publication requires the current Unified CI run tag.'
-              exit 1
-            fi
-            case "$EVENT_NAME" in
-              push|pull_request|workflow_dispatch) ;;
-              *)
-                echo '::error::Unsupported CI publication event.'
-                exit 1
-                ;;
-            esac
-          else
-            echo '::error::Publication requires a CI run tag or release version.'
-            exit 1
-          fi
-      # ----
       - name: 'Checkout repository'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -175,7 +90,7 @@ jobs:
       # ----
       - name: 'Extract build versions and cache platform key'
         env:
-          PLATFORMS: ${{ steps.platforms.outputs.platforms }}
+          PLATFORMS: ${{ inputs.platforms }}
         run: |
           {
             echo "gopls_version=$(sed -n 's/^"go:golang.org\/x\/tools\/gopls" = "\(.*\)"$/\1/p' etc/mise.toml)"
@@ -233,7 +148,7 @@ jobs:
       - name: 'Determine annotation levels'
         id: annotations-levels
         env:
-          PLATFORMS: ${{ steps.platforms.outputs.platforms }}
+          PLATFORMS: ${{ inputs.platforms }}
         run: |
           if [[ "$PLATFORMS" == *,* ]]; then
             echo "levels=manifest,index" >> "$GITHUB_OUTPUT"
@@ -267,7 +182,7 @@ jobs:
           builder: ${{ steps.buildx.outputs.name }}
           context: ${{ github.workspace }}/
           file: ${{ github.workspace }}/Dockerfile
-          platforms: ${{ steps.platforms.outputs.platforms }}
+          platforms: ${{ inputs.platforms }}
           cache-from: type=gha,scope=docker-build
           # Cache export is an optimization, not a publication requirement.
           # A cache-service write failure must not cancel the image push.

@@ -433,8 +433,6 @@ tasks:
     cmds:
       - |
         set -- {{.CLI_ARGS}}
-        # Language formatters handle indentation, including content inside Go strings.
-        # The checker config also excludes vendored upstream snapshots.
         "{{.TOOLS_BIN}}/ec" -config etc/editorconfig.json "$@"
 
   lint:yaml:
