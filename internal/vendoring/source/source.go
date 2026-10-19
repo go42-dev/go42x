@@ -92,10 +92,10 @@ func (s Config) Validate() error {
 		if !packagePattern.MatchString(s.Package) || (!ExactVersion(s.Version) && !tagPattern.MatchString(s.Version)) {
 			return fmt.Errorf("npm requires a package and exact version or dist-tag (ranges are unsupported)")
 		}
-		if err := ValidateHTTPURL(s.Registry); err != nil {
+		u, err := parseHTTPURL(s.Registry)
+		if err != nil {
 			return fmt.Errorf("npm registry: %w", err)
 		}
-		u, _ := url.Parse(s.Registry)
 		if u.RawQuery != "" {
 			return fmt.Errorf("npm registry cannot contain a query")
 		}
@@ -109,19 +109,24 @@ func (s Config) Validate() error {
 }
 
 func ValidateHTTPURL(value string) error {
+	_, err := parseHTTPURL(value)
+	return err
+}
+
+func parseHTTPURL(value string) (*url.URL, error) {
 	u, err := url.Parse(value)
 	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || u.User != nil || u.Fragment != "" {
-		return fmt.Errorf("expected an HTTP(S) URL without credentials or fragment")
+		return nil, fmt.Errorf("expected an HTTP(S) URL without credentials or fragment")
 	}
 	if strings.Contains(u.Path, "//") || strings.ContainsAny(u.Path, "\\:\x00") {
-		return fmt.Errorf("URL path cannot contain getter subdirectory syntax or non-portable characters")
+		return nil, fmt.Errorf("URL path cannot contain getter subdirectory syntax or non-portable characters")
 	}
 	for _, key := range []string{"archive", "checksum", "filename", "sshkey", "ref"} {
 		if u.Query().Has(key) {
-			return fmt.Errorf("URL query %q is reserved; use source fields", key)
+			return nil, fmt.Errorf("URL query %q is reserved; use source fields", key)
 		}
 	}
-	return nil
+	return u, nil
 }
 
 func hasPassword(u *url.URL) bool { _, ok := u.User.Password(); return ok }

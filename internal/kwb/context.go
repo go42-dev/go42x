@@ -142,7 +142,12 @@ func (b *contextBuilder) documentation(ctx context.Context, paths []string) erro
 		if hit.Reason == "related_document" {
 			priority = priorityRelated
 		}
-		c := documentCandidate(b.catalog.ByPath(hit.Path), hit.Reason, priority)
+		doc := b.catalog.ByPath(hit.Path)
+		if doc == nil {
+			return fmt.Errorf("impacted document %q not found in catalog", hit.Path)
+		}
+
+		c := documentCandidate(doc, hit.Reason, priority)
 		c.evidence = hit.Evidence
 		b.add(c)
 	}

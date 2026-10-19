@@ -511,6 +511,10 @@ func (c *Catalog) impact(ctx context.Context, paths []string) (*ImpactResult, er
 			}
 			seen[next] = true
 			doc := c.byPath[next]
+			if doc == nil {
+				return nil, fmt.Errorf("related document %q not found in catalog", next)
+			}
+
 			trail := append(slices.Clone(current.trail), doc.ID)
 			hit := impactHit(hits, doc, "related_document")
 			hit.Evidence = append(hit.Evidence, Evidence{

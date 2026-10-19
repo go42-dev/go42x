@@ -424,7 +424,7 @@ func TestApplicationFailureLeavesOldLockAndRecovery(t *testing.T) {
 	}})
 	s = fixtureService(t, root, ".vendor.yaml", vendoring.WithLogger(logger))
 	r, err := s.Update(t.Context())
-	if err == nil || r.BackupDir == "" {
+	if err == nil || r == nil || r.BackupDir == "" {
 		t.Fatalf("failure missing recovery: %+v %v", r, err)
 	}
 	if !bytes.Equal(oldLock, readFixture(t, filepath.Join(root, ".vendor.lock.yaml"))) {

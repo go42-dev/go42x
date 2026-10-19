@@ -96,6 +96,10 @@ func sourceLines(content string) []string {
 
 func chunkFile(path string, data []byte) []document {
 	lines := sourceLines(string(data))
+	if lines == nil {
+		return nil
+	}
+
 	kind, language := fileKind(path)
 	var metadata *Document
 	if language == "md" || language == "markdown" {

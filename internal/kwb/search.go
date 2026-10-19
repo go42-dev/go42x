@@ -212,6 +212,10 @@ func (m *indexManager) Search(ctx context.Context, options SearchOptions) (*Sear
 
 func excerpt(content, queryText string) (string, int, int) {
 	lines := sourceLines(content)
+	if lines == nil {
+		return "", 0, 0
+	}
+
 	terms := strings.FieldsFunc(
 		strings.ToLower(queryText),
 		func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) },

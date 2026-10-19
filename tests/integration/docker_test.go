@@ -444,32 +444,34 @@ func TestDockerScanArchitectures(t *testing.T) {
 }
 
 func TestDockerLatestPromotion(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("../..", ".github/workflows/300-release.yaml"))
+	data, err := os.ReadFile(filepath.Join("../..", ".github/workflows/140-docker-build.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	var workflow struct {
 		Jobs map[string]struct {
-			Needs []string `yaml:"needs"`
-			If    string   `yaml:"if"`
+			Steps []struct {
+				Name string `yaml:"name"`
+				If   string `yaml:"if"`
+			} `yaml:"steps"`
 		} `yaml:"jobs"`
 	}
 	if err := yaml.Unmarshal(data, &workflow); err != nil {
 		t.Fatal(err)
 	}
-	promotion := workflow.Jobs["promote-docker"]
-	for _, dependency := range []string{"validate-release", "publish-docker", "security-extra"} {
-		if !slices.Contains(promotion.Needs, dependency) {
-			t.Errorf("latest promotion does not wait for %s", dependency)
+	var condition string
+	for _, step := range workflow.Jobs["docker-build"].Steps {
+		if step.Name == "Publish stable image as latest" {
+			condition = step.If
+			break
 		}
 	}
-	const promotionCondition = "${{ !cancelled() && needs.validate-release.result == 'success' && " +
-		"needs.publish-docker.result == 'success' && needs.validate-release.outputs.is_prerelease == 'false' }}"
-	if promotion.If != promotionCondition {
-		t.Fatalf("latest promotion must require a successful stable release: %s", promotion.If)
+	const promotionCondition = "startsWith(inputs.image_tag, 'v') && !contains(inputs.image_tag, '-')"
+	if condition != promotionCondition {
+		t.Fatalf("latest promotion must require a successful stable release: %s", condition)
 	}
 
-	script := dockerWorkflowScript(t, "300-release.yaml", "promote-docker", "Promote the stable image to latest")
+	script := dockerWorkflowScript(t, "140-docker-build.yaml", "docker-build", "Publish stable image as latest")
 	digest := "sha256:" + strings.Repeat("a", 64)
 	for _, tt := range []struct {
 		name   string

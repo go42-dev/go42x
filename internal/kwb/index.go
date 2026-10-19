@@ -349,17 +349,17 @@ func (m *indexManager) BuildIndex(ctx context.Context, root string) (report Buil
 			retErr = errors.Join(retErr, os.RemoveAll(directory))
 		}
 	}()
-	prepare := func() error {
+	prepare := func() (bleve.Index, error) {
 		if index != nil {
-			return nil
+			return index, nil
 		}
 		directory, err = os.MkdirTemp(m.settings.IndexPath, "gen-")
 		if err != nil {
-			return err
+			return nil, err
 		}
 		// Readers only open existing lock files; preparation owns their creation.
 		if err := os.WriteFile(filepath.Join(directory, "LEASE"), nil, 0600); err != nil {
-			return err
+			return nil, err
 		}
 		dataPath := filepath.Join(directory, "data")
 		if previous != nil {
@@ -369,13 +369,13 @@ func (m *indexManager) BuildIndex(ctx context.Context, root string) (report Buil
 				dataPath,
 				m.settings.IndexType == "scorch",
 			); err != nil {
-				return err
+				return nil, err
 			}
 			index, err = bleve.OpenUsing(dataPath, map[string]any{"bolt_timeout": "1s"})
 		} else {
 			indexMapping, mappingErr := createMapping()
 			if mappingErr != nil {
-				return mappingErr
+				return nil, mappingErr
 			}
 			backend := m.settings.IndexType
 			if backend == "upsidedown" {
@@ -391,10 +391,10 @@ func (m *indexManager) BuildIndex(ctx context.Context, root string) (report Buil
 		}
 		if err != nil {
 			index = nil
-			return err
+			return nil, err
 		}
 		batch = index.NewBatch()
-		return nil
+		return index, nil
 	}
 	flush := func(force bool) error {
 		if batch.Size() == 0 || (!force && batch.Size() < m.settings.BatchSize) {
@@ -420,7 +420,7 @@ func (m *indexManager) BuildIndex(ctx context.Context, root string) (report Buil
 			report.Unchanged++
 			return nil
 		}
-		if err := prepare(); err != nil {
+		if _, err := prepare(); err != nil {
 			return err
 		}
 		docs := chunkFile(path, data)
@@ -461,7 +461,7 @@ func (m *indexManager) BuildIndex(ctx context.Context, root string) (report Buil
 			if _, exists := meta.Files[path]; exists {
 				continue
 			}
-			if err := prepare(); err != nil {
+			if _, err := prepare(); err != nil {
 				return report, err
 			}
 			for i := 0; i < record.Chunks; i++ {
@@ -477,17 +477,18 @@ func (m *indexManager) BuildIndex(ctx context.Context, root string) (report Buil
 		report.Chunks += record.Chunks
 	}
 	report.Files = len(meta.Files)
-	if report.Indexed == 0 && report.Deleted == 0 && !report.Rebuilt &&
+	if report.Indexed == 0 && report.Deleted == 0 && previous != nil &&
 		previous.Selection.equal(meta.Selection) {
 		return report, ctx.Err()
 	}
-	if err := prepare(); err != nil {
+	preparedIndex, err := prepare()
+	if err != nil {
 		return report, err
 	}
 	if err := flush(true); err != nil {
 		return report, err
 	}
-	if err := index.Close(); err != nil {
+	if err := preparedIndex.Close(); err != nil {
 		index = nil
 		return report, err
 	}

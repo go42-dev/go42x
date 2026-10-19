@@ -123,7 +123,7 @@ func TestFreshnessMissingRootMismatchAndDeadline(t *testing.T) {
 	root := t.TempDir()
 	service := testService(t, root, filepath.Join(root, ".go42x/kwb/index"), nil)
 	missing, err := service.CheckFreshness(t.Context())
-	if !errors.Is(err, os.ErrNotExist) || missing.Status != "missing" || missing.Complete {
+	if !errors.Is(err, os.ErrNotExist) || missing == nil || missing.Status != "missing" || missing.Complete {
 		t.Fatalf("missing: %+v %v", missing, err)
 	}
 	entries, err := os.ReadDir(root)
@@ -138,7 +138,8 @@ func TestFreshnessMissingRootMismatchAndDeadline(t *testing.T) {
 	ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
 	defer cancel()
 	incomplete, err := service.CheckFreshness(ctx)
-	if !errors.Is(err, context.DeadlineExceeded) || incomplete.Complete || len(incomplete.Diagnostics) == 0 {
+	if !errors.Is(err, context.DeadlineExceeded) || incomplete == nil || incomplete.Complete ||
+		len(incomplete.Diagnostics) == 0 {
 		t.Fatalf("deadline: %+v %v", incomplete, err)
 	}
 }

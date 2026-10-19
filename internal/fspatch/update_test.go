@@ -275,7 +275,7 @@ func TestUpdateUsesWriteOrderAndPreservesLockOnFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	result, err := plan.ApplyUpdate(t.Context(), "test")
-	if err == nil || result.Applied != 1 {
+	if err == nil || result == nil || result.Applied != 1 {
 		t.Fatalf("partial batch: %+v %v", result, err)
 	}
 	data, err := os.ReadFile(lock)
