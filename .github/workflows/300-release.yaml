@@ -253,13 +253,13 @@ jobs:
       attestations: write
       id-token: write
     with:
-      runs_on: ubuntu-24.04
+      runs_on: ubuntu-latest
       continue_on_error: false
       service_name: go42x
       platforms: linux/amd64,linux/arm64
       attestation: true
       generate_sbom: true
       attestation_sbom: true
-      timeout_minutes: 60
+      timeout_minutes: 30
       image_tag: ${{ needs.validate-release.outputs.release_version }}
       source_sha: ${{ needs.validate-release.outputs.source_sha }}

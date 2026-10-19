@@ -2,7 +2,11 @@
 
 name: docker-build
 
-# Build the CLI tools image for both CI and releases, then publish it to GHCR.
+# Tool packaging.
+# Builds Dockerfile, which in turn builds golang binary.
+# buildx allows building multi-arch images.
+# Pushes image to ghcr.io.
+
 on:
   workflow_call:
     inputs:
@@ -27,7 +31,7 @@ on:
       timeout_minutes:
         required: false
         type: number
-        default: 60
+        default: 30
       service_name:
         description: Container package name.
         type: string
@@ -67,11 +71,6 @@ jobs:
     outputs:
       image_digest: ${{ steps.validate-digest.outputs.image_digest }}
       image_reference: ${{ steps.validate-digest.outputs.image_reference }}
-    env:
-      MISE_DEFAULT_CONFIG_FILENAME: etc/mise.toml
-      MISE_DATA_DIR: ${{ github.workspace }}/.tools
-      MISE_CACHE_DIR: ${{ github.workspace }}/.tools/cache
-      MISE_STATE_DIR: ${{ github.workspace }}/.tools/state
     # ----
     steps:
       - name: 'Validate options and select platforms'
@@ -174,19 +173,7 @@ jobs:
             exit 1
           fi
       # ----
-      - name: 'Setup Go'
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-      - name: 'Install Docker tools'
-        uses: ./.github/actions/setup-tools
-        with:
-          install-task: 'true'
-          install-args: --locked hadolint
-      - name: 'Lint Dockerfile'
-        run: task --exit-code lint:docker
-      # ----
-      - name: 'Extract tool versions and cache platform key'
+      - name: 'Extract build versions and cache platform key'
         env:
           PLATFORMS: ${{ steps.platforms.outputs.platforms }}
         run: |
@@ -361,15 +348,21 @@ jobs:
             echo '::error::The latest tag does not identify the published image.'
             exit 1
           fi
-          echo "Latest Docker image: $IMAGE_NAME:latest ($IMAGE_DIGEST)" >> "$GITHUB_STEP_SUMMARY"
       - name: 'Summarize published image'
         env:
+          IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/${{ inputs.service_name }}
           IMAGE_REFERENCE: ${{ steps.validate-digest.outputs.image_reference }}
           IMAGE_TAG: ${{ inputs.image_tag }}
           SOURCE_SHA: ${{ inputs.source_sha }}
         run: |-
           {
-            echo "Docker image tag: $IMAGE_TAG"
-            echo "Image: $IMAGE_REFERENCE"
-            echo "Source: $SOURCE_SHA"
+            echo '## Docker image'
+            echo
+            printf -- "- Tag: \`%s\`\n" "$IMAGE_TAG"
+            printf -- "- Image: \`%s\`\n" "$IMAGE_REFERENCE"
+            printf -- "- Source: \`%s\`\n" "$SOURCE_SHA"
+            if [[ "$IMAGE_TAG" == v* && "$IMAGE_TAG" != *-* ]]; then
+              printf -- "- Latest: \`%s:latest\`\n" "$IMAGE_NAME"
+            fi
+            echo
           } >> "$GITHUB_STEP_SUMMARY"

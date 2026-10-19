@@ -132,7 +132,7 @@ jobs:
     needs:
       - docker-prepare-tag
     with:
-      runs_on: ubuntu-24.04
+      runs_on: ubuntu-latest
       continue_on_error: false
       service_name: go42x
       image_tag: ${{ needs.docker-prepare-tag.outputs.tag }}
@@ -140,7 +140,7 @@ jobs:
       attestation: ${{ github.ref == 'refs/heads/master' }}
       generate_sbom: true
       attestation_sbom: false
-      timeout_minutes: 45
+      timeout_minutes: 30
       source_sha: ${{ github.sha }}
 
   security-extra:
@@ -151,7 +151,7 @@ jobs:
     needs:
       - docker-build
     with:
-      runs_on: ubuntu-24.04
+      runs_on: ubuntu-latest
       continue_on_error: true
       image_reference: ${{ needs.docker-build.outputs.image_reference }}
       timeout_minutes: 30

@@ -152,6 +152,56 @@ jobs:
             -print-full-file-path=true \
             ./...
 
+  # Linter for Dockerfile.
+  # @see https://github.com/hadolint/hadolint
+  docker-lint:
+    name: docker-lint
+    runs-on: ${{ inputs.runs_on }}
+    continue-on-error: ${{ inputs.continue_on_error }}
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    permissions:
+      contents: read
+    env:
+      MISE_DEFAULT_CONFIG_FILENAME: etc/mise.toml
+      MISE_DATA_DIR: ${{ github.workspace }}/.tools
+      MISE_CACHE_DIR: ${{ github.workspace }}/.tools/cache
+      MISE_STATE_DIR: ${{ github.workspace }}/.tools/state
+    # ----
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # ----
+      - name: Install pinned Hadolint
+        uses: ./.github/actions/setup-tools
+        with:
+          install-args: --locked hadolint
+      - name: Run Hadolint
+        shell: bash
+        env:
+          NO_COLOR: 'true'
+        run: |-
+          # Keep GitHub annotations for the native Hadolint output.
+          cat > "$RUNNER_TEMP/hadolint-matcher.json" <<'JSON'
+          {
+            "problemMatcher": [{
+              "owner": "hadolint",
+              "pattern": [{
+                "regexp": "^(.+):(\\d+)\\s(.+)\\s(error|warning|info|style):\\s(.+)$",
+                "file": 1,
+                "line": 2,
+                "code": 3,
+                "severity": 4,
+                "message": 5
+              }]
+            }]
+          }
+          JSON
+          echo "::add-matcher::$RUNNER_TEMP/hadolint-matcher.json"
+          trap 'echo "::remove-matcher owner=hadolint::"' EXIT
+          hadolint --failure-threshold info Dockerfile
+
   # JSON, YAML, and TOML formatting and lint rules.
   # @see https://github.com/caarlos0/jsonfmt
   # @see https://github.com/google/yamlfmt
