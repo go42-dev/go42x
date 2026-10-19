@@ -243,7 +243,8 @@ jobs:
             if .private or .archived then error("The Homebrew tap must be public and active") else .full_name end
           '
       - name: 'Build, sign, and publish release'
-        run: task release
+        # The workflow writes its own release summary below.
+        run: env -u GITHUB_STEP_SUMMARY task release
         env:
           GITHUB_TOKEN: ${{ steps.release-app.outputs.token }}
           HOMEBREW_GITHUB_TOKEN: ${{ steps.homebrew-app.outputs.token }}
@@ -261,7 +262,6 @@ jobs:
             echo "[GitHub release]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$RELEASE_VERSION)"
             if [ "$IS_PRERELEASE" = 'false' ]; then
               echo '[Homebrew tap](https://github.com/go42-dev/homebrew-go42x)'
-              echo 'Install with: brew install --cask go42-dev/go42x/go42x'
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
