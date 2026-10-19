@@ -181,11 +181,6 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    env:
-      MISE_DEFAULT_CONFIG_FILENAME: etc/mise.toml
-      MISE_DATA_DIR: ${{ github.workspace }}/.tools
-      MISE_CACHE_DIR: ${{ github.workspace }}/.tools/cache
-      MISE_STATE_DIR: ${{ github.workspace }}/.tools/state
     steps:
       - name: 'Checkout validated release commit'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

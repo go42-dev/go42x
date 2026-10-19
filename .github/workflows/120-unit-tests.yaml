@@ -33,11 +33,6 @@ jobs:
     timeout-minutes: ${{ inputs.timeout_minutes }}
     permissions:
       contents: read
-    env:
-      MISE_DEFAULT_CONFIG_FILENAME: etc/mise.toml
-      MISE_DATA_DIR: ${{ github.workspace }}/.tools
-      MISE_CACHE_DIR: ${{ github.workspace }}/.tools/cache
-      MISE_STATE_DIR: ${{ github.workspace }}/.tools/state
     # ----
     steps:
       - name: 'Checkout repository'
