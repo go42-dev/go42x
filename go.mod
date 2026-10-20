@@ -8,7 +8,7 @@ require (
 	github.com/go-git/go-git/v5 v5.19.2
 	github.com/gofrs/flock v0.12.1
 	github.com/hashicorp/go-getter/v2 v2.2.5
-	github.com/klauspost/compress v1.11.2
+	github.com/klauspost/compress v1.18.7
 	github.com/lmittmann/tint v1.1.2
 	github.com/mark3labs/mcp-go v1.0.0
 	github.com/pelletier/go-toml/v2 v2.2.4
