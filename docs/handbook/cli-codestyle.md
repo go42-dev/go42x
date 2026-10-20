@@ -58,6 +58,21 @@ Only changed files are reindexed. Use --rebuild to rebuild the entire index.`,
 }
 ```
 
+## Flag registration
+
+Register flags in a separate block after the command literal. Format each call
+across three lines: the method and opening parenthesis, the flag name and default
+value, then the help text and closing parenthesis. Include any shorthand beside
+the flag name. Leave a blank line between the flag block and `return cmd`.
+
+```go
+cmd.Flags().String(
+    "output", "",
+    "new directory for the exported bundle (required)")
+
+return cmd
+```
+
 ## Typed settings and validation
 
 Construct feature settings explicitly in `RunE`. Keep feature flags, including
@@ -97,7 +112,10 @@ func newGenerateCommand(f *cmdutil.Factory) *cobra.Command {
         },
     }
 
-    cmd.Flags().Bool(cleanFlag, false, "regenerate owned instruction files")
+    cmd.Flags().Bool(
+        cleanFlag, false,
+        "regenerate owned instruction files")
+
     return cmd
 }
 ```

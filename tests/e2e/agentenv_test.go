@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -14,6 +16,7 @@ import (
 	"github.com/pelletier/go-toml/v2"
 
 	"github.com/go42-dev/go42x/assets"
+	"github.com/go42-dev/go42x/internal/fspatch"
 )
 
 func TestGeneratedDirectoriesArePrivate(t *testing.T) {
@@ -34,6 +37,265 @@ func TestGeneratedDirectoriesArePrivate(t *testing.T) {
 			t.Errorf("generated directory %s is accessible to other users: %s", path, info.Mode())
 		}
 	}
+}
+
+func TestAgentEnvExport(t *testing.T) {
+	t.Parallel()
+	p := newProject(t)
+	p.write(t, ".go42x/go42x.yaml", "invalid: [configuration\n")
+	before := p.snapshot(t)
+	for _, args := range [][]string{
+		{"agentenv", "export"},
+		{"agentenv", "export", "--output="},
+		{"agentenv", "export", "--output=  "},
+	} {
+		p.run(t, 2, args...)
+	}
+	p.assertUnchanged(t, before)
+
+	output := ".build/exported bundle"
+	result := p.run(t, 0, "agentenv", "export", "--output", output, "--json")
+	var report struct {
+		Directory string `json:"directory"`
+	}
+	if err := json.Unmarshal([]byte(result.stdout), &report); err != nil || report.Directory != output {
+		t.Fatalf("export report = %s, %v", result.stdout, err)
+	}
+	if result.stderr != "" {
+		t.Fatalf("unexpected export stderr: %s", result.stderr)
+	}
+	if !strings.Contains(p.read(t, output+"/go42x.yaml"), "providers:") ||
+		!strings.Contains(p.read(t, output+"/chunks/200-search.tpl.md"), "Knowledge-base configuration") {
+		t.Fatal("export omitted bundled configuration or templates")
+	}
+	if got := p.read(t, ".go42x/go42x.yaml"); got != "invalid: [configuration\n" {
+		t.Fatalf("export changed project configuration: %s", got)
+	}
+
+	before = p.snapshot(t)
+	result = p.run(t, 1, "agentenv", "export", "--output", output, "--json")
+	var failure struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(result.stdout), &failure); err != nil || failure.Error == "" {
+		t.Fatalf("export failure = %s, %v", result.stdout, err)
+	}
+	p.assertUnchanged(t, before)
+}
+
+func newMergeProject(t *testing.T) *project {
+	t.Helper()
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Skipf("Git is required for three-way merge tests: %v", err)
+	}
+	p := newProject(t)
+	p.env = append(p.env, "PATH="+filepath.Dir(git)+string(os.PathListSeparator)+filepath.Dir(binaryPath))
+	p.run(t, 0, "agentenv", "init")
+	p.run(t, 0, "agentenv", "export", "--output", ".build/base")
+	return p
+}
+
+func mergeSourceSnapshot(t *testing.T, p *project) map[string]fileState {
+	t.Helper()
+	files := p.snapshot(t)
+	maps.DeleteFunc(files, func(path string, _ fileState) bool {
+		return strings.HasPrefix(filepath.ToSlash(path), ".build/agentenv-update-")
+	})
+	return files
+}
+
+func TestAgentEnvUpdateMergesOriginalBundle(t *testing.T) {
+	t.Parallel()
+	p := newMergeProject(t)
+	incoming := p.read(t, ".go42x/go42x.yaml")
+	base := strings.Replace(incoming, "temp-dir: .build", "temp-dir: .build-old", 1)
+	current := strings.Replace(base, "name: go42", "name: project-custom", 1)
+	p.write(t, ".build/base/go42x.yaml", base)
+	p.write(t, ".go42x/go42x.yaml", current)
+	if err := os.Chmod(filepath.Join(p.root, ".go42x/go42x.yaml"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	p.write(t, ".go42x/go42x.local.yaml", "project: {description: 'Local description'}\n")
+	p.write(t, ".go42x/chunks/project.tpl.md", "Additional project instructions\n")
+	p.write(t, ".go42x/upstream/project.md", "Additional project reference\n")
+	p.write(t, "AGENTS.md", "Existing generated instructions\n")
+	p.write(t, ".build/base/chunks/090-retired.tpl.md", "Removed upstream\n")
+	p.write(t, ".go42x/chunks/090-retired.tpl.md", "Removed upstream\n")
+	p.write(t, ".go42x/chunks/300-codestyle.tpl.md", "Customized style\n")
+	p.write(t, ".go42x/upstream/go/package-names.md", "Customized reference\n")
+	p.write(t, ".go42x/.vendor.lock.yaml", "Customized lock\n")
+	for _, path := range []string{
+		".go42x/chunks/100-operation.tpl.md",
+		".go42x/chunks/200-search.tpl.md",
+		".build/base/chunks/200-search.tpl.md",
+	} {
+		if err := os.Remove(filepath.Join(p.root, path)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	result := p.run(t, 0, "agentenv", "update", "--base", ".build/base", "--json")
+
+	var report fspatch.UpdateResult
+	if err := json.Unmarshal(
+		[]byte(result.stdout),
+		&report,
+	); err != nil || report.Applied == 0 ||
+		report.BackupDir == "" {
+		t.Fatalf("update result = %s, %v", result.stdout, err)
+	}
+	wantConfig := strings.Replace(incoming, "name: go42", "name: project-custom", 1)
+	if got := p.read(t, ".go42x/go42x.yaml"); got != wantConfig {
+		t.Fatalf("configuration did not merge local and upstream changes:\n%s", got)
+	}
+	for path, want := range map[string]string{
+		".go42x/go42x.local.yaml":            "project: {description: 'Local description'}\n",
+		".go42x/chunks/300-codestyle.tpl.md": "Customized style\n",
+		".go42x/chunks/project.tpl.md":       "Additional project instructions\n",
+		".go42x/upstream/project.md":         "Additional project reference\n",
+		"AGENTS.md":                          "Existing generated instructions\n",
+	} {
+		if got := p.read(t, path); got != want {
+			t.Errorf("%s = %q, want %q", path, got, want)
+		}
+	}
+	for _, path := range []string{".go42x/chunks/090-retired.tpl.md", ".go42x/chunks/100-operation.tpl.md"} {
+		if _, err := os.Stat(filepath.Join(p.root, path)); !os.IsNotExist(err) {
+			t.Errorf("deleted file was restored: %s, %v", path, err)
+		}
+	}
+	bundle, err := assets.AgentEnvTemplates()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"chunks/200-search.tpl.md", "upstream/go/package-names.md", ".vendor.lock.yaml"} {
+		want, err := fs.ReadFile(bundle, path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := p.read(t, ".go42x/"+path); got != string(want) {
+			t.Errorf("release-owned source was not refreshed: %s", path)
+		}
+	}
+	backup, err := os.ReadFile(filepath.Join(report.BackupDir, "files/.go42x/go42x.yaml"))
+	if err != nil || string(backup) != current {
+		t.Fatalf("configuration backup = %s, %v", backup, err)
+	}
+	info, err := os.Stat(filepath.Join(p.root, ".go42x/go42x.yaml"))
+	if err != nil || info.Mode().Perm() != 0600 {
+		t.Fatalf("configuration permissions were changed: %v, %v", info, err)
+	}
+}
+
+func TestAgentEnvUpdateMergeConflictsPreserveSources(t *testing.T) {
+	t.Parallel()
+	for _, conflict := range []string{"content", "add-add", "modify-delete", "delete-modify", "symlink", "missing-git"} {
+		t.Run(conflict, func(t *testing.T) {
+			t.Parallel()
+			p := newMergeProject(t)
+			path := "agents.tpl.md"
+			if conflict == "modify-delete" {
+				path = "chunks/090-retired.tpl.md"
+			}
+			p.write(t, ".build/base/"+path, "Previous bundled content\n")
+			p.write(t, ".go42x/"+path, "Customized project content\n")
+			if conflict == "add-add" {
+				if err := os.Remove(filepath.Join(p.root, ".build/base", path)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if conflict == "delete-modify" || conflict == "symlink" {
+				if err := os.Remove(filepath.Join(p.root, ".go42x", path)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if conflict == "symlink" {
+				p.write(t, "outside.md", "Outside content\n")
+				if err := os.Symlink(
+					filepath.Join(p.root, "outside.md"),
+					filepath.Join(p.root, ".go42x", path),
+				); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if conflict == "missing-git" {
+				p.env = append(p.env, "PATH="+filepath.Dir(binaryPath))
+			}
+			before := mergeSourceSnapshot(t, p)
+
+			result := p.run(t, 1, "agentenv", "update", "--base", ".build/base", "--json")
+
+			var failure struct {
+				Error  string               `json:"error"`
+				Result fspatch.UpdateResult `json:"result"`
+			}
+			if err := json.Unmarshal(
+				[]byte(result.stdout),
+				&failure,
+			); err != nil || failure.Error == "" ||
+				failure.Result.Applied != 0 {
+				t.Fatalf("merge failure = %s, %v", result.stdout, err)
+			}
+			if !maps.Equal(before, mergeSourceSnapshot(t, p)) {
+				t.Fatal("failed merge changed project sources or backups")
+			}
+			if conflict == "content" || conflict == "add-add" {
+				candidates, err := filepath.Glob(filepath.Join(p.root, ".build/agentenv-update-*/merged", path))
+				if err != nil || len(candidates) != 1 {
+					t.Fatalf("missing conflict candidate: %v, %v", candidates, err)
+				}
+				data, err := os.ReadFile(candidates[0])
+				if err != nil || !strings.Contains(string(data), "<<<<<<< project:") {
+					t.Fatalf("missing conflict markers: %s, %v", data, err)
+				}
+			}
+		})
+	}
+}
+
+func TestAgentEnvUpdateRejectsInvalidBaseAndMergedConfiguration(t *testing.T) {
+	t.Parallel()
+	for _, invalid := range []string{"missing", "empty-directory", "symlink-base", "symlink-file", "configuration"} {
+		t.Run(invalid, func(t *testing.T) {
+			t.Parallel()
+			p := newMergeProject(t)
+			base := ".build/base"
+			switch invalid {
+			case "missing":
+				base = ".build/missing"
+			case "empty-directory":
+				base = ".build/empty"
+				if err := os.Mkdir(filepath.Join(p.root, base), 0700); err != nil {
+					t.Fatal(err)
+				}
+			case "symlink-base":
+				base = filepath.Join(t.TempDir(), "base-link")
+				if err := os.Symlink(filepath.Join(p.root, ".build/base"), base); err != nil {
+					t.Fatal(err)
+				}
+			case "symlink-file":
+				if err := os.Symlink("go42x.yaml", filepath.Join(p.root, base, "linked.yaml")); err != nil {
+					t.Fatal(err)
+				}
+			case "configuration":
+				p.write(t, ".go42x/go42x.yaml", "version: [invalid\n")
+			}
+			before := mergeSourceSnapshot(t, p)
+
+			p.run(t, 1, "agentenv", "update", "--base", base, "--json")
+
+			if !maps.Equal(before, mergeSourceSnapshot(t, p)) {
+				t.Fatal("invalid input changed project sources or backups")
+			}
+		})
+	}
+	p := newProject(t)
+	before := p.snapshot(t)
+	for _, base := range []string{"", "  "} {
+		p.run(t, 2, "agentenv", "update", "--base", base)
+	}
+	p.assertUnchanged(t, before)
 }
 
 func TestAgentEnvUpstream(t *testing.T) {

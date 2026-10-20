@@ -2,6 +2,7 @@ package agentenv
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io/fs"
 	"log/slog"
@@ -60,6 +61,79 @@ func TestServiceSettingsAndLogger(t *testing.T) {
 	s, err = NewAgentEnvService(&Settings{}, WithLogger(nil))
 	if err != nil || s.logger == nil {
 		t.Fatalf("default logger = %v, %v", s, err)
+	}
+}
+
+func TestExportIsIndependentOfProjectConfiguration(t *testing.T) {
+	dir := t.TempDir()
+	svc := testService(t, dir, false)
+	configPath := filepath.Join(dir, ".go42x/go42x.yaml")
+	writeFile(t, configPath, "invalid: [project configuration\n")
+	output := filepath.Join(dir, ".build/original bundle")
+
+	result, err := svc.Export(t.Context(), output)
+	if err != nil || result.Directory != output {
+		t.Fatalf("export = %v, %v", result, err)
+	}
+
+	bundle, err := assets.AgentEnvTemplates()
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = fs.WalkDir(bundle, ".", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
+			return err
+		}
+		data, err := fs.ReadFile(bundle, path)
+		if err != nil {
+			return err
+		}
+		got := readFile(t, filepath.Join(output, filepath.FromSlash(path)))
+		if !bytes.Equal(got, pinBundledSchemaURL(path, data)) {
+			t.Errorf("exported asset differs: %s", path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(readFile(t, configPath)) != "invalid: [project configuration\n" {
+		t.Fatal("export changed project configuration")
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".gitignore")); !os.IsNotExist(err) {
+		t.Fatalf("export touched the project gitignore: %v", err)
+	}
+	if _, err := svc.Export(t.Context(), output); !errors.Is(err, os.ErrExist) {
+		t.Fatalf("existing destination accepted: %v", err)
+	}
+}
+
+func TestExportRejectsInvalidDestinationsAndCancellation(t *testing.T) {
+	svc := testService(t, t.TempDir(), false)
+	for _, path := range []string{"", "  "} {
+		if _, err := svc.Export(t.Context(), path); err == nil {
+			t.Errorf("empty destination accepted: %q", path)
+		}
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := svc.Export(ctx, "cancelled"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("export with cancelled context = %v", err)
+	}
+	if _, err := os.Stat("cancelled"); !os.IsNotExist(err) {
+		t.Fatalf("cancelled export created output: %v", err)
+	}
+
+	writeFile(t, "original/keep.md", "keep\n")
+	if err := os.Symlink("original", "export-link"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Export(t.Context(), "export-link"); !errors.Is(err, os.ErrExist) {
+		t.Fatalf("symlink destination accepted: %v", err)
+	}
+	if string(readFile(t, "original/keep.md")) != "keep\n" {
+		t.Fatal("export changed a symlink target")
 	}
 }
 

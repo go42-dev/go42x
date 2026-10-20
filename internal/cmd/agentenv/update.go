@@ -13,21 +13,31 @@ import (
 )
 
 func newUpdateCommand(f *cmdutil.Factory) *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "update",
 		Short: "Update bundled AI agent configuration and templates",
 		Long: `Replace bundled configuration and templates with the versions shipped in this binary.
+Use --base with a previously exported bundle to merge project customizations with this binary's assets.
+Conflicts leave project files unchanged and save candidates under .build.
 Local overrides and additional files are preserved.
 Run 'go42x agentenv generate' afterward to refresh generated agent files.`,
 		Args: cobra.NoArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			settings := &agentenv.Settings{JSON: viper.GetBool("json")}
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			settings := &agentenv.Settings{
+				BaseDir: viper.GetString("base"),
+				JSON:    viper.GetBool("json"),
+			}
+			if cmdutil.ExplicitFlag(cmd, "base") && len(settings.BaseDir) == 0 {
+				return cmdutil.UsageError(fmt.Errorf("base directory is required when --base is set"))
+			}
 			if err := settings.Validate(); err != nil {
 				return cmdutil.UsageError(err)
 			}
 			return runUpdateCommand(f, settings)
 		},
 	}
+	cmd.Flags().String("base", "", "previously exported original bundle to use as the merge base")
+	return cmd
 }
 
 func runUpdateCommand(f *cmdutil.Factory, settings *agentenv.Settings) error {

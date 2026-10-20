@@ -2,6 +2,7 @@ package agentenv
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -21,6 +22,11 @@ const (
 )
 
 type InitResult struct {
+	Directory string `json:"directory"`
+}
+
+// ExportResult identifies the directory containing an exported bundle.
+type ExportResult struct {
 	Directory string `json:"directory"`
 }
 
@@ -55,7 +61,7 @@ func NewAgentEnvService(settings *Settings, opts ...Option) (*Service, error) {
 
 // Init initializes the agentenv environment in the current directory.
 // Existing configuration and templates are preserved.
-func (s *Service) Init(_ context.Context) (*InitResult, error) {
+func (s *Service) Init(ctx context.Context) (*InitResult, error) {
 	s.logger.Info("Initializing agentenv")
 
 	if _, err := os.Stat(filepath.Join(agentEnvDir, configFile)); err == nil {
@@ -66,7 +72,7 @@ func (s *Service) Init(_ context.Context) (*InitResult, error) {
 
 	s.logger.Info("Installing missing configuration templates")
 
-	if err := extractBundle(agentEnvDir); err != nil {
+	if err := extractBundle(ctx, agentEnvDir); err != nil {
 		return nil, fmt.Errorf("failed to extract template: %w", err)
 	}
 
@@ -77,10 +83,35 @@ func (s *Service) Init(_ context.Context) (*InitResult, error) {
 	return &InitResult{Directory: agentEnvDir}, nil
 }
 
-// Update validates and replaces bundled sources and the managed .gitignore block
-// without generating outputs.
-// Every existing destination is backed up before any replacement, even if its
-// contents are identical. Local configuration and additional sources are kept.
+// Export writes this binary's bundled sources into a new directory without loading project configuration.
+func (s *Service) Export(ctx context.Context, outputDir string) (*ExportResult, error) {
+	settings := &ExportSettings{OutputDir: outputDir}
+	if err := settings.Validate(); err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	// #nosec G301 -- Bundled sources are public project files.
+	if err := os.MkdirAll(filepath.Dir(outputDir), 0755); err != nil {
+		return nil, fmt.Errorf("create export parent: %w", err)
+	}
+	// #nosec G301 -- Require a new directory so exports cannot mix with or replace existing files.
+	if err := os.Mkdir(outputDir, 0755); err != nil {
+		return nil, fmt.Errorf("create export directory: %w", err)
+	}
+
+	if err := extractBundle(ctx, outputDir); err != nil {
+		return nil, errors.Join(fmt.Errorf("export bundled sources: %w", err), os.RemoveAll(outputDir))
+	}
+
+	return &ExportResult{Directory: outputDir}, nil
+}
+
+// Update validates and updates bundled sources and the managed .gitignore block without generating outputs.
+// BaseDir selects a three-way merge; otherwise bundled files are replaced, including unchanged files.
+// Originals are backed up before application. Local configuration and additional sources are kept.
 func (s *Service) Update(ctx context.Context) (*fspatch.UpdateResult, error) {
 	root, err := os.Getwd()
 	if err != nil {
@@ -107,38 +138,48 @@ func (s *Service) Update(ctx context.Context) (*fspatch.UpdateResult, error) {
 		return nil, err
 	}
 
-	base, err := fs.ReadFile(bundle, configFile)
-	if err != nil {
-		return nil, fmt.Errorf("read bundled configuration: %w", err)
+	var updatedConfig []byte
+	if len(s.settings.BaseDir) > 0 {
+		updatedConfig, err = s.prepareMergedBundle(ctx, root, plan, bundle)
+		if err != nil {
+			return &fspatch.UpdateResult{}, fmt.Errorf("prepare merged sources: %w", err)
+		}
+	} else {
+		updatedConfig, err = fs.ReadFile(bundle, configFile)
+		if err != nil {
+			return nil, fmt.Errorf("read bundled configuration: %w", err)
+		}
+		updatedConfig = pinBundledSchemaURL(configFile, updatedConfig)
 	}
-	base = pinBundledSchemaURL(configFile, base)
 	local, _, err := plan.Read(filepath.Join(templateDir, config.LocalConfigFile))
 	if err != nil {
 		return nil, fmt.Errorf("read local configuration: %w", err)
 	}
-	if _, err := config.ParseProjectConfig(base, local, nil); err != nil {
+	if _, err := config.ParseProjectConfig(updatedConfig, local, nil); err != nil {
 		return nil, fmt.Errorf("validate updated configuration: %w", err)
 	}
 
-	err = fs.WalkDir(bundle, ".", func(path string, entry fs.DirEntry, err error) error {
+	if len(s.settings.BaseDir) == 0 {
+		err = fs.WalkDir(bundle, ".", func(path string, entry fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if entry.IsDir() {
+				return nil
+			}
+			data, err := fs.ReadFile(bundle, path)
+			if err != nil {
+				return err
+			}
+			data = pinBundledSchemaURL(path, data)
+			return plan.Write(filepath.Join(templateDir, filepath.FromSlash(path)), data, fspatch.Sources, true)
+		})
 		if err != nil {
-			return err
+			return nil, fmt.Errorf("prepare bundled sources: %w", err)
 		}
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if entry.IsDir() {
-			return nil
-		}
-		data, err := fs.ReadFile(bundle, path)
-		if err != nil {
-			return err
-		}
-		data = pinBundledSchemaURL(path, data)
-		return plan.Write(filepath.Join(templateDir, filepath.FromSlash(path)), data, fspatch.Sources, true)
-	})
-	if err != nil {
-		return nil, fmt.Errorf("prepare bundled sources: %w", err)
 	}
 
 	if err := prepareGitIgnore(plan, root); err != nil {

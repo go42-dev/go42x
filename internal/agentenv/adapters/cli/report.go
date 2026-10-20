@@ -23,6 +23,26 @@ func ReportInit(output io.Writer, settings *agentenv.Settings, result *agentenv.
 	return cmdutil.Report(output, result, runErr, text)
 }
 
+// ReportExport renders an export result in the selected format.
+func ReportExport(
+	output io.Writer,
+	settings *agentenv.ExportSettings,
+	result *agentenv.ExportResult,
+	runErr error,
+) error {
+	var text func(io.Writer) error
+	if !settings.JSON {
+		text = func(w io.Writer) error {
+			if runErr != nil {
+				return nil
+			}
+			_, err := fmt.Fprintf(w, "Exported agentenv bundle to %s.\n", result.Directory)
+			return err
+		}
+	}
+	return cmdutil.Report(output, result, runErr, text)
+}
+
 func ReportGenerate(
 	output io.Writer,
 	settings *agentenv.Settings,
