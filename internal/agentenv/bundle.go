@@ -271,8 +271,11 @@ func mergeBundleFile(
 			return bundleMerge{}, err
 		}
 	}
+
 	ctx, cancel := context.WithTimeout(ctx, bundleMergeTimeout)
 	defer cancel()
+
+	// #nosec G204 -- Git and its options are fixed; labels are literal arguments, paths follow --, and no shell is used.
 	cmd := exec.CommandContext(
 		ctx,
 		"git",
@@ -285,6 +288,7 @@ func mergeBundleFile(
 		"previous bundle: "+path,
 		"-L",
 		"new bundle: "+path,
+		"--",
 		filepath.Join(
 			workspace,
 			"current",
