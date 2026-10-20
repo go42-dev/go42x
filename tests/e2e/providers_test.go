@@ -159,7 +159,12 @@ func TestGHAWFragmentGeneration(t *testing.T) {
 	p := newProject(t)
 	p.configure(t)
 	p.env = append(p.env, "GITHUB_TOKEN=local-token-do-not-write", "CONTEXT7_API_KEY=local-key-do-not-write")
-	const local = `mcp:
+	const local = `providers:
+  gh-aw:
+    bindings:
+      GITHUB_TOKEN: '${{ github.token }}'
+      CONTEXT7_API_KEY: '${{ secrets.REMOTE_API_KEY }}'
+mcp:
   local:
     command: docker
     args: [run, --rm, -i, example/project-mcp:test, go42x, mcp]
@@ -187,7 +192,7 @@ func TestGHAWFragmentGeneration(t *testing.T) {
 	}
 	assertSetting(t, fragment, "mcp-servers.local.command", "docker")
 	assertSetting(t, fragment, "mcp-servers.remote.headers.Authorization", "Bearer ${{ github.token }}")
-	assertSetting(t, fragment, "mcp-servers.remote.headers.X-API-Key", "${{ secrets.CONTEXT7_API_KEY }}")
+	assertSetting(t, fragment, "mcp-servers.remote.headers.X-API-Key", "${{ secrets.REMOTE_API_KEY }}")
 	assertSetting(t, fragment, "mcp-servers.remote.allowed", []any{"*"})
 	if strings.Contains(content, "local-token-do-not-write") || strings.Contains(content, "local-key-do-not-write") {
 		t.Fatal("fragment contains local credential values")
@@ -208,10 +213,22 @@ func TestGHAWFragmentGeneration(t *testing.T) {
 	p.write(
 		t,
 		".go42x/go42x.local.yaml",
+		strings.Replace(local, "      GITHUB_TOKEN: '${{ github.token }}'\n", "", 1),
+	)
+	before = p.snapshot(t)
+	result := p.run(t, 1, "agentenv", "generate", "--providers=gh-aw")
+	if !strings.Contains(result.stderr, "providers.gh-aw.bindings.GITHUB_TOKEN") {
+		t.Fatalf("missing binding diagnostic: %s", result.stderr)
+	}
+	p.assertUnchanged(t, before)
+
+	p.write(
+		t,
+		".go42x/go42x.local.yaml",
 		strings.Replace(local, "command: docker", "type: sse\n    url: https://api.example.com/events", 1),
 	)
 	before = p.snapshot(t)
-	result := p.run(t, 1, "agentenv", "generate", "--providers=gh-aw", "--clean")
+	result = p.run(t, 1, "agentenv", "generate", "--providers=gh-aw", "--clean")
 	if !strings.Contains(result.stderr, "gh-aw supports only stdio and HTTP") {
 		t.Fatalf("unsupported transport diagnostic: %s", result.stderr)
 	}

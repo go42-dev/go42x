@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider"
@@ -16,6 +17,82 @@ import (
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/ghaw"
 	"github.com/go42-dev/go42x/internal/config"
 )
+
+func TestGenerateGHAWBindings(t *testing.T) {
+	t.Setenv("PATH", "")
+	t.Setenv("GITHUB_ACTIONS", "false")
+	t.Setenv("TOKEN", "must-not-appear-in-workflow")
+	const base = `version: "1.0"
+project: {name: example}
+context: {template: main.tpl.md}
+providers:
+  gh-aw:
+    bindings:
+      TOKEN: '${{ secrets.SHARED_TOKEN }}'
+mcp:
+  remote:
+    enabled: true
+    name: remote
+    type: http
+    url: https://example.com/mcp
+    headers:
+      Authorization: 'Bearer ${TOKEN}'
+`
+	for _, tt := range []struct {
+		name, local, want string
+	}{
+		{
+			name: "shared",
+			want: "Bearer ${{ secrets.SHARED_TOKEN }}",
+		},
+		{
+			name:  "local override",
+			local: "providers: {gh-aw: {bindings: {TOKEN: '${{ github.token }}'}}}",
+			want:  "Bearer ${{ github.token }}",
+		},
+		{
+			name:  "missing",
+			local: "providers: {gh-aw: {bindings: null}}",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := config.ParseProjectConfig([]byte(base), []byte(tt.local), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			dir, out := t.TempDir(), t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "main.tpl.md"), []byte("{{ .project.name }}"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			g := NewGenerator(slog.New(slog.DiscardHandler), cfg, dir, out)
+
+			err = g.Generate(t.Context(), false)
+
+			if len(tt.want) == 0 {
+				if err == nil || !strings.Contains(err.Error(), "providers.gh-aw.bindings.TOKEN") {
+					t.Fatalf("Generate() = %v, want missing binding error", err)
+				}
+				for _, path := range []string{provider.AgentsFile, ghaw.MCPFile} {
+					if _, err := os.Stat(filepath.Join(out, path)); !os.IsNotExist(err) {
+						t.Fatalf("generation changed %s despite missing binding: %v", path, err)
+					}
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			content, err := os.ReadFile(filepath.Join(out, ghaw.MCPFile))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(content), tt.want) ||
+				strings.Contains(string(content), "must-not-appear-in-workflow") {
+				t.Fatalf("generated workflow did not use the configured binding: %s", content)
+			}
+		})
+	}
+}
 
 func TestGenerateProviderToggles(t *testing.T) {
 	t.Setenv("PATH", "")

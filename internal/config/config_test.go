@@ -520,6 +520,44 @@ context: {template: agents.tpl.md}
 		{"Antigravity approval policy", "providers: {antigravity: {approval-policy: never}}", true},
 		{"Antigravity MCP approvals", "providers: {antigravity: {mcp-approval: auto}}", true},
 		{"unsupported provider option", "providers: {copilot: {approval-policy: never}}", true},
+		{
+			name:    "workflow bindings",
+			content: "providers: {gh-aw: {bindings: {TOKEN: '${{ github.token }}', MODEL: '${{ vars.MODEL }}'}}}",
+		},
+		{
+			name:    "workflow empty bindings",
+			content: "providers: {gh-aw: {bindings: {}}}",
+		},
+		{
+			name:    "bindings on another provider",
+			content: "providers: {codex: {bindings: {TOKEN: value}}}",
+			wantErr: true,
+		},
+		{
+			name:    "empty bindings on another provider",
+			content: "providers: {copilot: {bindings: {}}}",
+			wantErr: true,
+		},
+		{
+			name:    "invalid binding name",
+			content: "providers: {gh-aw: {bindings: {bad-name: value}}}",
+			wantErr: true,
+		},
+		{
+			name:    "empty binding name",
+			content: "providers: {gh-aw: {bindings: {'': value}}}",
+			wantErr: true,
+		},
+		{
+			name:    "blank binding",
+			content: "providers: {gh-aw: {bindings: {TOKEN: ' '}}}",
+			wantErr: true,
+		},
+		{
+			name:    "binding must be a string",
+			content: "providers: {gh-aw: {bindings: {TOKEN: []}}}",
+			wantErr: true,
+		},
 		{"unsupported agents", "providers: {codex: {agents: []}}", true},
 		{"blank approved tool", "providers: {claude: {auto-approve-tools: [' ']}}", true},
 		{"invalid approval policy", "providers: {codex: {approval-policy: invalid}}", true},

@@ -241,6 +241,7 @@ func (g *Generator) registerProviders() {
 		ghaw.Settings{
 			OutputDir:  g.outputDir,
 			MCPServers: servers,
+			Bindings:   g.config.Providers[ghaw.Name].Bindings,
 		},
 		templateEngine, g.templateDir,
 	)

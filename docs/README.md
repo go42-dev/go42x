@@ -13,11 +13,11 @@ see the [project overview](../README.md).
 
 ### Handbook
 
-| Document                                                 | Purpose                                                                         |
-| -------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| [Writing documentation](handbook/documentation.md)       | Writing rules, document metadata, index maintenance, and checks                 |
-| [CLI codestyle](handbook/cli-codestyle.md)               | CLI code composition, organization, and style guidelines                        |
-| [CLI output](handbook/cli-output.md)                     | Output streams, logging, result formats, errors, and exit status                |
+| Document                                           | Purpose                                                          |
+| -------------------------------------------------- | ---------------------------------------------------------------- |
+| [Writing documentation](handbook/documentation.md) | Writing rules, document metadata, index maintenance, and checks  |
+| [CLI codestyle](handbook/cli-codestyle.md)         | CLI code composition, organization, and style guidelines         |
+| [CLI output](handbook/cli-output.md)               | Output streams, logging, result formats, errors, and exit status |
 
 ## Maintaining the index
 

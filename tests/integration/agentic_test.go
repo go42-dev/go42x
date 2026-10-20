@@ -124,6 +124,9 @@ func TestMCPImageMatchesMiseVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 	var action struct {
+		Inputs map[string]struct {
+			Default string `yaml:"default"`
+		} `yaml:"inputs"`
 		Runs struct {
 			Steps []compiledStep `yaml:"steps"`
 		} `yaml:"runs"`
@@ -132,10 +135,18 @@ func TestMCPImageMatchesMiseVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	repository := action.Inputs["mcp-image-repository"].Default
+	if repository != "ghcr.io/go42-dev/go42x" {
+		t.Fatalf("default MCP image repository = %q, want ghcr.io/go42-dev/go42x", repository)
+	}
+
 	var script string
 	for _, step := range action.Runs.Steps {
 		if step.Name == "Pull MCP tools image" {
 			script = step.Run
+			if step.Env["IMAGE_REPOSITORY"] != "${{ inputs.mcp-image-repository }}" {
+				t.Fatalf("image repository does not come from the action input: %v", step.Env)
+			}
 		}
 	}
 	if len(script) == 0 {
@@ -163,6 +174,15 @@ func TestMCPImageMatchesMiseVersion(t *testing.T) {
 			name:    "prerelease",
 			version: "1.2.3-rc.1",
 			wantTag: "v1.2.3-rc.1",
+		},
+		{
+			name:    "custom repository",
+			version: "1.2.3",
+			wantTag: "v1.2.3",
+			changes: map[string]string{
+				"IMAGE_REPOSITORY":  "ghcr.io/example/tools",
+				"MOCK_IMAGE_DIGEST": "ghcr.io/example/tools@" + digest,
+			},
 		},
 		{name: "missing version"},
 		{
@@ -219,10 +239,11 @@ esac
 			}
 			environment := map[string]string{
 				"PATH":              dir,
+				"IMAGE_REPOSITORY":  repository,
 				"MOCK_MISE_VERSION": tt.version,
 				"MOCK_MISE_STATUS":  "0",
 				"MOCK_PULL_STATUS":  "0",
-				"MOCK_IMAGE_DIGEST": "ghcr.io/go42-dev/go42x@" + digest,
+				"MOCK_IMAGE_DIGEST": repository + "@" + digest,
 				"MOCK_DOCKER_LOG":   filepath.Join(dir, "docker.log"),
 				"GITHUB_ENV":        filepath.Join(dir, "github.env"),
 			}
@@ -260,8 +281,9 @@ esac
 			if err != nil {
 				t.Fatal(err)
 			}
-			wantCalls := "pull ghcr.io/go42-dev/go42x:" + tt.wantTag + "\n" +
-				"image inspect --format {{index .RepoDigests 0}} ghcr.io/go42-dev/go42x:" + tt.wantTag + "\n"
+			imageReference := environment["IMAGE_REPOSITORY"] + ":" + tt.wantTag
+			wantCalls := "pull " + imageReference + "\n" +
+				"image inspect --format {{index .RepoDigests 0}} " + imageReference + "\n"
 			if string(calls) != wantCalls {
 				t.Fatalf("Docker calls = %q, want %q", calls, wantCalls)
 			}
@@ -284,6 +306,7 @@ func TestRepositoryMCPFragment(t *testing.T) {
 	generator := ghaw.New(logger, ghaw.Settings{
 		OutputDir:  output,
 		MCPServers: cfg.MCP,
+		Bindings:   cfg.Providers[ghaw.Name].Bindings,
 	}, nil, "")
 	if err := generator.Prepare(plan, nil); err != nil {
 		t.Fatal(err)

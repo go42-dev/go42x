@@ -336,8 +336,8 @@ jobs:
         run: task lint:editorconfig
 
   # Documentation checks use the same Task entrypoint locally and in CI.
-  documentation-lint:
-    name: documentation-lint
+  docs-lint:
+    name: docs-lint
     runs-on: ${{ inputs.runs_on }}
     continue-on-error: ${{ inputs.continue_on_error }}
     timeout-minutes: ${{ inputs.timeout_minutes }}
@@ -354,7 +354,7 @@ jobs:
           install-task: 'true'
       - name: 'Set up documentation tools'
         run: task setup:docs
-      - name: 'Check Markdown'
+      - name: 'Check documentation'
         run: task docs:check
 
   # Ensure generated files and Go module metadata are committed and up to date.

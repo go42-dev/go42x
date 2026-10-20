@@ -110,6 +110,11 @@ providers:
   # Generates .github/workflows/900-aw-mcp.md for import before gh-aw compilation.
   gh-aw:
     enabled: false
+    # Map $NAME and ${NAME} references to explicit workflow values; missing bindings fail generation.
+    # Native ${{ ... }} expressions are preserved. Bindings never read the local environment.
+    bindings:
+      CONTEXT7_API_KEY: '${{ secrets.CONTEXT7_API_KEY }}'
+      GITHUB_TOKEN: '${{ github.token }}'
 
 mcp:
   # All tools from enabled servers are available, including tools omitted from these lists.
@@ -131,7 +136,6 @@ mcp:
       - --
       - gopls
       - mcp
-    # Runtime pulls the latest release once and shares its digest with all servers.
     container:
       image: ghcr.io/go42-dev/go42x
       version: '${{ env.GO42X_MCP_IMAGE_VERSION }}'

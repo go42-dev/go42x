@@ -25,6 +25,7 @@ import (
 
 var (
 	goEnvNamePattern      = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
+	bindingNamePattern    = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 	mcpToolNamePattern    = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,128}$`)
 	mcpCWDVariablePattern = regexp.MustCompile(`\$(?:[A-Za-z_]|\{|\()|%[A-Za-z_][A-Za-z0-9_]*%|^~`)
 )
@@ -81,11 +82,12 @@ func (c Context) WithDefaults() Context {
 }
 
 type Provider struct {
-	Enabled          *bool    `yaml:"enabled,omitempty"`
-	Agents           []string `yaml:"agents,omitempty"`
-	AutoApproveTools []string `yaml:"auto-approve-tools,omitempty"`
-	ApprovalPolicy   *string  `yaml:"approval-policy,omitempty"`
-	MCPApproval      *string  `yaml:"mcp-approval,omitempty"`
+	Enabled          *bool             `yaml:"enabled,omitempty"`
+	Agents           []string          `yaml:"agents,omitempty"`
+	AutoApproveTools []string          `yaml:"auto-approve-tools,omitempty"`
+	ApprovalPolicy   *string           `yaml:"approval-policy,omitempty"`
+	MCPApproval      *string           `yaml:"mcp-approval,omitempty"`
+	Bindings         map[string]string `yaml:"bindings,omitempty"`
 }
 
 // ProviderEnabled reports whether a provider is configured and enabled.
@@ -275,6 +277,18 @@ func ProviderNames() []string {
 }
 
 func validateProvider(p Provider, name string) error {
+	if p.Bindings != nil && name != ghaw.Name {
+		return fmt.Errorf("bindings is only supported by gh-aw")
+	}
+	for _, reference := range slices.Sorted(maps.Keys(p.Bindings)) {
+		if !bindingNamePattern.MatchString(reference) {
+			return fmt.Errorf("bindings: invalid reference name %q", reference)
+		}
+		if len(strings.TrimSpace(p.Bindings[reference])) == 0 {
+			return fmt.Errorf("bindings.%s must not be blank", reference)
+		}
+	}
+
 	if p.Agents != nil && name != claude.Name {
 		return fmt.Errorf("agents is only supported by claude")
 	}

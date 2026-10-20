@@ -50,8 +50,13 @@ func TestGHAWMCPFragment(t *testing.T) {
 			Name: "disabled",
 			Type: provider.MCPServerTypeSSE,
 			CWD:  "unused",
+			Env:  map[string]string{"TOKEN": "$DISABLED"},
 		},
 	}}
+	cfg.Bindings = map[string]string{
+		"API_KEY":      "${{ secrets.API_KEY }}",
+		"GITHUB_TOKEN": "${{ github.token }}",
+	}
 	before, err := yaml.Marshal(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -189,26 +194,141 @@ func TestGHAWUnsupportedMCPSettings(t *testing.T) {
 	}
 }
 
-func TestGHAWEnvironmentExpressions(t *testing.T) {
-	for _, tt := range []struct{ value, want string }{
-		{"Bearer $GITHUB_TOKEN", "Bearer ${{ github.token }}"},
-		{"${GITHUB_TOKEN}", "${{ github.token }}"},
-		{"$API_KEY/${SECOND_KEY}", "${{ secrets.API_KEY }}/${{ secrets.SECOND_KEY }}"},
-		{"${{ secrets.API_KEY }}", "${{ secrets.API_KEY }}"},
-		{"${{ vars.MODEL }}", "${{ vars.MODEL }}"},
-		{"${{ github.token }}", "${{ github.token }}"},
-		{"literal $5 ${} end", "literal $5 ${} end"},
+func TestGHAWBindingReferences(t *testing.T) {
+	bindings := map[string]string{
+		"API_KEY":      "${{ secrets.REMOTE_API_KEY }}",
+		"SECOND_KEY":   "${{ vars.SECOND_KEY }}",
+		"GITHUB_TOKEN": "${{ secrets.APP_TOKEN }}",
+		"LABEL":        "literal",
+		"INDIRECT":     "$API_KEY",
+	}
+	for value, want := range map[string]string{
+		"Bearer $GITHUB_TOKEN":     "Bearer ${{ secrets.APP_TOKEN }}",
+		"${GITHUB_TOKEN}":          "${{ secrets.APP_TOKEN }}",
+		"$API_KEY/${SECOND_KEY}":   "${{ secrets.REMOTE_API_KEY }}/${{ vars.SECOND_KEY }}",
+		"$LABEL $INDIRECT":         "literal $API_KEY",
+		"${{ vars.MODEL }} $LABEL": "${{ vars.MODEL }} literal",
 	} {
-		if got := ghAWExpression(tt.value); got != tt.want {
-			t.Errorf("ghAWExpression(%q) = %q, want %q", tt.value, got, tt.want)
+		got, err := resolveBindingReferences(value, bindings)
+		if err != nil || got != want {
+			t.Errorf("resolveBindingReferences(%q) = %q, %v; want %q", value, got, err, want)
 		}
 	}
-	entry, err := ghAWMCPServer(provider.MCPServer{
-		Command: "npx",
-		Args:    []string{"--token", "$API_KEY"},
-	})
-	if err != nil || !slices.Equal(entry.Args, []string{"--token", "${{ secrets.API_KEY }}"}) {
-		t.Fatalf("argument references = %v, %v", entry.Args, err)
+	for _, value := range []string{
+		"${{ secrets.API_KEY }}",
+		"${{ vars.MODEL }}",
+		"${{ github.token }}",
+		"${{ format('$API_KEY', vars.MODEL) }}",
+		"${{ format('}} $MISSING ''quoted''', vars.MODEL) }}",
+		"${{\n format('$MISSING', vars.MODEL)\n}}",
+		"literal $5 ${} end",
+	} {
+		got, err := resolveBindingReferences(value, nil)
+		if err != nil || got != value {
+			t.Errorf("resolveBindingReferences(%q) = %q, %v; want unchanged", value, got, err)
+		}
+	}
+
+	t.Setenv("API_KEY", "must-not-be-used")
+	for _, bindings := range []map[string]string{nil, {"API_KEY": " "}} {
+		got, err := resolveBindingReferences("Bearer $API_KEY", bindings)
+		if err == nil || len(got) > 0 || !strings.Contains(err.Error(), "providers.gh-aw.bindings.API_KEY") {
+			t.Fatalf("missing binding = %q, %v; want an explicit binding error", got, err)
+		}
+	}
+}
+
+func TestGHAWMissingBindings(t *testing.T) {
+	for name, server := range map[string]provider.MCPServer{
+		"arguments": {
+			Command: "npx",
+			Args:    []string{"$MISSING"},
+		},
+		"environment": {
+			Command: "npx",
+			Env:     map[string]string{"KEY": "$MISSING"},
+		},
+		"URL": {
+			Type: provider.MCPServerTypeHTTP,
+			URL:  "https://example.com/$MISSING",
+		},
+		"headers": {
+			Type:    provider.MCPServerTypeHTTP,
+			Headers: map[string]string{"Authorization": "Bearer $MISSING"},
+		},
+		"container image": {
+			Command: "task",
+			Container: &provider.MCPContainer{
+				Image:   "$MISSING",
+				Command: "tool",
+			},
+		},
+		"container version": {
+			Command: "task",
+			Container: &provider.MCPContainer{
+				Image:   "tools",
+				Version: "$MISSING",
+				Command: "tool",
+			},
+		},
+		"container command": {
+			Command: "task",
+			Container: &provider.MCPContainer{
+				Image:   "tools",
+				Command: "$MISSING",
+			},
+		},
+		"container arguments": {
+			Command: "task",
+			Container: &provider.MCPContainer{
+				Image:   "tools",
+				Command: "tool",
+				Args:    []string{"$MISSING"},
+			},
+		},
+		"container environment": {
+			Command: "task",
+			Container: &provider.MCPContainer{
+				Image:   "tools",
+				Command: "tool",
+				Env:     map[string]string{"KEY": "$MISSING"},
+			},
+		},
+		"container workdir": {
+			Command: "task",
+			Container: &provider.MCPContainer{
+				Image:   "tools",
+				Command: "tool",
+				WorkDir: "$MISSING",
+			},
+		},
+		"container mounts": {
+			Command: "task",
+			Container: &provider.MCPContainer{
+				Image:   "tools",
+				Command: "tool",
+				Mounts:  []string{"$MISSING:/workspace"},
+			},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			server.Enabled = true
+			p := New(nil, Settings{
+				OutputDir:  root,
+				MCPServers: map[string]provider.MCPServer{"example": server},
+			}, nil, "")
+			plan := fspatch.NewPlan(slog.New(slog.DiscardHandler), root, filepath.Join(root, ".build/backups"))
+
+			err := p.Prepare(plan, nil)
+
+			if err == nil || !strings.Contains(err.Error(), "MCP server example: missing binding for \"MISSING\"") {
+				t.Fatalf("Prepare() = %v, want server and missing binding name", err)
+			}
+			if len(plan.Changes()) > 0 {
+				t.Fatal("failed preparation scheduled output changes")
+			}
+		})
 	}
 }
 
@@ -218,15 +338,15 @@ func TestGHAWContainerPreservesSharedCommand(t *testing.T) {
 		Enabled: true,
 		Name:    "local",
 		Command: "task",
-		Args:    []string{"x", "--", "mcp"},
+		Args:    []string{"x", "--", "$LOCAL_ONLY"},
 		Env:     map[string]string{"KEY": "$KEY", "SHARED": "$SHARED"},
 		Container: &provider.MCPContainer{
 			Image:   "ghcr.io/example/tools",
-			Version: "${{ env.GO42X_MCP_IMAGE_VERSION }}",
-			Command: "go42x",
-			Args:    []string{"mcp"},
-			WorkDir: "${{ github.workspace }}",
-			Mounts:  []string{"${{ github.workspace }}:${{ github.workspace }}:rw"},
+			Version: "$IMAGE_VERSION",
+			Command: "${TOOL}",
+			Args:    []string{"$SUBCOMMAND"},
+			WorkDir: "$WORKSPACE",
+			Mounts:  []string{"$WORKSPACE:$WORKSPACE:rw"},
 			Env: map[string]string{
 				"KEY":                       "$CONTAINER_KEY",
 				"MISE_TRUSTED_CONFIG_PATHS": "${{ github.workspace }}/etc/mise.toml",
@@ -236,6 +356,18 @@ func TestGHAWContainerPreservesSharedCommand(t *testing.T) {
 	cfg := Settings{
 		OutputDir:  root,
 		MCPServers: map[string]provider.MCPServer{"local": server},
+		Bindings: map[string]string{
+			"IMAGE_VERSION": "${{ env.GO42X_MCP_IMAGE_VERSION }}",
+			"TOOL":          "go42x",
+			"SUBCOMMAND":    "mcp",
+			"WORKSPACE":     "${{ github.workspace }}",
+			"CONTAINER_KEY": "${{ secrets.CONTAINER_KEY }}",
+			"SHARED":        "${{ secrets.SHARED }}",
+		},
+	}
+	before, err := yaml.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
 	}
 	logger := slog.New(slog.DiscardHandler)
 	plan := fspatch.NewPlan(logger, root, filepath.Join(root, ".build/backups"))
@@ -245,6 +377,10 @@ func TestGHAWContainerPreservesSharedCommand(t *testing.T) {
 	}
 	if !reflect.DeepEqual(cfg.MCPServers["local"], server) || cfg.MCPServers["local"].Env["KEY"] != "$KEY" {
 		t.Fatal("shared stdio configuration was modified")
+	}
+	after, err := yaml.Marshal(cfg)
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatalf("provider changed shared container configuration: %v", err)
 	}
 	if err := plan.Apply(); err != nil {
 		t.Fatal(err)

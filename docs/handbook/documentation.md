@@ -99,7 +99,8 @@ Then run:
 task docs:check
 ```
 
-This runs Markdown lint on `docs/**/*.md`. Fix any failures and rerun the check.
+This runs Markdown lint and Vale prose checks on authored Markdown under `docs/`. Fix any failures and rerun the checks.
+Vale uses pinned Google and write-good rules at the error level, with spelling checks disabled.
 It does not validate metadata, index coverage, links, or command behavior; review those separately.
 
 Tables must use leading and trailing pipes, aligned columns, the same number of cells in each row, and blank lines

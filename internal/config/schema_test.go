@@ -63,6 +63,36 @@ context: {template: agents.tpl.md}
 	}{
 		{"disabled provider", "providers: {codex: {enabled: false}}", true},
 		{"workflow provider", "providers: {gh-aw: {enabled: true}}", true},
+		{
+			name:    "workflow bindings",
+			content: "providers: {gh-aw: {bindings: {TOKEN: '${{ github.token }}'}}}",
+			valid:   true,
+		},
+		{
+			name:    "empty workflow bindings",
+			content: "providers: {gh-aw: {bindings: {}}}",
+			valid:   true,
+		},
+		{
+			name:    "invalid binding name",
+			content: "providers: {gh-aw: {bindings: {bad-name: value}}}",
+		},
+		{
+			name:    "empty binding name",
+			content: "providers: {gh-aw: {bindings: {'': value}}}",
+		},
+		{
+			name:    "blank binding",
+			content: "providers: {gh-aw: {bindings: {TOKEN: ' '}}}",
+		},
+		{
+			name:    "binding must be a string",
+			content: "providers: {gh-aw: {bindings: {TOKEN: []}}}",
+		},
+		{
+			name:    "bindings on another provider",
+			content: "providers: {codex: {bindings: {TOKEN: value}}}",
+		},
 		{"workflow provider cannot select engine", "providers: {gh-aw: {engine: codex}}", false},
 		{"provider enabled must be boolean", "providers: {codex: {enabled: 'false'}}", false},
 		{"HTTP server", `providers: {codex: {}}

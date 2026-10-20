@@ -218,6 +218,15 @@ properties:
         properties:
           enabled:
             $ref: '#/definitions/providerEnabled'
+          bindings:
+            type: object
+            description: Explicit replacements for $NAME and ${NAME} in MCP values. Native GitHub expressions are preserved;
+              missing bindings fail generation. Values are copied without reading the local environment.
+            propertyNames:
+              pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+            additionalProperties:
+              type: string
+              pattern: \S
         additionalProperties: false
   mcp:
     type: object
