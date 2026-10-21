@@ -88,7 +88,7 @@ FROM golang:${GO_VERSION}-alpine3.24
 # @see https://pkgs.alpinelinux.org/packages?branch=v3.24
 RUN apk add --no-cache \
     bash=5.3.9-r1 \
-    ca-certificates=20260909-r0 \
+    ca-certificates=20261020-r0 \
     curl=8.22.0-r0 \
     gcc=15.2.0-r5 \
     git=2.54.0-r0 \
