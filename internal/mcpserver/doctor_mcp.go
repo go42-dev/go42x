@@ -28,9 +28,10 @@ var doctorEnvName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 // probeMCP initializes a server and checks its tools without exposing credentials.
 // Probe responses and subprocess logs are intentionally not echoed: servers can
 // include authentication values in errors. Only locally defined messages escape.
-func probeMCP(parent context.Context, server provider.MCPServer, timeout time.Duration) check.Result {
-	ctx, cancel := context.WithTimeout(parent, timeout)
+func probeMCP(ctx context.Context, server provider.MCPServer, timeout time.Duration) check.Result {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+
 	var missing []string
 	unsupportedReference := false
 	expand := func(value string) string {
@@ -39,8 +40,9 @@ func probeMCP(parent context.Context, server provider.MCPServer, timeout time.Du
 				unsupportedReference = true
 				return ""
 			}
+
 			value, ok := os.LookupEnv(name)
-			if !ok || value == "" {
+			if !ok || len(value) == 0 {
 				missing = append(missing, name)
 			}
 			return value
@@ -70,6 +72,7 @@ func probeMCP(parent context.Context, server provider.MCPServer, timeout time.Du
 			Remediation: "Set the listed environment variables before probing",
 		}
 	}
+
 	var c *client.Client
 	var err error
 	switch server.Transport() {
@@ -117,32 +120,46 @@ func probeMCP(parent context.Context, server provider.MCPServer, timeout time.Du
 	if err != nil || c == nil {
 		return failure()
 	}
-	defer func() { cancel(); _ = c.Close() }()
+	defer func() {
+		cancel()
+		_ = c.Close()
+	}()
+
 	if err = c.Start(ctx); err != nil {
 		return failure()
 	}
+
 	request := mcp.InitializeRequest{}
-	request.Params.ClientInfo = mcp.Implementation{Name: "go42x-doctor", Version: "1"}
+	request.Params.ClientInfo = mcp.Implementation{
+		Name:    "go42x-doctor",
+		Version: "1",
+	}
 	if _, err = c.Initialize(ctx, request); err != nil {
 		return failure()
 	}
+
 	advertised := map[string]bool{}
 	seenCursors := map[mcp.Cursor]bool{}
 	requestTools := mcp.ListToolsRequest{}
-	for page := 0; page < 100; page++ {
+	for page := range 100 {
 		tools, err := c.ListToolsByPage(ctx, requestTools)
 		if err != nil {
 			return failure()
 		}
+
 		for _, tool := range tools.Tools {
 			advertised[tool.Name] = true
 		}
-		if tools.NextCursor == "" {
+		if len(tools.NextCursor) == 0 {
 			break
 		}
 		if seenCursors[tools.NextCursor] || page == 99 {
-			return check.Result{Status: check.Fail, Message: "MCP tool listing exceeded pagination limits"}
+			return check.Result{
+				Status:  check.Fail,
+				Message: "MCP tool listing exceeded pagination limits",
+			}
 		}
+
 		seenCursors[tools.NextCursor] = true
 		requestTools.Params.Cursor = tools.NextCursor
 	}
@@ -160,6 +177,7 @@ func probeMCP(parent context.Context, server provider.MCPServer, timeout time.Du
 			Remediation: "Update configured tool names or server version",
 		}
 	}
+
 	return check.Result{
 		Status:  check.Pass,
 		Message: fmt.Sprintf("Initialized server; %d tools advertised, all configured names present", len(advertised)),

@@ -16,11 +16,6 @@ import (
 	"github.com/go42-dev/go42x/internal/fspatch"
 )
 
-const (
-	agentEnvDir = ".go42x"
-	configFile  = "go42x.yaml"
-)
-
 type InitResult struct {
 	Directory string `json:"directory"`
 }
@@ -35,7 +30,8 @@ type GenerateResult struct {
 }
 
 type Service struct {
-	logger   *slog.Logger
+	logger *slog.Logger
+
 	settings *Settings
 	config   *config.Config
 }
@@ -55,6 +51,7 @@ func NewAgentEnvService(settings *Settings, opts ...Option) (*Service, error) {
 	if svc.logger == nil {
 		svc.logger = slog.New(slog.DiscardHandler)
 	}
+	svc.logger = svc.logger.With(slog.String("component", "agentenv"))
 
 	return svc, nil
 }
@@ -62,17 +59,17 @@ func NewAgentEnvService(settings *Settings, opts ...Option) (*Service, error) {
 // Init initializes the agentenv environment in the current directory.
 // Existing configuration and templates are preserved.
 func (s *Service) Init(ctx context.Context) (*InitResult, error) {
-	s.logger.Info("Initializing agentenv")
+	s.logger.InfoContext(ctx, "Initializing agentenv")
 
-	if _, err := os.Stat(filepath.Join(agentEnvDir, configFile)); err == nil {
-		s.logger.Info("Configuration already exists")
+	if _, err := os.Stat(filepath.Join(config.Directory, config.ProjectConfigFile)); err == nil {
+		s.logger.InfoContext(ctx, "Configuration already exists")
 	} else if !os.IsNotExist(err) {
 		return nil, fmt.Errorf("failed to check configuration: %w", err)
 	}
 
-	s.logger.Info("Installing missing configuration templates")
+	s.logger.InfoContext(ctx, "Installing missing configuration templates")
 
-	if err := extractBundle(ctx, agentEnvDir); err != nil {
+	if err := extractBundle(ctx, config.Directory); err != nil {
 		return nil, fmt.Errorf("failed to extract template: %w", err)
 	}
 
@@ -80,7 +77,7 @@ func (s *Service) Init(ctx context.Context) (*InitResult, error) {
 		return nil, fmt.Errorf("failed to update .gitignore: %w", err)
 	}
 
-	return &InitResult{Directory: agentEnvDir}, nil
+	return &InitResult{Directory: config.Directory}, nil
 }
 
 // Export writes this binary's bundled sources into a new directory without loading project configuration.
@@ -89,6 +86,7 @@ func (s *Service) Export(ctx context.Context, outputDir string) (*ExportResult, 
 	if err := settings.Validate(); err != nil {
 		return nil, err
 	}
+
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -118,7 +116,7 @@ func (s *Service) Update(ctx context.Context) (*fspatch.UpdateResult, error) {
 		return nil, err
 	}
 
-	templateDir := filepath.Join(root, agentEnvDir)
+	templateDir := filepath.Join(root, config.Directory)
 
 	info, err := os.Lstat(templateDir)
 	if os.IsNotExist(err) {
@@ -132,7 +130,7 @@ func (s *Service) Update(ctx context.Context) (*fspatch.UpdateResult, error) {
 		return nil, fmt.Errorf("agentenv source must be a directory: %s", templateDir)
 	}
 
-	plan := fspatch.NewPlan(s.logger, root, filepath.Join(root, agentEnvDir, "backups"))
+	plan := fspatch.NewPlan(s.logger, root, filepath.Join(root, config.Directory, "backups"))
 	bundle, err := assets.AgentEnvTemplates()
 	if err != nil {
 		return nil, err
@@ -145,16 +143,19 @@ func (s *Service) Update(ctx context.Context) (*fspatch.UpdateResult, error) {
 			return &fspatch.UpdateResult{}, fmt.Errorf("prepare merged sources: %w", err)
 		}
 	} else {
-		updatedConfig, err = fs.ReadFile(bundle, configFile)
+		updatedConfig, err = fs.ReadFile(bundle, config.ProjectConfigFile)
 		if err != nil {
 			return nil, fmt.Errorf("read bundled configuration: %w", err)
 		}
-		updatedConfig = pinBundledSchemaURL(configFile, updatedConfig)
+
+		updatedConfig = pinBundledSchemaURL(config.ProjectConfigFile, updatedConfig)
 	}
+
 	local, _, err := plan.Read(filepath.Join(templateDir, config.LocalConfigFile))
 	if err != nil {
 		return nil, fmt.Errorf("read local configuration: %w", err)
 	}
+
 	if _, err := config.ParseProjectConfig(updatedConfig, local, nil); err != nil {
 		return nil, fmt.Errorf("validate updated configuration: %w", err)
 	}
@@ -164,16 +165,19 @@ func (s *Service) Update(ctx context.Context) (*fspatch.UpdateResult, error) {
 			if err != nil {
 				return err
 			}
+
 			if err := ctx.Err(); err != nil {
 				return err
 			}
 			if entry.IsDir() {
 				return nil
 			}
+
 			data, err := fs.ReadFile(bundle, path)
 			if err != nil {
 				return err
 			}
+
 			data = pinBundledSchemaURL(path, data)
 			return plan.Write(filepath.Join(templateDir, filepath.FromSlash(path)), data, fspatch.Sources, true)
 		})
@@ -192,6 +196,7 @@ func (s *Service) Update(ctx context.Context) (*fspatch.UpdateResult, error) {
 			return result, fmt.Errorf("update stopped after %d replacements; recovery backup: %s: %w",
 				result.Applied, result.BackupDir, err)
 		}
+
 		return nil, fmt.Errorf("update failed before application: %w", err)
 	}
 
@@ -204,17 +209,18 @@ func (s *Service) Generate(ctx context.Context) (*GenerateResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current directory: %w", err)
 	}
-	s.logger.Info("Generating agentenv", "dir", workingDir)
 
-	templateDir := filepath.Join(workingDir, agentEnvDir)
-	cfgPath := filepath.Join(templateDir, configFile)
+	s.logger.InfoContext(ctx, "Generating agentenv", slog.String("dir", workingDir))
+
+	templateDir := filepath.Join(workingDir, config.Directory)
+	cfgPath := filepath.Join(templateDir, config.ProjectConfigFile)
 	cfg, err := config.LoadProjectConfig(cfgPath, s.settings.Providers)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 
 	gen := generator.NewGenerator(
-		s.logger.With("component", "generator"),
+		s.logger.With(slog.String("subsystem", "generator")),
 		cfg, templateDir, workingDir,
 	)
 
@@ -222,8 +228,10 @@ func (s *Service) Generate(ctx context.Context) (*GenerateResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("generation failed: %w", err)
 	}
+
 	if err := plan.Apply(); err != nil {
 		return nil, fmt.Errorf("generation failed: %w", err)
 	}
+
 	return &GenerateResult{Changes: plan.Changes()}, nil
 }

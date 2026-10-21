@@ -25,6 +25,22 @@ import (
 )
 
 const (
+	collectionRequirements = "requirements"
+	collectionDecisions    = "decisions"
+	collectionHandbook     = "handbook"
+	collectionTemplates    = "templates"
+
+	statusDraft      = "draft"
+	statusAccepted   = "accepted"
+	statusRetired    = "retired"
+	statusProposed   = "proposed"
+	statusRejected   = "rejected"
+	statusSuperseded = "superseded"
+
+	KindCode          = "code"
+	KindDocumentation = "documentation"
+	KindConfig        = "config"
+
 	maxChunkLines    = 80
 	maxChunkBytes    = 16 * 1024
 	MaxFileBytes     = 5 * 1024 * 1024
@@ -61,9 +77,9 @@ func fileKind(path string) (string, string) {
 	ext := strings.ToLower(filepath.Ext(path))
 	switch ext {
 	case ".md", ".markdown", ".txt", ".rst", ".adoc":
-		return "documentation", strings.TrimPrefix(ext, ".")
+		return KindDocumentation, strings.TrimPrefix(ext, ".")
 	case ".yaml", ".yml", ".json", ".toml", ".ini", ".env", ".mod", ".sum":
-		return "config", strings.TrimPrefix(ext, ".")
+		return KindConfig, strings.TrimPrefix(ext, ".")
 	case ".go",
 		".js",
 		".jsx",
@@ -81,16 +97,17 @@ func fileKind(path string) (string, string) {
 		".sh",
 		".sql",
 		".proto":
-		return "code", strings.TrimPrefix(ext, ".")
+		return KindCode, strings.TrimPrefix(ext, ".")
 	default:
-		return "config", "text"
+		return KindConfig, "text"
 	}
 }
 
 func sourceLines(content string) []string {
-	if content == "" {
+	if len(content) == 0 {
 		return nil
 	}
+
 	return strings.Split(strings.TrimSuffix(content, "\n"), "\n")
 }
 
@@ -105,7 +122,12 @@ func chunkFile(path string, data []byte) []document {
 	if language == "md" || language == "markdown" {
 		metadata, _ = Parse(path, data)
 	}
-	sections := []section{{0, len(lines), filepath.Base(path), nil}}
+	sections := []section{{
+		0,
+		len(lines),
+		filepath.Base(path),
+		nil,
+	}}
 	switch language {
 	case "go":
 		sections = goSections(path, data, len(lines))
@@ -130,9 +152,10 @@ func chunkFile(path string, data []byte) []document {
 			for len(content) > 0 {
 				piece := utf8Prefix(content, maxChunkBytes)
 				content = content[len(piece):]
-				if strings.TrimSpace(piece) == "" {
+				if len(strings.TrimSpace(piece)) == 0 {
 					continue
 				}
+
 				doc := document{
 					Path:      path,
 					Kind:      kind,
@@ -151,15 +174,16 @@ func chunkFile(path string, data []byte) []document {
 					doc.Collection = metadata.Collection
 					doc.Related = metadata.Related
 					doc.SupersededBy = metadata.SupersededBy
-					if doc.Title == "" {
+					if len(doc.Title) == 0 {
 						doc.Title = metadata.Title
 					}
 				}
-				if kind == "documentation" {
+				if kind == KindDocumentation {
 					doc.Prose = piece
 				} else {
 					doc.Code = identifierWords(piece)
 				}
+
 				docs = append(docs, doc)
 			}
 			start = end
@@ -173,8 +197,14 @@ func goSections(path string, data []byte, count int) []section {
 	file, err := parser.ParseFile(fset, path, data, parser.ParseComments|parser.SkipObjectResolution)
 	if err != nil {
 		// Incomplete files are still searchable while being edited.
-		return []section{{0, count, filepath.Base(path), nil}}
+		return []section{{
+			0,
+			count,
+			filepath.Base(path),
+			nil,
+		}}
 	}
+
 	var sections []section
 	previous := 0
 	for _, decl := range file.Decls {
@@ -257,8 +287,14 @@ func receiverName(expr ast.Expr) string {
 
 func markdownSectionsFromDocument(parsed *Document, lines []string) []section {
 	if parsed == nil {
-		return []section{{0, len(lines), "", nil}}
+		return []section{{
+			0,
+			len(lines),
+			"",
+			nil,
+		}}
 	}
+
 	result := []section{}
 	start, title := min(parsed.BodyStartLine-1, len(lines)), parsed.Title
 	var headings [6]string
@@ -278,7 +314,7 @@ func markdownSectionsFromDocument(parsed *Document, lines []string) []section {
 		}
 		trail := []string{}
 		for _, h := range headings {
-			if h != "" {
+			if len(h) > 0 {
 				trail = append(trail, h)
 			}
 		}
@@ -299,11 +335,13 @@ func markdownSectionsFromDocument(parsed *Document, lines []string) []section {
 // PascalCase, acronyms and snake_case. Exact symbols are indexed separately.
 func identifierWords(text string) string {
 	var output strings.Builder
-	for _, word := range strings.FieldsFunc(text, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' }) {
+	for _, word := range strings.FieldsFunc(text, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_'
+	}) {
 		output.WriteString(word)
 		output.WriteByte(' ')
-		for _, part := range strings.Split(word, "_") {
-			if part == "" {
+		for part := range strings.SplitSeq(word, "_") {
+			if len(part) == 0 {
 				continue
 			}
 			if part != word {
@@ -331,12 +369,15 @@ func identifierWords(text string) string {
 	return output.String()
 }
 
-func chunkID(path string, number int) string { return fmt.Sprintf("%s#%d", path, number) }
+func chunkID(path string, number int) string {
+	return fmt.Sprintf("%s#%d", path, number)
+}
 
 func utf8Prefix(text string, limit int) string {
 	if len(text) <= limit {
 		return text
 	}
+
 	for limit > 0 && text[limit]&0xc0 == 0x80 {
 		limit--
 	}
@@ -388,7 +429,10 @@ type Document struct {
 	hasFrontMatter bool
 }
 
-func Hash(data []byte) string { sum := sha256.Sum256(data); return hex.EncodeToString(sum[:]) }
+func Hash(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
 
 // Parse uses one Markdown AST for headings and links, including table cells and
 // reference links. Front matter is masked before parsing, preserving line numbers.
@@ -397,6 +441,7 @@ func Parse(filePath string, data []byte) (*Document, error) {
 	if len(data) > MaxFileBytes || !utf8.Valid(data) || bytes.IndexByte(data, 0) >= 0 {
 		return nil, fmt.Errorf("document must be UTF-8 text no larger than %d bytes", MaxFileBytes)
 	}
+
 	d := &Document{
 		Path:          filePath,
 		Hash:          Hash(data),
@@ -422,9 +467,11 @@ func Parse(filePath string, data []byte) (*Document, error) {
 		if closeLine < 0 {
 			return nil, fmt.Errorf("unclosed YAML front matter")
 		}
+
 		if err := yaml.Unmarshal([]byte(strings.Join(lines[1:closeLine], "\n")), &d.Metadata); err != nil {
 			return nil, fmt.Errorf("invalid YAML front matter")
 		}
+
 		offset := 0
 		for _, line := range lines[:closeLine+1] {
 			offset += len(line) + 1
@@ -443,6 +490,7 @@ func Parse(filePath string, data []byte) (*Document, error) {
 			"document metadata exceeds limits: id/collection/references 128 bytes, title 1024 bytes, related 128 entries",
 		)
 	}
+
 	for _, id := range d.Related {
 		if len(id) > 128 {
 			return nil, fmt.Errorf("related ID exceeds 128 bytes")
@@ -454,6 +502,7 @@ func Parse(filePath string, data []byte) (*Document, error) {
 		if !entering {
 			return markdownast.WalkContinue, nil
 		}
+
 		switch n := node.(type) {
 		case *markdownast.Heading:
 			start := nodeLine(n, body)
@@ -476,6 +525,7 @@ func Parse(filePath string, data []byte) (*Document, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	for i := range d.Headings {
 		for j := i + 1; j < len(d.Headings); j++ {
 			if d.Headings[j].Level <= d.Headings[i].Level {
@@ -514,6 +564,7 @@ func nodeLine(node markdownast.Node, source []byte) int {
 				offset = n.Lines().At(0).Start
 				return markdownast.WalkStop, nil
 			}
+
 			if n, ok := n.(*markdownast.Text); ok {
 				offset = n.Segment.Start
 				return markdownast.WalkStop, nil
@@ -525,8 +576,10 @@ func nodeLine(node markdownast.Node, source []byte) int {
 		if parent := node.Parent(); parent != nil {
 			return nodeLine(parent, source)
 		}
+
 		return 1
 	}
+
 	return bytes.Count(source[:offset], []byte{'\n'}) + 1
 }
 
@@ -539,12 +592,14 @@ func (d *Document) addLink(target string, line int) {
 		})
 		return
 	}
+
 	u, err := url.Parse(target)
-	if err != nil || u.Scheme != "" || u.Host != "" {
+	if err != nil || len(u.Scheme) > 0 || len(u.Host) > 0 {
 		return
 	}
+
 	linkPath := d.Path
-	if u.Path != "" {
+	if len(u.Path) > 0 {
 		linkPath = path.Join(path.Dir(d.Path), u.Path)
 	}
 	if strings.HasPrefix(u.Path, "/") || linkPath == ".." || strings.HasPrefix(linkPath, "../") ||
@@ -559,12 +614,14 @@ func (d *Document) addLink(target string, line int) {
 		)
 		return
 	}
+
 	kind := "source"
 	if ext := strings.ToLower(path.Ext(linkPath)); ext == ".md" || ext == ".markdown" {
 		kind = "document"
 	} else if strings.HasSuffix(linkPath, "_test.go") || strings.HasPrefix(linkPath, "tests/") {
 		kind = "test"
 	}
+
 	d.Links = append(d.Links, Link{
 		Target:   target,
 		Path:     linkPath,
@@ -583,31 +640,31 @@ func (d *Document) validate() []Diagnostic {
 			message,
 		})
 	}
-	if strings.TrimSpace(d.ID) == "" || len(d.ID) > 128 {
+	if len(strings.TrimSpace(d.ID)) == 0 || len(d.ID) > 128 {
 		add("id is required and must be at most 128 bytes")
 	}
-	if strings.TrimSpace(d.Title) == "" || len(d.Title) > 1024 {
+	if len(strings.TrimSpace(d.Title)) == 0 || len(d.Title) > 1024 {
 		add("title is required and must be at most 1024 bytes")
 	}
 	if len(d.Related) > 128 {
 		add("related exceeds 128 IDs")
 	}
 	switch d.Collection {
-	case "requirements":
-		if !slices.Contains([]string{"draft", "accepted", "retired"}, d.Status) {
+	case collectionRequirements:
+		if !slices.Contains([]string{statusDraft, statusAccepted, statusRetired}, d.Status) {
 			add("Requirement status must be draft, accepted, or retired")
 		}
-	case "decisions":
-		if !slices.Contains([]string{"proposed", "accepted", "rejected", "superseded"}, d.Status) {
+	case collectionDecisions:
+		if !slices.Contains([]string{statusProposed, statusAccepted, statusRejected, statusSuperseded}, d.Status) {
 			add("Decision status must be proposed, accepted, rejected, or superseded")
 		}
-		if _, err := time.Parse("2006-01-02", d.Date); err != nil {
+		if _, err := time.Parse(time.DateOnly, d.Date); err != nil {
 			add("Decision date must be YYYY-MM-DD")
 		}
-		if d.Status == "superseded" && d.SupersededBy == "" {
+		if d.Status == statusSuperseded && len(d.SupersededBy) == 0 {
 			add("Superseded decision requires superseded_by")
 		}
-	case "handbook":
+	case collectionHandbook:
 		if d.SidebarPosition < 1 {
 			add("Handbook sidebar_position must be positive")
 		}
@@ -617,16 +674,17 @@ func (d *Document) validate() []Diagnostic {
 
 // StatusMeaning keeps acceptance, implementation, proposals, and history distinct.
 func StatusMeaning(m Metadata) string {
-	if m.Collection == "templates" {
+	if m.Collection == collectionTemplates {
 		return "Authoring template; replace its metadata and prompts before adoption"
 	}
+
 	switch m.Status {
-	case "draft", "proposed":
+	case statusDraft, statusProposed:
 		return "Not accepted; proposed intent does not authorize implementation"
-	case "retired", "rejected", "superseded":
+	case statusRetired, statusRejected, statusSuperseded:
 		return "Historical record; retain its reasoning and consult current guidance"
-	case "accepted":
-		if m.Collection == "requirements" {
+	case statusAccepted:
+		if m.Collection == collectionRequirements {
 			return "Agreed intent; acceptance does not establish implementation"
 		}
 		return "Accepted decision; implementation must be verified in source"

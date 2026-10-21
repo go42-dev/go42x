@@ -33,13 +33,18 @@ func yamlBlockFunc(tmpl *template.Template) func(string, any, ...string) (string
 			if option != "omit-empty" {
 				return "", fmt.Errorf("yamlBlock %q: unknown option %q", name, option)
 			}
+
 			omitEmpty = true
 		}
 		if rendering {
 			return "", fmt.Errorf("yamlBlock %q: nested yamlBlock calls are not supported", name)
 		}
+
 		rendering = true
-		defer func() { rendering = false }()
+		defer func() {
+			rendering = false
+		}()
+
 		return renderYAMLBlock(tmpl, name, data, omitEmpty)
 	}
 }
@@ -49,6 +54,7 @@ func renderYAMLBlock(tmpl *template.Template, name string, data any, omitEmpty b
 	if err := tmpl.ExecuteTemplate(&rendered, name, data); err != nil {
 		return "", fmt.Errorf("render YAML template %q: %w", name, err)
 	}
+
 	decoder := yaml.NewDecoder(&rendered)
 	var document yaml.Node
 	if err := decoder.Decode(&document); err != nil {
@@ -60,11 +66,13 @@ func renderYAMLBlock(tmpl *template.Template, name string, data any, omitEmpty b
 	if err := document.Decode(&value); err != nil {
 		return "", fmt.Errorf("validate YAML template %q: %w", name, err)
 	}
+
 	var trailing yaml.Node
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
 		if err != nil {
 			return "", fmt.Errorf("parse trailing YAML in template %q: %w", name, err)
 		}
+
 		return "", fmt.Errorf("YAML template %q must contain exactly one document", name)
 	}
 	if omitEmpty {
@@ -81,6 +89,7 @@ func renderYAMLBlock(tmpl *template.Template, name string, data any, omitEmpty b
 	if err := encoder.Encode(&document); err != nil {
 		return "", fmt.Errorf("encode YAML template %q: %w", name, err)
 	}
+
 	if err := encoder.Close(); err != nil {
 		return "", fmt.Errorf("finish YAML template %q: %w", name, err)
 	}
@@ -121,6 +130,7 @@ func expandYAMLAliases(node *yaml.Node) *yaml.Node {
 	if node.Kind == yaml.AliasNode {
 		return expandYAMLAliases(node.Alias)
 	}
+
 	copy := *node
 	copy.Anchor = ""
 	copy.Content = make([]*yaml.Node, len(node.Content))
@@ -140,7 +150,7 @@ func omitEmptyYAML(node *yaml.Node) bool {
 			omitEmptyYAML(child)
 		}
 	case yaml.ScalarNode:
-		return node.Tag == "!!null" || (node.Tag == "!!str" && node.Value == "")
+		return node.Tag == "!!null" || (node.Tag == "!!str" && len(node.Value) == 0)
 	case yaml.MappingNode:
 		kept := node.Content[:0]
 		for i := 0; i < len(node.Content); i += 2 {

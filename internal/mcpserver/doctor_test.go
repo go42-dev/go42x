@@ -31,7 +31,9 @@ func TestDoctorCheckUsesCurrentEnabledServers(t *testing.T) {
 		},
 		"disabled": {Command: "unavailable"},
 	}
-	group := DoctorCheck(t.TempDir(), func() map[string]provider.MCPServer { return servers }, DoctorOptions{})
+	group := DoctorCheck(t.TempDir(), func() map[string]provider.MCPServer {
+		return servers
+	}, DoctorOptions{})
 	result := group.Run(t.Context())
 	var ids []string
 	var statuses []check.Status
@@ -63,6 +65,7 @@ func TestMCPProbe(t *testing.T) {
 		Env:     map[string]string{"GO42X_DOCTOR_HELPER": "serve"},
 	}
 	result := probeMCP(t.Context(), server, 3*time.Second)
+
 	if result.Status != check.Pass {
 		t.Fatalf("healthy: %+v", result)
 	}
@@ -78,6 +81,7 @@ func TestMCPProbe(t *testing.T) {
 	server.Env["GO42X_DOCTOR_HELPER"] = "wait"
 	start := time.Now()
 	result = probeMCP(t.Context(), server, 100*time.Millisecond)
+
 	if result.Status != check.Fail || time.Since(start) > 3*time.Second {
 		t.Fatalf("timeout: %+v elapsed=%s", result, time.Since(start))
 	}
@@ -90,7 +94,8 @@ func TestMCPProbe(t *testing.T) {
 
 func TestDoctorMCPHelper(_ *testing.T) {
 	mode := os.Getenv("GO42X_DOCTOR_HELPER")
-	if mode == "" {
+
+	if len(mode) == 0 {
 		return
 	}
 	if mode == "wait" {
@@ -111,11 +116,19 @@ func TestDoctorMCPHelper(_ *testing.T) {
 		if request.ID == nil {
 			continue
 		}
+
 		var result any
 		switch request.Method {
 		case "server/discover":
 			if err := json.NewEncoder(os.Stdout).
-				Encode(map[string]any{"jsonrpc": "2.0", "id": request.ID, "error": map[string]any{"code": -32601, "message": "method not found"}}); err != nil {
+				Encode(map[string]any{
+					"jsonrpc": "2.0",
+					"id":      request.ID,
+					"error": map[string]any{
+						"code":    -32601,
+						"message": "method not found",
+					},
+				}); err != nil {
 				os.Exit(4)
 			}
 			continue
@@ -123,23 +136,40 @@ func TestDoctorMCPHelper(_ *testing.T) {
 			result = map[string]any{
 				"protocolVersion": "2025-11-25",
 				"capabilities":    map[string]any{"tools": map[string]any{}},
-				"serverInfo":      map[string]string{"name": "fixture", "version": "1"},
+				"serverInfo": map[string]string{
+					"name":    "fixture",
+					"version": "1",
+				},
 			}
 		case "tools/list":
 			result = map[string]any{
 				"tools": []any{
-					map[string]any{"name": "known", "inputSchema": map[string]string{"type": "object"}},
-					map[string]any{"name": "extra", "inputSchema": map[string]string{"type": "object"}},
+					map[string]any{
+						"name":        "known",
+						"inputSchema": map[string]string{"type": "object"},
+					},
+					map[string]any{
+						"name":        "extra",
+						"inputSchema": map[string]string{"type": "object"},
+					},
 				},
 			}
 		default:
 			os.Exit(3)
 		}
 		if err := json.NewEncoder(os.Stdout).
-			Encode(map[string]any{"jsonrpc": "2.0", "id": request.ID, "result": result}); err != nil {
+			Encode(map[string]any{
+				"jsonrpc": "2.0",
+				"id":      request.ID,
+				"result":  result,
+			}); err != nil {
 			os.Exit(4)
 		}
 	}
+	if scanner.Err() != nil {
+		os.Exit(2)
+	}
+
 	os.Exit(0)
 }
 
@@ -160,9 +190,12 @@ func TestMCPRemoteProbe(t *testing.T) {
 			} else {
 				handler = server.NewSSEServer(runtime)
 			}
+
 			remote := httptest.NewServer(handler)
 			defer remote.Close()
+
 			url := remote.URL
+
 			if protocol == provider.MCPServerTypeSSE {
 				url += "/sse"
 			}
@@ -175,6 +208,7 @@ func TestMCPRemoteProbe(t *testing.T) {
 				},
 				2*time.Second,
 			)
+
 			if result.Status != check.Pass {
 				t.Fatalf("remote probe: %+v", result)
 			}

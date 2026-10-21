@@ -7,23 +7,66 @@ import (
 
 func TestConfigValidation(t *testing.T) {
 	for _, s := range []Config{
-		{Type: "npm", Registry: "https://registry.npmjs.org", Package: "pkg", Version: "^1.0.0"},
-		{Type: "npm", Registry: "https://registry.npmjs.org?query=value", Package: "pkg", Version: "1.0.0"},
-		{Type: "http", URL: "https://example.com/file?archive=zip"},
-		{Type: "http", URL: "https://example.com/archive.zip//subdir"},
-		{Type: "http", URL: "https://example.com/archive.zip%2f%2fsubdir"},
-		{Type: "git", URL: "https://example.com/repo", Ref: "--help"},
-		{Type: "git", URL: "https:///repo", Ref: "main"},
-		{Type: "git", URL: "https://example.com/repo//subdir", Ref: "main"},
+		{
+			Type:     "npm",
+			Registry: "https://registry.npmjs.org",
+			Package:  "pkg",
+			Version:  "^1.0.0",
+		},
+		{
+			Type:     "npm",
+			Registry: "https://registry.npmjs.org?query=value",
+			Package:  "pkg",
+			Version:  "1.0.0",
+		},
+		{
+			Type: "http",
+			URL:  "https://example.com/file?archive=zip",
+		},
+		{
+			Type: "http",
+			URL:  "https://example.com/archive.zip//subdir",
+		},
+		{
+			Type: "http",
+			URL:  "https://example.com/archive.zip%2f%2fsubdir",
+		},
+		{
+			Type: "git",
+			URL:  "https://example.com/repo",
+			Ref:  "--help",
+		},
+		{
+			Type: "git",
+			URL:  "https:///repo",
+			Ref:  "main",
+		},
+		{
+			Type: "git",
+			URL:  "https://example.com/repo//subdir",
+			Ref:  "main",
+		},
 	} {
 		if err := s.Validate(); err == nil {
 			t.Fatalf("invalid source accepted: %+v", s)
 		}
 	}
 	for _, s := range []Config{
-		{Type: "npm", Package: "@fixture/assets", Version: "latest"},
-		{Type: "http", URL: "https://example.com/file", SHA256: strings.Repeat("AB", 32)},
-		{Type: "git", URL: "ssh://git@example.com/repo", Ref: "main"},
+		{
+			Type:    "npm",
+			Package: "@fixture/assets",
+			Version: "latest",
+		},
+		{
+			Type:   "http",
+			URL:    "https://example.com/file",
+			SHA256: strings.Repeat("AB", 32),
+		},
+		{
+			Type: "git",
+			URL:  "ssh://git@example.com/repo",
+			Ref:  "main",
+		},
 	} {
 		if err := s.WithDefaults().Validate(); err != nil {
 			t.Fatalf("valid source rejected: %+v: %v", s, err)
@@ -31,12 +74,20 @@ func TestConfigValidation(t *testing.T) {
 	}
 }
 func TestConfigDefaults(t *testing.T) {
-	original := Config{Type: "npm", Package: "package", Version: "latest"}
+	original := Config{
+		Type:    "npm",
+		Package: "package",
+		Version: "latest",
+	}
 	normalized := original.WithDefaults()
-	if normalized.Registry != "https://registry.npmjs.org" || original.Registry != "" {
+
+	if normalized.Registry != "https://registry.npmjs.org" || len(original.Registry) > 0 {
 		t.Fatal("invalid registry default or input mutation")
 	}
-	if got := (Config{Type: "http", SHA256: strings.Repeat("AB", 32)}).WithDefaults().SHA256; got != strings.Repeat(
+	if got := (Config{
+		Type:   "http",
+		SHA256: strings.Repeat("AB", 32),
+	}).WithDefaults().SHA256; got != strings.Repeat(
 		"ab",
 		32,
 	) {

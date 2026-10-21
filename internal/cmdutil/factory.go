@@ -7,8 +7,9 @@ import (
 )
 
 type Factory struct {
-	ctx         context.Context
-	options     *Options
+	ctx     context.Context
+	options *Options
+
 	input       io.Reader
 	output      io.Writer
 	errorOutput io.Writer
@@ -38,8 +39,14 @@ func (f *Factory) SetIOStreams(input io.Reader, output, errorOutput io.Writer) {
 	f.input, f.output, f.errorOutput = input, output, errorOutput
 }
 
-func (f *Factory) Input() io.Reader { return f.input }
+func (f *Factory) Input() io.Reader {
+	return f.input
+}
 
-func (f *Factory) Output() io.Writer { return f.output }
+func (f *Factory) Output() io.Writer {
+	return f.output
+}
 
-func (f *Factory) ErrorOutput() io.Writer { return f.errorOutput }
+func (f *Factory) ErrorOutput() io.Writer {
+	return f.errorOutput
+}

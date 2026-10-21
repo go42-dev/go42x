@@ -25,7 +25,7 @@ type Settings struct {
 func NewSettings() *Settings {
 	return &Settings{
 		RootPath:     ".",
-		ManifestPath: manifestFile,
+		ManifestPath: ManifestFile,
 		TempDir:      config.DefaultTempDir,
 		Timeout:      2 * time.Minute,
 	}
@@ -35,11 +35,12 @@ func (s *Settings) Validate() error {
 	if s == nil {
 		return fmt.Errorf("settings are required")
 	}
-	if strings.TrimSpace(s.RootPath) == "" || strings.TrimSpace(s.ManifestPath) == "" ||
-		strings.TrimSpace(s.TempDir) == "" ||
+	if len(strings.TrimSpace(s.RootPath)) == 0 || len(strings.TrimSpace(s.ManifestPath)) == 0 ||
+		len(strings.TrimSpace(s.TempDir)) == 0 ||
 		s.Timeout <= 0 {
 		return fmt.Errorf("root, manifest, temp directory and positive timeout are required")
 	}
+
 	return nil
 }
 
@@ -49,14 +50,16 @@ func (s *Settings) LoadProject() error {
 	if err != nil {
 		return err
 	}
+
 	s.RootPath = root
-	cfg, err := config.LoadProjectConfig(filepath.Join(root, ".go42x", "go42x.yaml"), nil)
+	cfg, err := config.LoadProjectConfig(filepath.Join(root, config.Directory, config.ProjectConfigFile), nil)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
+
 	s.TempDir = cfg.Context.WithDefaults().TempDir
 	return nil
 }
@@ -67,10 +70,12 @@ func (s *Settings) Resolve() error {
 	if err != nil {
 		return err
 	}
+
 	root, err = filepath.EvalSymlinks(root)
 	if err != nil {
 		return err
 	}
+
 	info, err := os.Stat(root)
 	if err != nil {
 		return err
@@ -78,12 +83,13 @@ func (s *Settings) Resolve() error {
 	if !info.IsDir() {
 		return fmt.Errorf("project root must be a directory")
 	}
+
 	s.RootPath = root
 	if !filepath.IsAbs(s.ManifestPath) {
 		s.ManifestPath = filepath.Join(root, s.ManifestPath)
 	}
-	if s.LockPath == "" {
-		s.LockPath = filepath.Join(filepath.Dir(s.ManifestPath), ".vendor.lock.yaml")
+	if len(s.LockPath) == 0 {
+		s.LockPath = filepath.Join(filepath.Dir(s.ManifestPath), LockFile)
 	}
 	if !filepath.IsAbs(s.LockPath) {
 		s.LockPath = filepath.Join(root, s.LockPath)
@@ -97,6 +103,7 @@ func (s *Settings) Resolve() error {
 	if strings.EqualFold(s.ManifestPath, s.LockPath) {
 		return fmt.Errorf("manifest and lock paths must differ")
 	}
+
 	for _, filename := range []string{s.ManifestPath, s.LockPath} {
 		rel, err := filepath.Rel(root, filename)
 		if err != nil || !filepath.IsLocal(rel) || rel == "." {

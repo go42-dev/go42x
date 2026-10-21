@@ -18,14 +18,21 @@ func newStatsCommand(f *cmdutil.Factory) *cobra.Command {
 		Short: "Show knowledge-base index statistics",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			settings := &kwb.StatsSettings{KnowledgeBase: queryKnowledgeBaseSettings(cmd), JSON: viper.GetBool("json")}
+			settings := &kwb.StatsSettings{
+				KnowledgeBase: queryKnowledgeBaseSettings(cmd),
+				JSON:          viper.GetBool(flagJSON),
+			}
+
 			if err := settings.Validate(); err != nil {
 				return cmdutil.UsageError(err)
 			}
+
 			return runStatsCommand(f, settings)
 		},
 	}
-	cmd.Flags().Bool("json", false, "print structured index statistics")
+	cmd.Flags().Bool(
+		flagJSON, false,
+		"print structured index statistics")
 	return cmd
 }
 
@@ -34,6 +41,7 @@ func runStatsCommand(f *cmdutil.Factory, settings *kwb.StatsSettings) error {
 	if err != nil {
 		return cli.ReportStats(f.Output(), settings, nil, err)
 	}
+
 	result, err := service.GetStats(f.Context())
 	err = errors.Join(err, service.Close())
 	return cli.ReportStats(f.Output(), settings, result, err)

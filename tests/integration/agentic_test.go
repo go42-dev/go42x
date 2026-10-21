@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -48,6 +49,7 @@ func TestCompiledWorkflowBoundaries(t *testing.T) {
 				t.Fatal(err)
 			}
 			agent, exists := workflow.Jobs["agent"]
+
 			if !exists {
 				t.Fatal("missing agent job")
 			}
@@ -91,7 +93,9 @@ func TestCompiledWorkflowBoundaries(t *testing.T) {
 					if !strings.HasPrefix(step.Uses, "actions/create-github-app-token@") {
 						continue
 					}
+
 					foundApp = true
+
 					if step.With["client-id"] != "${{ vars.AI_APP_CLIENT_ID }}" ||
 						step.With["private-key"] != "${{ secrets.AI_APP_PRIVATE_KEY }}" ||
 						step.With["repositories"] != "${{ github.event.repository.name }}" {
@@ -136,6 +140,7 @@ func TestMCPImageMatchesMiseVersion(t *testing.T) {
 	}
 
 	repository := action.Inputs["mcp-image-repository"].Default
+
 	if repository != "ghcr.io/go42-dev/go42x" {
 		t.Fatalf("default MCP image repository = %q, want ghcr.io/go42-dev/go42x", repository)
 	}
@@ -144,6 +149,7 @@ func TestMCPImageMatchesMiseVersion(t *testing.T) {
 	for _, step := range action.Runs.Steps {
 		if step.Name == "Pull MCP tools image" {
 			script = step.Run
+
 			if step.Env["IMAGE_REPOSITORY"] != "${{ inputs.mcp-image-repository }}" {
 				t.Fatalf("image repository does not come from the action input: %v", step.Env)
 			}
@@ -247,9 +253,7 @@ esac
 				"MOCK_DOCKER_LOG":   filepath.Join(dir, "docker.log"),
 				"GITHUB_ENV":        filepath.Join(dir, "github.env"),
 			}
-			for key, value := range tt.changes {
-				environment[key] = value
-			}
+			maps.Copy(environment, tt.changes)
 			command := exec.CommandContext(t.Context(), "bash", "-c", script)
 			for key, value := range environment {
 				command.Env = append(command.Env, key+"="+value)
@@ -274,6 +278,7 @@ esac
 				t.Fatal(err)
 			}
 			want := "GO42X_MCP_IMAGE_VERSION=" + tt.wantTag + "@" + digest + "\n"
+
 			if string(published) != want {
 				t.Fatalf("published environment = %q, want %q", published, want)
 			}
@@ -284,6 +289,7 @@ esac
 			imageReference := environment["IMAGE_REPOSITORY"] + ":" + tt.wantTag
 			wantCalls := "pull " + imageReference + "\n" +
 				"image inspect --format {{index .RepoDigests 0}} " + imageReference + "\n"
+
 			if string(calls) != wantCalls {
 				t.Fatalf("Docker calls = %q, want %q", calls, wantCalls)
 			}
@@ -303,11 +309,16 @@ func TestRepositoryMCPFragment(t *testing.T) {
 	output := t.TempDir()
 	logger := slog.New(slog.DiscardHandler)
 	plan := fspatch.NewPlan(logger, output, filepath.Join(output, ".build/backups"))
-	generator := ghaw.New(logger, ghaw.Settings{
-		OutputDir:  output,
-		MCPServers: cfg.MCP,
-		Bindings:   cfg.Providers[ghaw.Name].Bindings,
-	}, nil, "")
+	generator := ghaw.New(
+		logger,
+		nil,
+		ghaw.Settings{
+			OutputDir:  output,
+			MCPServers: cfg.MCP,
+			Bindings:   cfg.Providers[ghaw.Name].Bindings,
+		},
+		"",
+	)
 	if err := generator.Prepare(plan, nil); err != nil {
 		t.Fatal(err)
 	}

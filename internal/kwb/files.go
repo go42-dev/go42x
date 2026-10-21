@@ -3,6 +3,7 @@ package kwb
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -15,7 +16,18 @@ import (
 
 	"github.com/go42-dev/go42x/assets"
 	"github.com/go42-dev/go42x/internal/buildinfo"
+	"github.com/go42-dev/go42x/internal/config"
 	"github.com/go42-dev/go42x/internal/fspatch"
+)
+
+const (
+	agentChunksDir         = "chunks"
+	agentUpstreamDir       = "upstream"
+	sourceIgnoreFile       = "kwb.ignore"
+	templateFileSuffix     = ".tpl.md"
+	markdownFileSuffix     = ".md"
+	markdownLongFileSuffix = ".markdown"
+	sourceIgnorePath       = config.Directory + "/" + sourceIgnoreFile
 )
 
 var defaultExcludedDirs = []string{
@@ -24,11 +36,35 @@ var defaultExcludedDirs = []string{
 }
 
 var defaultExtensions = map[string]bool{
-	".go": true, markdownFileSuffix: true, markdownLongFileSuffix: true, ".txt": true, ".rst": true, ".adoc": true,
-	".yaml": true, ".yml": true, ".mod": true, ".proto": true, ".sql": true,
-	".json": true, ".toml": true, ".env": true, ".sh": true, ".ini": true,
-	".js": true, ".jsx": true, ".ts": true, ".tsx": true, ".py": true, ".rs": true,
-	".java": true, ".c": true, ".h": true, ".cpp": true, ".cs": true, ".rb": true, ".php": true,
+	".go":                  true,
+	markdownFileSuffix:     true,
+	markdownLongFileSuffix: true,
+	".txt":                 true,
+	".rst":                 true,
+	".adoc":                true,
+	".yaml":                true,
+	".yml":                 true,
+	".mod":                 true,
+	".proto":               true,
+	".sql":                 true,
+	".json":                true,
+	".toml":                true,
+	".env":                 true,
+	".sh":                  true,
+	".ini":                 true,
+	".js":                  true,
+	".jsx":                 true,
+	".ts":                  true,
+	".tsx":                 true,
+	".py":                  true,
+	".rs":                  true,
+	".java":                true,
+	".c":                   true,
+	".h":                   true,
+	".cpp":                 true,
+	".cs":                  true,
+	".rb":                  true,
+	".php":                 true,
 }
 
 var defaultExcludedFiles = []string{
@@ -49,25 +85,14 @@ var defaultFilenames = []string{
 	sourceIgnoreFile,
 }
 
-const (
-	agentEnvDir            = ".go42x"
-	agentChunksDir         = "chunks"
-	agentUpstreamDir       = "upstream"
-	agentConfigFile        = "go42x.yaml"
-	sourceIgnoreFile       = "kwb.ignore"
-	templateFileSuffix     = ".tpl.md"
-	markdownFileSuffix     = ".md"
-	markdownLongFileSuffix = ".markdown"
-	sourceIgnorePath       = agentEnvDir + "/" + sourceIgnoreFile
-)
-
-// Include authored configuration, instruction templates, and upstream Markdown references.
+// authoredAgentFile identifies authored configuration, instruction templates, and upstream Markdown references.
 func authoredAgentFile(relative string, directory bool) bool {
 	parts := strings.Split(filepath.ToSlash(relative), "/")
 	for i, part := range parts {
-		if part != agentEnvDir {
+		if part != config.Directory {
 			continue
 		}
+
 		tail := parts[i+1:]
 		if len(tail) == 0 {
 			return directory
@@ -82,7 +107,8 @@ func authoredAgentFile(relative string, directory bool) bool {
 		if len(tail) != 1 || directory {
 			return false
 		}
-		return tail[0] == agentConfigFile || tail[0] == sourceIgnoreFile ||
+
+		return tail[0] == config.ProjectConfigFile || tail[0] == sourceIgnoreFile ||
 			strings.HasSuffix(tail[0], templateFileSuffix)
 	}
 	return true
@@ -95,15 +121,17 @@ func (m *indexManager) ensureSourceIgnore(ctx context.Context, root string) (str
 		return "", err
 	}
 
-	plan := fspatch.NewPlan(m.logger, root, filepath.Join(root, agentEnvDir, "backups"))
+	plan := fspatch.NewPlan(m.logger, root, filepath.Join(root, config.Directory, "backups"))
 	path := filepath.Join(root, sourceIgnorePath)
 	_, exists, err := plan.Read(path)
 	if err != nil {
 		return "", err
 	}
+
 	if err := plan.WriteManagedBlock(path, assets.KWBIgnore(), fspatch.Sources); err != nil {
 		return "", err
 	}
+
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -115,6 +143,7 @@ func (m *indexManager) ensureSourceIgnore(ctx context.Context, root string) (str
 	if result == nil {
 		return "", err
 	}
+
 	return result.BackupDir, err
 }
 
@@ -135,17 +164,19 @@ func (m *indexManager) sourceExclusions(ctx context.Context, root string) (gitig
 			return nil, err
 		}
 		defer file.Close()
+
 		data, err := readBounded(ctx, file, MaxReadBytes)
 		if err != nil {
 			return nil, fmt.Errorf("reading %s: %w", sourceIgnorePath, err)
 		}
+
 		lines = strings.Split(string(data), "\n")
 	}
 	lines = append(lines, m.settings.ExcludeFiles...)
 	patterns := []gitignore.Pattern{}
 	for _, line := range lines {
 		line = strings.TrimSuffix(line, "\r")
-		if line != "" && !strings.HasPrefix(line, "#") {
+		if len(line) > 0 && !strings.HasPrefix(line, "#") {
 			// Keep descendants reachable for later exceptions to /** patterns.
 			if strings.HasSuffix(line, "/**") {
 				line += "/*"
@@ -172,6 +203,7 @@ func (m *indexManager) shouldIndexFile(name string) bool {
 	if slices.Contains(defaultExcludedFiles, name) {
 		return false
 	}
+
 	return slices.Contains(defaultFilenames, name) || defaultExtensions[ext]
 }
 
@@ -186,6 +218,7 @@ func (m *indexManager) walkFiles(
 	if err != nil {
 		return err
 	}
+
 	return m.walkDirectory(ctx, root, "", nil, exclusions, visit)
 }
 
@@ -195,6 +228,7 @@ func (m *indexManager) walkDirectory(ctx context.Context, root, relative string,
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+
 	directory := filepath.Join(root, relative)
 	patterns := slices.Clone(inherited)
 	// #nosec G304 -- Indexing reads .gitignore files from the caller-selected local project tree.
@@ -202,13 +236,14 @@ func (m *indexManager) walkDirectory(ctx context.Context, root, relative string,
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
+
 	var domain []string
-	if relative != "" {
+	if len(relative) > 0 {
 		domain = strings.Split(filepath.ToSlash(relative), "/")
 	}
-	for _, line := range strings.Split(string(ignoreData), "\n") {
+	for line := range strings.SplitSeq(string(ignoreData), "\n") {
 		line = strings.TrimSuffix(line, "\r")
-		if line == "" || strings.HasPrefix(line, "#") {
+		if len(line) == 0 || strings.HasPrefix(line, "#") {
 			continue
 		}
 		// Preserve descendant-only matching when pruning directories.
@@ -228,10 +263,12 @@ func (m *indexManager) walkDirectory(ctx context.Context, root, relative string,
 	if err != nil {
 		return err
 	}
+
 	for _, entry := range entries {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+
 		rel := filepath.Join(relative, entry.Name())
 		path := filepath.Join(root, rel)
 		if path == m.settings.IndexPath {
@@ -253,14 +290,17 @@ func (m *indexManager) walkDirectory(ctx context.Context, root, relative string,
 				slices.Contains(m.settings.ExcludeDirs, filepath.ToSlash(rel)) {
 				continue
 			}
+
 			if err := m.walkDirectory(ctx, root, rel, patterns, exclusions, visit); err != nil {
 				return err
 			}
+
 			continue
 		}
 		if !m.shouldIndexFile(entry.Name()) {
 			continue
 		}
+
 		info, err := entry.Info()
 		if err != nil {
 			return err
@@ -268,6 +308,7 @@ func (m *indexManager) walkDirectory(ctx context.Context, root, relative string,
 		if !info.Mode().IsRegular() || info.Size() > int64(m.settings.MaxFileSize) {
 			continue
 		}
+
 		data, err := readSource(ctx, path, m.settings.MaxFileSize)
 		if err != nil {
 			return err
@@ -278,6 +319,7 @@ func (m *indexManager) walkDirectory(ctx context.Context, root, relative string,
 		if filepath.Ext(path) == ".go" && isGeneratedGo(data) {
 			continue
 		}
+
 		if err := visit(filepath.ToSlash(rel), info, data); err != nil {
 			return err
 		}
@@ -286,7 +328,7 @@ func (m *indexManager) walkDirectory(ctx context.Context, root, relative string,
 }
 
 func isGeneratedGo(data []byte) bool {
-	for _, line := range bytes.Split(data, []byte{'\n'}) {
+	for line := range bytes.SplitSeq(data, []byte{'\n'}) {
 		if bytes.HasPrefix(line, []byte("// Code generated ")) &&
 			bytes.HasSuffix(bytes.TrimSpace(line), []byte(" DO NOT EDIT.")) {
 			return true
@@ -305,6 +347,7 @@ func readSource(ctx context.Context, path string, limit int) ([]byte, error) {
 		return nil, err
 	}
 	defer file.Close()
+
 	return readBounded(ctx, file, limit)
 }
 
@@ -316,12 +359,13 @@ func readBounded(ctx context.Context, reader io.Reader, limit int) ([]byte, erro
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
+
 		n, err := reader.Read(buffer)
 		data.Write(buffer[:n])
 		if data.Len() > limit {
 			return nil, fmt.Errorf("file exceeds maximum size of %d bytes", limit)
 		}
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			return data.Bytes(), ctx.Err()
 		}
 		if err != nil {
@@ -352,14 +396,16 @@ func ReadLines(content string, start, end int) (Source, error) {
 	if end < start || end-start >= MaxReadLines {
 		return result, fmt.Errorf("request between 1 and %d lines", MaxReadLines)
 	}
-	if content == "" {
+	if len(content) == 0 {
 		return result, nil
 	}
+
 	lines := sourceLines(content)
 	result.TotalLines = len(lines)
 	if start > len(lines) {
 		return result, fmt.Errorf("start_line exceeds file length of %d lines", len(lines))
 	}
+
 	end = min(end, len(lines))
 	result.StartLine = start
 	result.EndLine = start - 1
@@ -369,6 +415,7 @@ func ReadLines(content string, start, end int) (Source, error) {
 			if i == start-1 {
 				return result, fmt.Errorf("line %d exceeds the %d-byte response limit", start, MaxReadBytes)
 			}
+
 			break
 		}
 		out.WriteString(lines[i])

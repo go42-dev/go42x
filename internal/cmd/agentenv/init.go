@@ -20,11 +20,13 @@ func newInitCommand(f *cmdutil.Factory) *cobra.Command {
 Existing configuration and templates are preserved.
 Run 'go42x agentenv generate' to generate agent instructions and settings.`,
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			settings := &agentenv.Settings{JSON: viper.GetBool("json")}
+		RunE: func(_ *cobra.Command, _ []string) error {
+			settings := &agentenv.Settings{JSON: viper.GetBool(flagJSON)}
+
 			if err := settings.Validate(); err != nil {
 				return cmdutil.UsageError(err)
 			}
+
 			return runInitCommand(f, settings)
 		},
 	}
@@ -39,6 +41,7 @@ func runInitCommand(f *cmdutil.Factory, settings *agentenv.Settings) error {
 	if err != nil {
 		return cli.ReportInit(f.Output(), settings, nil, fmt.Errorf("failed to initialize agentenv service: %w", err))
 	}
+
 	result, err := service.Init(f.Context())
 	return cli.ReportInit(f.Output(), settings, result, err)
 }

@@ -20,9 +20,29 @@ func TestCollectorMetadata(t *testing.T) {
 		name     string
 		priority int
 	}{
-		{NewProjectCollector(nil), "project", 5}, {NewGitCollector("."), "git", 10},
-		{NewEnvironmentCollector(nil, "."), "environment", 20}, {NewGitHubActionsCollector(), "github_actions", 30},
-		{NewGoCollector(".", nil), "golang", 25},
+		{
+			NewProjectCollector(nil),
+			"project",
+			5,
+		}, {
+			NewGitCollector("."),
+			"git",
+			10,
+		},
+		{
+			NewEnvironmentCollector(nil, "."),
+			"environment",
+			20,
+		}, {
+			NewGitHubActionsCollector(),
+			"github_actions",
+			30,
+		},
+		{
+			NewGoCollector(".", nil),
+			"golang",
+			25,
+		},
 	}
 	for _, tt := range collectors {
 		if tt.collector.Name() != tt.name || tt.collector.Priority() != tt.priority {
@@ -64,6 +84,7 @@ func TestEnvironmentCollector(t *testing.T) {
 		}
 	}
 	variables := data["variables"].(map[string]string)
+
 	if variables["AGENTENV_TEST_INCLUDED"] != "yes" {
 		t.Error("configured environment variable missing")
 	}
@@ -83,6 +104,7 @@ func cleanActionsEnv(t *testing.T) {
 	t.Helper()
 	for _, entry := range os.Environ() {
 		key, _, _ := strings.Cut(entry, "=")
+
 		if strings.HasPrefix(key, "GITHUB_") || strings.HasPrefix(key, "RUNNER_") {
 			t.Setenv(key, "")
 		}
@@ -100,9 +122,28 @@ func TestGitHubActionsContext(t *testing.T) {
 		t.Fatalf("outside Actions = %v, %v", data, err)
 	}
 	for key, value := range map[string]string{
-		"GITHUB_ACTIONS": "true", "GITHUB_SERVER_URL": "https://github.example", "GITHUB_REPOSITORY": "org/repo", "GITHUB_REPOSITORY_OWNER": "org", "GITHUB_RUN_ID": "42", "GITHUB_EVENT_NAME": "pull_request", "GITHUB_ACTOR": "actor", "GITHUB_TRIGGERING_ACTOR": "trigger", "GITHUB_WORKFLOW": "test", "GITHUB_WORKFLOW_REF": "ref", "GITHUB_WORKFLOW_SHA": "abc", "GITHUB_JOB": "unit", "GITHUB_SHA": "abc", "GITHUB_REF": "refs/heads/main", "GITHUB_RUN_NUMBER": "5", "GITHUB_RUN_ATTEMPT": "2",
-		"RUNNER_NAME": "runner", "RUNNER_OS": "Linux", "RUNNER_ARCH": "X64", "RUNNER_TEMP": "/tmp/runner", "RUNNER_TOOL_CACHE": "/tmp/tools",
-		"GITHUB_EVENT_PAYLOAD": `{"pull_request":{"number":7,"title":"Fix tests","body":"Body","head":{"ref":"feature"},"base":{"ref":"main"}},"review":{"body":"Review this"}}`,
+		"GITHUB_ACTIONS":          "true",
+		"GITHUB_SERVER_URL":       "https://github.example",
+		"GITHUB_REPOSITORY":       "org/repo",
+		"GITHUB_REPOSITORY_OWNER": "org",
+		"GITHUB_RUN_ID":           "42",
+		"GITHUB_EVENT_NAME":       "pull_request",
+		"GITHUB_ACTOR":            "actor",
+		"GITHUB_TRIGGERING_ACTOR": "trigger",
+		"GITHUB_WORKFLOW":         "test",
+		"GITHUB_WORKFLOW_REF":     "ref",
+		"GITHUB_WORKFLOW_SHA":     "abc",
+		"GITHUB_JOB":              "unit",
+		"GITHUB_SHA":              "abc",
+		"GITHUB_REF":              "refs/heads/main",
+		"GITHUB_RUN_NUMBER":       "5",
+		"GITHUB_RUN_ATTEMPT":      "2",
+		"RUNNER_NAME":             "runner",
+		"RUNNER_OS":               "Linux",
+		"RUNNER_ARCH":             "X64",
+		"RUNNER_TEMP":             "/tmp/runner",
+		"RUNNER_TOOL_CACHE":       "/tmp/tools",
+		"GITHUB_EVENT_PAYLOAD":    `{"pull_request":{"number":7,"title":"Fix tests","body":"Body","head":{"ref":"feature"},"base":{"ref":"main"}},"review":{"body":"Review this"}}`,
 	} {
 		t.Setenv(key, value)
 	}
@@ -111,21 +152,55 @@ func TestGitHubActionsContext(t *testing.T) {
 		t.Fatal(err)
 	}
 	for key, want := range map[string]any{
-		"repository":   map[string]any{"full_name": "org/repo", "owner": "org"},
-		"actor":        map[string]any{"login": "actor", "triggering_actor": "trigger"},
-		"workflow":     map[string]any{"name": "test", "ref": "ref", "sha": "abc"},
-		"runner":       map[string]any{"name": "runner", "os": "Linux", "arch": "X64", "temp_dir": "/tmp/runner", "tool_cache": "/tmp/tools"},
-		"pull_request": map[string]any{"number": 7, "is_pr": true, "title": "Fix tests", "body": "Body", "base": "main", "head": "feature"},
-		"build_url":    "https://github.example/org/repo/actions/runs/42", "user_request": "Review this", "job": "unit", "sha": "abc", "run_attempt": "2",
+		"repository": map[string]any{
+			"full_name": "org/repo",
+			"owner":     "org",
+		},
+		"actor": map[string]any{
+			"login":            "actor",
+			"triggering_actor": "trigger",
+		},
+		"workflow": map[string]any{
+			"name": "test",
+			"ref":  "ref",
+			"sha":  "abc",
+		},
+		"runner": map[string]any{
+			"name":       "runner",
+			"os":         "Linux",
+			"arch":       "X64",
+			"temp_dir":   "/tmp/runner",
+			"tool_cache": "/tmp/tools",
+		},
+		"pull_request": map[string]any{
+			"number": 7,
+			"is_pr":  true,
+			"title":  "Fix tests",
+			"body":   "Body",
+			"base":   "main",
+			"head":   "feature",
+		},
+		"build_url":    "https://github.example/org/repo/actions/runs/42",
+		"user_request": "Review this",
+		"job":          "unit",
+		"sha":          "abc",
+		"run_attempt":  "2",
 	} {
 		if !reflect.DeepEqual(data[key], want) {
 			t.Errorf("%s = %#v, want %#v", key, data[key], want)
 		}
 	}
 	for key, value := range map[string]string{
-		"REPOSITORY": "override/repo", "EVENT_NAME": "issue_comment", "ACTOR": "override",
-		"USER_REQUEST": "override request", "ISSUE_NUMBER": "99", "IS_PR": "false",
-		"PR_TITLE": "override title", "PR_BODY": "override body", "PR_HEAD": "override head", "PR_BASE": "override base",
+		"REPOSITORY":   "override/repo",
+		"EVENT_NAME":   "issue_comment",
+		"ACTOR":        "override",
+		"USER_REQUEST": "override request",
+		"ISSUE_NUMBER": "99",
+		"IS_PR":        "false",
+		"PR_TITLE":     "override title",
+		"PR_BODY":      "override body",
+		"PR_HEAD":      "override head",
+		"PR_BASE":      "override base",
 	} {
 		t.Setenv(key, value)
 	}
@@ -149,33 +224,74 @@ func TestGitHubActionsPrepareEnv(t *testing.T) {
 		details                                                          map[string]any
 	}{
 		{
-			name: "issue comment", event: "issue_comment", action: "created", refName: "main",
+			name:    "issue comment",
+			event:   "issue_comment",
+			action:  "created",
+			refName: "main",
 			payload: `{"action":"created","issue":{"number":7,"title":"Fix the issue","body":null,"html_url":"https://github.example/org/repo/issues/7"},"comment":{"body":"@agent fix this"}}`,
-			subject: "issue", request: "@agent fix this",
-			details: map[string]any{"number": 7, "is_pr": false, "title": "Fix the issue", "url": "https://github.example/org/repo/issues/7"},
+			subject: "issue",
+			request: "@agent fix this",
+			details: map[string]any{
+				"number": 7,
+				"is_pr":  false,
+				"title":  "Fix the issue",
+				"url":    "https://github.example/org/repo/issues/7",
+			},
 		},
 		{
-			name: "PR conversation comment", event: "issue_comment", action: "created", refName: "main",
+			name:    "PR conversation comment",
+			event:   "issue_comment",
+			action:  "created",
+			refName: "main",
 			payload: `{"action":"created","issue":{"number":8,"title":"Fix the PR","body":"PR description","pull_request":{"html_url":"https://github.example/org/repo/pull/8"}},"comment":{"body":"@agent update this PR"}}`,
-			subject: "pull_request", request: "@agent update this PR",
-			details: map[string]any{"number": 8, "is_pr": true, "title": "Fix the PR", "body": "PR description", "url": "https://github.example/org/repo/pull/8"},
+			subject: "pull_request",
+			request: "@agent update this PR",
+			details: map[string]any{
+				"number": 8,
+				"is_pr":  true,
+				"title":  "Fix the PR",
+				"body":   "PR description",
+				"url":    "https://github.example/org/repo/pull/8",
+			},
 		},
 		{
-			name: "PR review comment", event: "pull_request_review_comment", action: "created",
-			headRef: "environment-head", refName: "9/merge",
+			name:    "PR review comment",
+			event:   "pull_request_review_comment",
+			action:  "created",
+			headRef: "environment-head",
+			refName: "9/merge",
 			payload: `{"action":"created","pull_request":{"number":9,"title":"Review the change","head":{"ref":"payload-head"},"base":{"ref":"main"}},"comment":{"body":"@agent fix this line"}}`,
-			subject: "pull_request", request: "@agent fix this line",
-			details: map[string]any{"number": 9, "is_pr": true, "title": "Review the change", "head": "payload-head", "base": "main"},
+			subject: "pull_request",
+			request: "@agent fix this line",
+			details: map[string]any{
+				"number": 9,
+				"is_pr":  true,
+				"title":  "Review the change",
+				"head":   "payload-head",
+				"base":   "main",
+			},
 		},
 		{
-			name: "PR review with head fallback", event: "pull_request_review", action: "submitted",
-			headRef: "feature", refName: "10/merge",
+			name:    "PR review with head fallback",
+			event:   "pull_request_review",
+			action:  "submitted",
+			headRef: "feature",
+			refName: "10/merge",
 			payload: `{"action":"submitted","number":10,"pull_request":{"title":"Review the PR","base":{"ref":"main"}},"review":{"body":"@agent address this review"}}`,
-			subject: "pull_request", request: "@agent address this review",
-			details: map[string]any{"number": 10, "is_pr": true, "title": "Review the PR", "head": "feature", "base": "main"},
+			subject: "pull_request",
+			request: "@agent address this review",
+			details: map[string]any{
+				"number": 10,
+				"is_pr":  true,
+				"title":  "Review the PR",
+				"head":   "feature",
+				"base":   "main",
+			},
 		},
 		{
-			name: "manual workflow", event: "workflow_dispatch", refName: "main",
+			name:    "manual workflow",
+			event:   "workflow_dispatch",
+			refName: "main",
 			payload: `{"repository":{"full_name":"payload/repository"}}`,
 		},
 	} {
@@ -183,11 +299,17 @@ func TestGitHubActionsPrepareEnv(t *testing.T) {
 			cleanActionsEnv(t)
 			// Match the variables exported by go42's ai-prepare-env/action.yml.
 			for key, value := range map[string]string{
-				"CI": "true", "GITHUB_ACTIONS": "true", "GITHUB_ACTOR": "actor",
-				"GITHUB_REPOSITORY": "org/repo", "GITHUB_EVENT_NAME": tt.event,
-				"GITHUB_EVENT_PAYLOAD": tt.payload, "GITHUB_HEAD_REF": tt.headRef,
-				"GITHUB_REF_NAME": tt.refName, "GITHUB_SHA": "checkout-sha",
-				"GITHUB_SERVER_URL": "https://github.example/", "GITHUB_RUN_ID": "42",
+				"CI":                   "true",
+				"GITHUB_ACTIONS":       "true",
+				"GITHUB_ACTOR":         "actor",
+				"GITHUB_REPOSITORY":    "org/repo",
+				"GITHUB_EVENT_NAME":    tt.event,
+				"GITHUB_EVENT_PAYLOAD": tt.payload,
+				"GITHUB_HEAD_REF":      tt.headRef,
+				"GITHUB_REF_NAME":      tt.refName,
+				"GITHUB_SHA":           "checkout-sha",
+				"GITHUB_SERVER_URL":    "https://github.example/",
+				"GITHUB_RUN_ID":        "42",
 			} {
 				t.Setenv(key, value)
 			}
@@ -196,15 +318,23 @@ func TestGitHubActionsPrepareEnv(t *testing.T) {
 				t.Fatal(err)
 			}
 			event := map[string]any{"name": tt.event}
-			if tt.action != "" {
+
+			if len(tt.action) > 0 {
 				event["action"] = tt.action
 			}
 			for key, want := range map[string]any{
-				"repository": map[string]any{"full_name": "org/repo", "owner": "org"},
+				"repository": map[string]any{
+					"full_name": "org/repo",
+					"owner":     "org",
+				},
 				"actor":      map[string]any{"login": "actor"},
-				"event":      event, "event_name": tt.event, "ref_name": tt.refName,
-				"sha": "checkout-sha", "run_id": "42", "server_url": "https://github.example/",
-				"build_url": "https://github.example/org/repo/actions/runs/42",
+				"event":      event,
+				"event_name": tt.event,
+				"ref_name":   tt.refName,
+				"sha":        "checkout-sha",
+				"run_id":     "42",
+				"server_url": "https://github.example/",
+				"build_url":  "https://github.example/org/repo/actions/runs/42",
 			} {
 				if !reflect.DeepEqual(data[key], want) {
 					t.Errorf("%s = %#v, want %#v", key, data[key], want)
@@ -219,9 +349,12 @@ func TestGitHubActionsPrepareEnv(t *testing.T) {
 					t.Errorf("%s = %#v, want %#v", key, data[key], want)
 				}
 			}
-			for key, value := range map[string]string{"head_ref": tt.headRef, "user_request": tt.request} {
+			for key, value := range map[string]string{
+				"head_ref":     tt.headRef,
+				"user_request": tt.request,
+			} {
 				var want any
-				if value != "" {
+				if len(value) > 0 {
 					want = value
 				}
 				if data[key] != want {
@@ -237,11 +370,36 @@ func TestGitHubEventPayloads(t *testing.T) {
 		name, env, file string
 		want            any
 	}{
-		{"env wins", `{"comment":{"body":"env"}}`, `{"comment":{"body":"file"}}`, "env"},
-		{"file fallback", "", `{"comment":{"body":"file"}}`, "file"},
-		{"malformed env fallback", "invalid", `{"comment":{"body":"file"}}`, "file"},
-		{"malformed file", "", "invalid", nil},
-		{"missing file", "", "", nil},
+		{
+			"env wins",
+			`{"comment":{"body":"env"}}`,
+			`{"comment":{"body":"file"}}`,
+			"env",
+		},
+		{
+			"file fallback",
+			"",
+			`{"comment":{"body":"file"}}`,
+			"file",
+		},
+		{
+			"malformed env fallback",
+			"invalid",
+			`{"comment":{"body":"file"}}`,
+			"file",
+		},
+		{
+			"malformed file",
+			"",
+			"invalid",
+			nil,
+		},
+		{
+			"missing file",
+			"",
+			"",
+			nil,
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			cleanActionsEnv(t)
@@ -249,7 +407,7 @@ func TestGitHubEventPayloads(t *testing.T) {
 			t.Setenv("GITHUB_EVENT_PAYLOAD", tt.env)
 			path := filepath.Join(t.TempDir(), "event.json")
 			t.Setenv("GITHUB_EVENT_PATH", path)
-			if tt.file != "" {
+			if len(tt.file) > 0 {
 				if err := os.WriteFile(path, []byte(tt.file), 0600); err != nil {
 					t.Fatal(err)
 				}

@@ -41,6 +41,15 @@ work. For example:
 
 - Write function bodies and control flow on multiple lines, including functions
   that only return a value. Avoid one-line functions.
+- Write nonempty struct type declarations across multiple lines, with each field
+  on its own line, even for a single field. Empty structs may remain `struct{}`.
+
+  ```go
+  type Adapter struct {
+      service *kwb.Service
+  }
+  ```
+
 - Write map literals with multiple entries and struct literals with multiple
   fields across multiple lines, including in loop headers, arguments, and return
   statements. Put each entry or field on its own line, use a trailing comma, and
@@ -69,12 +78,54 @@ Single-entry and single-field literals may remain compact, such as
 
 ### Readability
 
-- Use blank lines to separate logical steps, such as loading, validation, and
-  execution. Keep related statements together: a call with its error check,
-  resource acquisition with cleanup registration, and assignments that build one
-  value. Follow the surrounding grouping when extending existing code.
+- Use blank lines to separate distinct logical steps, such as loading, validation,
+  and execution. Keep related statements together, including each call and its
+  error check. Choose grouping by purpose; a short block can still contain
+  distinct steps.
+
+  Separate distinct logical steps, keeping each call with its error check:
+
+  ```go
+  settings, err := loadSettings(path)
+  if err != nil {
+      return err
+  }
+
+  if err := settings.Validate(); err != nil {
+      return err
+  }
+
+  return run(ctx, settings)
+  ```
+
+  Keep a lookup with its failure check, then separate the successful result:
+
+  ```go
+  value, exists := os.LookupEnv(name)
+  if !exists || len(value) == 0 {
+      expansionErr = fmt.Errorf("environment variable %q is unset or empty", name)
+      return ""
+  }
+
+  return value
+  ```
+
+  Keep one logical step together:
+
+  ```go
+  func writeMessage(w io.Writer, message string) error {
+      if len(message) == 0 {
+          return nil
+      }
+      _, err := io.WriteString(w, message)
+      return err
+  }
+  ```
+
 - Group struct fields by responsibility, such as dependencies, configuration,
-  and runtime state. Separate those groups with blank lines.
+  and runtime state. Keep related fields adjacent without blank lines between
+  groups. Keep constructor parameters and field initializers in the same order
+  as the corresponding struct fields.
 - Initialize struct values in named variables before calling their methods. Keep
   construction and the related call together.
 
@@ -91,20 +142,35 @@ Single-entry and single-field literals may remain compact, such as
   return (&Message{Body: body}).Encode()
   ```
 
-Separate logical steps, keeping each call with its error check:
+- For a small fixed set of fields, use direct checks and assignments. Avoid
+  initializing temporary maps or other collections solely to drive those
+  operations.
 
-```go
-settings, err := loadSettings(path)
-if err != nil {
-    return err
-}
+  Prefer:
 
-if err := settings.Validate(); err != nil {
-    return err
-}
+  ```go
+  fields := make(map[string]string)
+  if len(name) > 0 {
+      fields[nameKey] = name
+  }
+  if len(description) > 0 {
+      fields[descriptionKey] = description
+  }
+  ```
 
-return run(ctx, settings)
-```
+  Avoid:
+
+  ```go
+  fields := make(map[string]string)
+  for key, value := range map[string]string{
+      nameKey:        name,
+      descriptionKey: description,
+  } {
+      if len(value) > 0 {
+          fields[key] = value
+      }
+  }
+  ```
 
 Keep resource acquisition and cleanup registration together:
 
@@ -140,18 +206,16 @@ if !slices.Equal(input, want) {
 }
 ```
 
-Group dependencies, configuration, and runtime state:
+Keep dependencies, configuration, and runtime state grouped without blank lines:
 
 ```go
 type Service struct {
     logger     *slog.Logger
     repository repository
-
-    timeout   time.Duration
-    batchSize int
-
-    mu      sync.Mutex
-    running bool
+    timeout    time.Duration
+    batchSize  int
+    mu         sync.Mutex
+    running    bool
 }
 ```
 
@@ -177,8 +241,8 @@ Keep common constructor signatures explicit even when some parameters are unused
 ```go
 func New(
     _ *slog.Logger,
-    settings Settings,
     _ provider.TemplateEngineAccessor,
+    settings Settings,
     _ string,
 ) *Provider {
     return &Provider{settings: settings}
@@ -207,23 +271,45 @@ func Invalidate(ctx context.Context, value any, key string) error {
 The table-driven example under [Testing](#testing) demonstrates a function-local
 constant and an anonymous struct, both permitted in tests.
 
+### Constants
+
+- Use `MixedCaps` for exported constants and `mixedCaps` for unexported constants.
+  Preserve initialisms, such as `JSON` and `URL`, within names.
+- Give related constants a shared prefix that describes their role or domain,
+  followed by the specific value's meaning. Avoid repeating the package name.
+- Keep related constants in one `const` block. Use separate declarations for
+  unrelated groups instead of blank lines within a block. Declare a lone constant
+  without a block.
+- Reuse constants from the package that owns the value. Place constants after
+  imports and before other declarations. Apply the same judgment in tests.
+
+For example, CLI flag constants share the `flag` prefix. Keep the environment
+prefix in its own declaration:
+
+```go
+const envPrefix = "GO42X"
+
+const (
+    flagContextDoc = "context-doc"
+    flagJSON       = "json"
+    flagRoot       = "root"
+)
+```
+
 ### String constants
 
 - Use named string constants for values with shared or stable meaning, such as
   protocol values, configuration keys, or values reused across operations.
 - A single-use value can warrant a constant when its name explains that meaning;
   ordinary messages and disposable test data can remain literals.
-- Reuse constants from the package that owns the value. Group constants after
-  imports and before other declarations. Apply the same judgment in tests.
 
 Name protocol values even when they appear in only one operation. Keep ordinary
 error messages inline:
 
 ```go
-const (
-    headerContentType = "Content-Type"
-    contentTypeJSON   = "application/json"
-)
+const headerContentType = "Content-Type"
+
+const contentTypeJSON = "application/json"
 
 func WriteJSON(w http.ResponseWriter, value any) error {
     w.Header().Set(headerContentType, contentTypeJSON)

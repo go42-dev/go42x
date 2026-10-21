@@ -26,7 +26,7 @@ type GoCollector struct {
 
 // NewGoCollector adds extraEnv to the standard toolchain, path, and build settings.
 func NewGoCollector(root string, extraEnv []string) *GoCollector {
-	if root == "" {
+	if len(root) == 0 {
 		root = "."
 	}
 	variables := append([]string{
@@ -45,7 +45,7 @@ func NewGoCollector(root string, extraEnv []string) *GoCollector {
 func (c *GoCollector) Collect(ctx context.Context) (map[string]any, error) {
 	result := make(map[string]any)
 	goVersion, moduleErr := c.moduleVersion()
-	if goVersion != "" {
+	if len(goVersion) > 0 {
 		result["go_version"] = goVersion
 	}
 	env, envErr := c.goEnv(ctx)
@@ -63,8 +63,10 @@ func (c *GoCollector) moduleVersion() (string, error) {
 		if os.IsNotExist(err) {
 			return "", nil
 		}
+
 		return "", fmt.Errorf("read project go.mod: %w", err)
 	}
+
 	for line := range strings.SplitSeq(string(data), "\n") {
 		line, _, _ = strings.Cut(line, "//")
 		fields := strings.Fields(line)
@@ -78,26 +80,34 @@ func (c *GoCollector) moduleVersion() (string, error) {
 func (c *GoCollector) goEnv(ctx context.Context) (map[string]string, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
+
 	// The option terminator keeps configured names from being interpreted as flags.
 	args := append([]string{"env", "-json", "--"}, c.envVars...)
 	// #nosec G204 -- Executes Go directly; variable names follow -- and no shell is used.
 	cmd := exec.CommandContext(ctx, "go", args...)
 	cmd.Dir = c.root
 	cmd.WaitDelay = 100 * time.Millisecond
+
 	data, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("read go env: %w", errors.Join(ctx.Err(), err))
 	}
+
 	var values map[string]string
 	if err := json.Unmarshal(data, &values); err != nil {
 		return nil, fmt.Errorf("decode go env: %w", err)
 	}
+
 	// Publish only requested variables, even if a Go wrapper returns extra fields.
 	result := make(map[string]string)
 	for _, key := range c.envVars {
-		if value := values[key]; value != "" {
-			result[key] = value
+		value := values[key]
+		if len(value) == 0 {
+			continue
 		}
+
+		result[key] = value
 	}
+
 	return result, nil
 }

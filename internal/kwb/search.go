@@ -101,6 +101,11 @@ type Stats struct {
 	Generation    string `json:"generation"`
 }
 
+type searchField struct {
+	name  string
+	boost float64
+}
+
 func (m *indexManager) Search(ctx context.Context, options SearchOptions) (*SearchResponse, error) {
 	if err := options.Validate(); err != nil {
 		return nil, err
@@ -113,11 +118,27 @@ func (m *indexManager) Search(ctx context.Context, options SearchOptions) (*Sear
 	exact.SetField("symbols")
 	exact.SetBoost(20)
 	matches = append(matches, exact)
-	for _, field := range []struct {
-		name  string
-		boost float64
-	}{
-		{"names", 6}, {"title", 5}, {"filename", 3}, {"code", 1}, {"prose", 1},
+	for _, field := range []searchField{
+		{
+			name:  "names",
+			boost: 6,
+		},
+		{
+			name:  "title",
+			boost: 5,
+		},
+		{
+			name:  "filename",
+			boost: 3,
+		},
+		{
+			name:  "code",
+			boost: 1,
+		},
+		{
+			name:  "prose",
+			boost: 1,
+		},
 	} {
 		match := bleve.NewMatchQuery(options.Query)
 		match.SetField(field.name)
@@ -126,14 +147,17 @@ func (m *indexManager) Search(ctx context.Context, options SearchOptions) (*Sear
 		matches = append(matches, match)
 	}
 	clauses := []query.Query{bleve.NewDisjunctionQuery(matches...)}
-	for field, value := range map[string]string{"kind": options.Kind, "language": options.Language} {
-		if value != "" {
+	for field, value := range map[string]string{
+		"kind":     options.Kind,
+		"language": options.Language,
+	} {
+		if len(value) > 0 {
 			term := bleve.NewTermQuery(value)
 			term.SetField(field)
 			clauses = append(clauses, term)
 		}
 	}
-	if options.PathPrefix != "" {
+	if len(options.PathPrefix) > 0 {
 		prefix := bleve.NewPrefixQuery(filepath.ToSlash(options.PathPrefix))
 		prefix.SetField("path")
 		clauses = append(clauses, prefix)
@@ -168,12 +192,17 @@ func (m *indexManager) Search(ctx context.Context, options SearchOptions) (*Sear
 		if err != nil {
 			return err
 		}
+
 		response.Total, response.Generation = result.Total, s.generation
 		for _, hit := range result.Hits {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			text := func(name string) string { value, _ := hit.Fields[name].(string); return value }
+
+			text := func(name string) string {
+				value, _ := hit.Fields[name].(string)
+				return value
+			}
 			start, _ := hit.Fields["start_line"].(float64)
 			end, _ := hit.Fields["end_line"].(float64)
 			snippet, first, last := excerpt(text("content"), options.Query)
@@ -218,7 +247,9 @@ func excerpt(content, queryText string) (string, int, int) {
 
 	terms := strings.FieldsFunc(
 		strings.ToLower(queryText),
-		func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) },
+		func(r rune) bool {
+			return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+		},
 	)
 	start := 0
 search:
@@ -251,9 +282,10 @@ search:
 }
 
 func validKind(kind string) error {
-	if kind != "" && kind != "code" && kind != "documentation" && kind != "config" {
+	if len(kind) > 0 && kind != KindCode && kind != KindDocumentation && kind != KindConfig {
 		return fmt.Errorf("kind must be code, documentation, or config")
 	}
+
 	return nil
 }
 
@@ -267,9 +299,11 @@ func (m *indexManager) ListFiles(ctx context.Context, options ListOptions) (*Fil
 	if options.Offset < 0 {
 		return nil, fmt.Errorf("offset cannot be negative")
 	}
+
 	if err := validKind(options.Kind); err != nil {
 		return nil, err
 	}
+
 	response := &FilesResponse{
 		Files: []FileInfo{},
 	}
@@ -279,11 +313,12 @@ func (m *indexManager) ListFiles(ctx context.Context, options ListOptions) (*Fil
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			if options.Kind != "" && options.Kind != file.Kind ||
-				options.Language != "" && options.Language != file.Language ||
+			if len(options.Kind) > 0 && options.Kind != file.Kind ||
+				len(options.Language) > 0 && options.Language != file.Language ||
 				!strings.HasPrefix(path, filepath.ToSlash(options.PathPrefix)) {
 				continue
 			}
+
 			paths = append(paths, path)
 		}
 		sort.Strings(paths)
@@ -308,7 +343,7 @@ func (m *indexManager) ListFiles(ctx context.Context, options ListOptions) (*Fil
 }
 
 func (m *indexManager) GetFile(ctx context.Context, path string, start, end int) (*FileContent, error) {
-	if path == "" {
+	if len(path) == 0 {
 		return nil, fmt.Errorf("path is required")
 	}
 	if start < 0 || end < 0 {
@@ -323,8 +358,12 @@ func (m *indexManager) GetFile(ctx context.Context, path string, start, end int)
 	if end < start || end-start >= MaxReadLines {
 		return nil, fmt.Errorf("request between 1 and %d lines", MaxReadLines)
 	}
+
 	root := m.settings.RootPath
-	err := m.withSnapshot(ctx, func(s *snapshot) error { root = s.manifest.Root; return nil })
+	err := m.withSnapshot(ctx, func(s *snapshot) error {
+		root = s.manifest.Root
+		return nil
+	})
 	if err != nil {
 		// Only an absent CURRENT pointer permits unindexed reads. A missing file
 		// inside an existing generation is corruption, not permission to change roots.
@@ -351,6 +390,7 @@ func (m *indexManager) GetFile(ctx context.Context, path string, start, end int)
 		return nil, err
 	}
 	defer file.Close()
+
 	info, err := file.Stat()
 	if err != nil {
 		return nil, err
@@ -358,6 +398,7 @@ func (m *indexManager) GetFile(ctx context.Context, path string, start, end int)
 	if !info.Mode().IsRegular() {
 		return nil, fmt.Errorf("path must refer to a regular file")
 	}
+
 	data, err := readBounded(ctx, file, m.settings.MaxFileSize)
 	if err != nil {
 		return nil, err
@@ -365,10 +406,12 @@ func (m *indexManager) GetFile(ctx context.Context, path string, start, end int)
 	if bytes.IndexByte(data, 0) >= 0 || !utf8.Valid(data) {
 		return nil, fmt.Errorf("file must contain UTF-8 text")
 	}
+
 	source, err := ReadLines(string(data), start, end)
 	if err != nil {
 		return nil, err
 	}
+
 	return &FileContent{
 		Path:          filepath.ToSlash(filepath.Clean(path)),
 		Content:       source.Content,
@@ -398,7 +441,7 @@ func (m *indexManager) GetStats(ctx context.Context) (*Stats, error) {
 
 // Validate checks search inputs without opening the index. Zero limit uses the service default.
 func (options SearchOptions) Validate() error {
-	if strings.TrimSpace(options.Query) == "" {
+	if len(strings.TrimSpace(options.Query)) == 0 {
 		return fmt.Errorf("query is required")
 	}
 	if len(options.Query) > 4096 {
@@ -413,9 +456,11 @@ func (options SearchOptions) Validate() error {
 	if options.Offset < 0 || options.Offset > MaxSearchOffset {
 		return fmt.Errorf("offset must be between 0 and %d; narrow the search with filters", MaxSearchOffset)
 	}
+
 	if err := validKind(options.Kind); err != nil {
 		return err
 	}
+
 	return nil
 }
 

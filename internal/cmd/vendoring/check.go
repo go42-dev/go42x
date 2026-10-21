@@ -22,16 +22,18 @@ their recorded checksums. Runs offline without modifying files.`,
 		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			settings := &vendoring.Settings{
-				RootPath:     viper.GetString("root"),
-				ManifestPath: viper.GetString("manifest"),
-				LockPath:     viper.GetString("lock"),
+				RootPath:     viper.GetString(flagRoot),
+				ManifestPath: viper.GetString(flagManifest),
+				LockPath:     viper.GetString(flagLock),
 				TempDir:      defaults.TempDir,
 				Timeout:      defaults.Timeout,
-				JSON:         viper.GetBool("json"),
+				JSON:         viper.GetBool(flagJSON),
 			}
+
 			if err := settings.Validate(); err != nil {
 				return cmdutil.UsageError(err)
 			}
+
 			return runCheckCommand(f, settings)
 		},
 	}
@@ -39,22 +41,26 @@ their recorded checksums. Runs offline without modifying files.`,
 
 func runCheckCommand(f *cmdutil.Factory, settings *vendoring.Settings) error {
 	if err := settings.LoadProject(); err != nil {
-		return cli.Report(f.Output(), settings, "check", nil, err)
+		return cli.Report(f.Output(), settings, vendoring.OperationCheck, nil, err)
 	}
+
 	if err := settings.Validate(); err != nil {
-		return cli.Report(f.Output(), settings, "check", nil, err)
+		return cli.Report(f.Output(), settings, vendoring.OperationCheck, nil, err)
 	}
+
 	if err := settings.Resolve(); err != nil {
-		return cli.Report(f.Output(), settings, "check", nil, err)
+		return cli.Report(f.Output(), settings, vendoring.OperationCheck, nil, err)
 	}
+
 	service, err := vendoring.NewService(
 		settings,
 		vendoring.WithLogger(slog.Default()),
 		vendoring.WithVersion(buildinfo.GetVersion()),
 	)
 	if err != nil {
-		return cli.Report(f.Output(), settings, "check", nil, err)
+		return cli.Report(f.Output(), settings, vendoring.OperationCheck, nil, err)
 	}
+
 	result, err := service.Check(f.Context())
-	return cli.Report(f.Output(), settings, "check", result, err)
+	return cli.Report(f.Output(), settings, vendoring.OperationCheck, result, err)
 }

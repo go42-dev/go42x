@@ -24,27 +24,41 @@ Run 'go42x kwb build' to include recent file changes.`,
 				KnowledgeBase: queryKnowledgeBaseSettings(cmd),
 				Search: kwb.SearchOptions{
 					Query:      args[0],
-					Kind:       viper.GetString("kind"),
-					Language:   viper.GetString("language"),
-					PathPrefix: viper.GetString("path-prefix"),
-					Limit:      viper.GetInt("limit"),
-					Offset:     viper.GetInt("offset"),
+					Kind:       viper.GetString(flagKind),
+					Language:   viper.GetString(flagLanguage),
+					PathPrefix: viper.GetString(flagPathPrefix),
+					Limit:      viper.GetInt(flagLimit),
+					Offset:     viper.GetInt(flagOffset),
 				},
-				JSON: viper.GetBool("json"),
+				JSON: viper.GetBool(flagJSON),
 			}
+
 			if err := settings.Validate(); err != nil {
 				return cmdutil.UsageError(err)
 			}
+
 			return runSearchCommand(f, settings)
 		},
 	}
 
-	cmd.Flags().Bool("json", false, "print structured search results")
-	cmd.Flags().String("kind", "", "file kind: code, documentation, config")
-	cmd.Flags().String("language", "", "language or format, such as go or md")
-	cmd.Flags().String("path-prefix", "", "project-relative path prefix")
-	cmd.Flags().Int("limit", kwb.NewSettings().SearchLimit, "maximum results")
-	cmd.Flags().Int("offset", 0, "result offset; use next_offset from the previous response")
+	cmd.Flags().Bool(
+		flagJSON, false,
+		"print structured search results")
+	cmd.Flags().String(
+		flagKind, "",
+		"file kind: code, documentation, config")
+	cmd.Flags().String(
+		flagLanguage, "",
+		"language or format, such as go or md")
+	cmd.Flags().String(
+		flagPathPrefix, "",
+		"project-relative path prefix")
+	cmd.Flags().Int(
+		flagLimit, kwb.NewSettings().SearchLimit,
+		"maximum results")
+	cmd.Flags().Int(
+		flagOffset, 0,
+		"result offset; use next_offset from the previous response")
 
 	return cmd
 }
@@ -54,6 +68,7 @@ func runSearchCommand(f *cmdutil.Factory, settings *kwb.SearchSettings) error {
 	if err != nil {
 		return cli.ReportSearch(f.Output(), settings, nil, err)
 	}
+
 	result, err := service.Search(f.Context(), settings.Search)
 	err = errors.Join(err, service.Close())
 	return cli.ReportSearch(f.Output(), settings, result, err)

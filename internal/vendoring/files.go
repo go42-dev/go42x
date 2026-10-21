@@ -17,7 +17,10 @@ import (
 
 const maxFileBytes int64 = 64 << 20
 
-func hash(data []byte) string { value := sha256.Sum256(data); return hex.EncodeToString(value[:]) }
+func hash(data []byte) string {
+	value := sha256.Sum256(data)
+	return hex.EncodeToString(value[:])
+}
 
 // safePath rejects symlinks in every existing component beneath root. Missing
 // components are allowed when preparing destination files.
@@ -26,6 +29,7 @@ func safePath(root, filename string) error {
 	if err != nil || !filepath.IsLocal(relative) || relative == "." {
 		return fmt.Errorf("path must be inside %s: %s", root, filename)
 	}
+
 	current := root
 	parts := strings.Split(relative, string(filepath.Separator))
 	for i, part := range parts {
@@ -57,6 +61,7 @@ func readFile(filename string) ([]byte, error) {
 		return nil, err
 	}
 	defer f.Close()
+
 	data, err := io.ReadAll(io.LimitReader(f, maxFileBytes+1))
 	if err != nil {
 		return nil, err
@@ -64,6 +69,7 @@ func readFile(filename string) ([]byte, error) {
 	if int64(len(data)) > maxFileBytes {
 		return nil, fmt.Errorf("file exceeds 64 MiB: %s", filename)
 	}
+
 	return data, nil
 }
 
@@ -72,14 +78,17 @@ func (s *Service) selectFile(root string, mapping FileMapping) ([]byte, error) {
 	if err := safePath(root, filename); err != nil {
 		return nil, err
 	}
+
 	data, err := readFile(filename)
-	if err != nil || mapping.Converter == "" {
+	if err != nil || len(mapping.Converter) == 0 {
 		return data, err
 	}
+
 	c := s.converters[mapping.Converter]
 	if c == nil {
 		return nil, fmt.Errorf("unknown converter %q", mapping.Converter)
 	}
+
 	converted, err := c.Convert(data)
 	if err != nil {
 		return nil, fmt.Errorf("converter %s: %w", mapping.Converter, err)
@@ -87,6 +96,7 @@ func (s *Service) selectFile(root string, mapping FileMapping) ([]byte, error) {
 	if int64(len(converted)) > maxFileBytes {
 		return nil, fmt.Errorf("converted file exceeds 64 MiB: %s", mapping.From)
 	}
+
 	return converted, nil
 }
 
@@ -101,17 +111,18 @@ func checkConflict(
 	if !exists || force {
 		return nil
 	}
-	if ownedHash != "" {
+	if len(ownedHash) > 0 {
 		if hash(original) != ownedHash {
 			return fmt.Errorf("locally modified owned file %s; use --force to replace it with a backup", filename)
 		}
 	} else if !bytes.Equal(original, replacement) {
 		return fmt.Errorf("unowned target differs: %s; use --force to replace it with a backup", filename)
 	}
+
 	return nil
 }
 
-// Inspect authored manifests and generated YAML locks to prevent independent
+// checkOwnership inspects authored manifests and generated YAML locks to prevent independent
 // manifests from claiming overlapping paths. Lock metadata identifies its
 // manifest even when --lock selects a non-default filename.
 func (s *Service) checkOwnership(ctx context.Context, in *inputs) error {
@@ -128,6 +139,7 @@ func (s *Service) checkOwnership(ctx context.Context, in *inputs) error {
 		if err != nil {
 			return err
 		}
+
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -136,11 +148,13 @@ func (s *Service) checkOwnership(ctx context.Context, in *inputs) error {
 				(entry.Name() == ".git" || entry.Name() == ".tools" || entry.Name() == "node_modules" || s.skipDirectory(filename)) {
 				return filepath.SkipDir
 			}
+
 			return nil
 		}
 		if filename == s.settings.ManifestPath || filename == s.settings.LockPath || entry.Type()&os.ModeSymlink != 0 {
 			return nil
 		}
+
 		info, err := entry.Info()
 		if err != nil {
 			return err
@@ -148,23 +162,27 @@ func (s *Service) checkOwnership(ctx context.Context, in *inputs) error {
 		if !info.Mode().IsRegular() || info.Size() > 4<<20 {
 			return nil
 		}
+
 		data, err := readFile(filename)
 		if err != nil {
 			return err
 		}
 		// --lock allows any filename. Inspect its identifying field even when
 		// the filename has no YAML extension, while avoiding parsing unrelated files.
-		if entry.Name() != ".vendor.yaml" && entry.Name() != ".vendor.lock.yaml" &&
+		if entry.Name() != ManifestFile && entry.Name() != LockFile &&
 			!bytes.Contains(data, []byte("manifest-sha256")) {
 			return nil
 		}
+
 		var node yaml.Node
 		if err := yaml.Unmarshal(data, &node); err != nil {
-			if entry.Name() == ".vendor.yaml" || entry.Name() == ".vendor.lock.yaml" {
+			if entry.Name() == ManifestFile || entry.Name() == LockFile {
 				return err
 			}
+
 			return nil
 		}
+
 		isLock := false
 		if len(node.Content) == 1 && node.Content[0].Kind == yaml.MappingNode {
 			for i := 0; i < len(node.Content[0].Content); i += 2 {
@@ -179,6 +197,7 @@ func (s *Service) checkOwnership(ctx context.Context, in *inputs) error {
 			if err != nil {
 				return fmt.Errorf("other vendoring lock %s: %w", filename, err)
 			}
+
 			owner, err := s.lockOwner(filename, lock.Manifest)
 			if err != nil {
 				return err
@@ -186,19 +205,21 @@ func (s *Service) checkOwnership(ctx context.Context, in *inputs) error {
 			if owner == s.settings.ManifestPath {
 				return fmt.Errorf("manifest already has another lock: %s", filename)
 			}
+
 			foreign = []string{owner, filename}
 			for _, d := range lock.Dependencies {
 				for destination := range d.Files {
 					foreign = append(foreign, filepath.Join(filepath.Dir(owner), filepath.FromSlash(destination)))
 				}
 			}
-		} else if entry.Name() == ".vendor.yaml" {
+		} else if entry.Name() == ManifestFile {
 			m, err := ParseManifest(data)
 			if err != nil {
 				return fmt.Errorf("other vendoring manifest %s: %w", filename, err)
 			}
+
 			foreign = []string{
-				filename, filepath.Join(filepath.Dir(filename), ".vendor.lock.yaml"),
+				filename, filepath.Join(filepath.Dir(filename), LockFile),
 			}
 			for _, d := range m.Dependencies {
 				for _, f := range d.Files {
@@ -206,6 +227,7 @@ func (s *Service) checkOwnership(ctx context.Context, in *inputs) error {
 				}
 			}
 		}
+
 		if len(foreign) > 0 {
 			snapshot, exists, err := in.plan.Read(filename)
 			if err != nil {

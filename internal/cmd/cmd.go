@@ -22,6 +22,18 @@ import (
 
 const envPrefix = "GO42X"
 
+const (
+	flagContextDoc    = "context-doc"
+	flagIndex         = "index"
+	flagJSON          = "json"
+	flagLogLevel      = "log-level"
+	flagProbeMCP      = "probe-mcp"
+	flagProviders     = "providers"
+	flagRoot          = "root"
+	flagSearchTimeout = "search-timeout"
+	flagTimeout       = "timeout"
+)
+
 func NewGo42Command(ctx context.Context, f *cmdutil.Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "go42x",
@@ -39,8 +51,9 @@ func NewGo42Command(ctx context.Context, f *cmdutil.Factory) *cobra.Command {
 
 			options := f.Options()
 			*options = cmdutil.Options{
-				LogLevel: viper.GetString("log-level"),
+				LogLevel: viper.GetString(flagLogLevel),
 			}
+
 			if err := options.Validate(); err != nil {
 				return cmdutil.UsageError(err)
 			}
@@ -64,7 +77,9 @@ func NewGo42Command(ctx context.Context, f *cmdutil.Factory) *cobra.Command {
 	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
 	viper.AutomaticEnv()
 
-	cmd.PersistentFlags().String("log-level", "info", "Logging level (debug, info, warn, error)")
+	cmd.PersistentFlags().String(
+		flagLogLevel, cmdutil.LogLevelInfo,
+		"Logging level (debug, info, warn, error)")
 
 	cmd.AddCommand(NewVersionCommand(f))
 	cmd.AddCommand(NewMCPCommand(f))
@@ -92,13 +107,13 @@ func Execute() int {
 func initLogging(level string, output io.Writer) {
 	var slogLevel slog.Level
 	switch level {
-	case "debug":
+	case cmdutil.LogLevelDebug:
 		slogLevel = slog.LevelDebug
-	case "info":
+	case cmdutil.LogLevelInfo:
 		slogLevel = slog.LevelInfo
-	case "warn":
+	case cmdutil.LogLevelWarn:
 		slogLevel = slog.LevelWarn
-	case "error":
+	case cmdutil.LogLevelError:
 		slogLevel = slog.LevelError
 	default:
 		slogLevel = slog.LevelInfo

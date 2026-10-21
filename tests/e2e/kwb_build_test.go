@@ -26,7 +26,7 @@ func TestKnowledgeBaseBuildRefreshesExclusions(t *testing.T) {
 	output := p.run(t, 0, "kwb", "build", "--root=target", "--json", "--log-level=error")
 	var report kwb.BuildResult
 	if err := json.Unmarshal([]byte(output.stdout), &report); err != nil || report.Indexed == 0 ||
-		len(report.BackupDir) == 0 || output.stderr != "" {
+		len(report.BackupDir) == 0 || len(output.stderr) > 0 {
 		t.Fatalf("JSON build = %+v, %+v, %v", output, report, err)
 	}
 	backup, err := os.ReadFile(filepath.Join(report.BackupDir, "files", ".go42x", "kwb.ignore"))
@@ -50,7 +50,10 @@ func TestKnowledgeBaseBuildRefreshesExclusions(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(p.root, "target", ".go42x", "go42x.yaml")); !os.IsNotExist(err) {
 		t.Fatalf("build created agent configuration: %v", err)
 	}
-	for query, total := range map[string]uint64{"compiledonly": 0, "retainedonly": 1} {
+	for query, total := range map[string]uint64{
+		"compiledonly": 0,
+		"retainedonly": 1,
+	} {
 		output := p.run(t, 0, "kwb", "search", query, "--root=target", "--json")
 		var result kwb.SearchResponse
 		if err := json.Unmarshal([]byte(output.stdout), &result); err != nil || result.Total != total {
@@ -74,9 +77,21 @@ func TestKnowledgeBaseBuildRefreshesExclusions(t *testing.T) {
 func TestKnowledgeBaseBuildRejectsInvalidExclusions(t *testing.T) {
 	t.Parallel()
 	for _, tt := range []struct{ name, path, content string }{
-		{"unmatched marker", ".go42x/kwb.ignore", "# go42x -- START\ncustom/\n"},
-		{"duplicate blocks", ".go42x/kwb.ignore", assets.KWBIgnore() + assets.KWBIgnore()},
-		{"backup failure", ".go42x/backups/updates", "blocked"},
+		{
+			"unmatched marker",
+			".go42x/kwb.ignore",
+			"# go42x -- START\ncustom/\n",
+		},
+		{
+			"duplicate blocks",
+			".go42x/kwb.ignore",
+			assets.KWBIgnore() + assets.KWBIgnore(),
+		},
+		{
+			"backup failure",
+			".go42x/backups/updates",
+			"blocked",
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			p := newProject(t)
@@ -139,6 +154,7 @@ func TestKnowledgeBaseFailedBuildReportsExclusionsBackup(t *testing.T) {
 
 	p.write(t, ".go42x/kwb.ignore", original)
 	text := p.run(t, 1, "kwb", "build", "--log-level=error")
+
 	if !strings.HasPrefix(text.stdout, "Backup: ") || strings.Contains(text.stdout, "Knowledge base updated") {
 		t.Fatalf("failed build omitted text recovery information: %+v", text)
 	}

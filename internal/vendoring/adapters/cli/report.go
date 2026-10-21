@@ -35,7 +35,9 @@ func Report(
 	}
 	var text func(io.Writer) error
 	if !settings.JSON {
-		text = func(w io.Writer) error { return writeText(w, result) }
+		text = func(w io.Writer) error {
+			return writeText(w, result)
+		}
 	}
 	return cmdutil.Report(output, result, failure, text)
 }
@@ -47,6 +49,7 @@ func writeText(output io.Writer, result *vendoring.Result) error {
 	} else if result.DryRun {
 		status = "dry-run"
 	}
+
 	if _, err := fmt.Fprintf(
 		output,
 		"%s: %s; %d checked, %d planned, %d applied\n",
@@ -58,14 +61,16 @@ func writeText(output io.Writer, result *vendoring.Result) error {
 	); err != nil {
 		return err
 	}
+
 	for _, issue := range result.Issues {
 		if _, err := fmt.Fprintf(output, "%s: %s\n", issue.Path, issue.Reason); err != nil {
 			return err
 		}
 	}
-	if result.BackupDir != "" {
+	if len(result.BackupDir) > 0 {
 		_, err := fmt.Fprintln(output, "Recovery backup:", result.BackupDir)
 		return err
 	}
+
 	return nil
 }

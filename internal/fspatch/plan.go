@@ -12,14 +12,18 @@ import (
 	"strings"
 )
 
-// Kind groups files into backup subdirectories.
-type Kind string
-
 const (
+	OperationCreate = "create"
+	OperationUpdate = "update"
+	OperationRemove = "remove"
+
 	Instructions Kind = "instructions"
 	Settings     Kind = "settings"
 	Sources      Kind = "sources"
 )
+
+// Kind groups files into backup subdirectories.
+type Kind string
 
 type file struct {
 	root     string
@@ -37,9 +41,11 @@ type file struct {
 // Plan retains originals while file changes are prepared.
 // Apply and ApplyUpdate write to disk. A plan is intended for a single operation.
 type Plan struct {
-	logger     *slog.Logger
-	outputDir  string
-	backupDir  string
+	logger *slog.Logger
+
+	outputDir string
+	backupDir string
+
 	files      map[string]*file
 	ordered    []*file
 	operations []*file
@@ -63,6 +69,7 @@ func (p *Plan) Read(path string) ([]byte, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
+
 	return bytes.Clone(f.previous), f.exists, nil
 }
 
@@ -75,6 +82,7 @@ func (p *Plan) Write(path string, content []byte, kind Kind, force bool) error {
 	if f.write || f.remove {
 		return fmt.Errorf("output %s is scheduled more than once", path)
 	}
+
 	f.content = bytes.Clone(content)
 	f.kind = kind
 	f.write = true
@@ -92,6 +100,7 @@ func (p *Plan) Remove(path string, kind Kind) error {
 	if f.write || f.remove {
 		return fmt.Errorf("output %s is scheduled more than once", path)
 	}
+
 	f.kind = kind
 	f.remove = true
 	p.operations = append(p.operations, f)
@@ -103,24 +112,30 @@ func (p *Plan) read(path string) (*file, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve output directory: %w", err)
 	}
+
 	path, err = filepath.Abs(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve output path: %w", err)
 	}
+
 	relative, err := filepath.Rel(root, path)
 	if err != nil || !filepath.IsLocal(relative) || relative == "." {
 		return nil, fmt.Errorf("output must be inside %s: %s", root, path)
 	}
+
 	if f, ok := p.files[path]; ok {
 		return f, nil
 	}
+
 	if err := checkParents(root, path); err != nil {
 		return nil, err
 	}
+
 	f, err := readFile(path)
 	if err != nil {
 		return nil, err
 	}
+
 	f.root = root
 	p.files[path] = f
 	p.ordered = append(p.ordered, f)
@@ -128,7 +143,10 @@ func (p *Plan) read(path string) (*file, error) {
 }
 
 func readFile(path string) (*file, error) {
-	f := &file{path: path, mode: 0644}
+	f := &file{
+		path: path,
+		mode: 0644,
+	}
 	info, err := os.Lstat(path)
 	if os.IsNotExist(err) {
 		return f, nil
@@ -144,6 +162,7 @@ func readFile(path string) (*file, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read %s: %w", path, err)
 	}
+
 	f.mode = info.Mode().Perm()
 	f.exists = true
 	return f, nil
@@ -153,6 +172,7 @@ func (f *file) checkUnchanged() error {
 	if err := checkParents(f.root, f.path); err != nil {
 		return err
 	}
+
 	current, err := readFile(f.path)
 	if err != nil {
 		return err
@@ -160,6 +180,7 @@ func (f *file) checkUnchanged() error {
 	if current.exists != f.exists || current.mode != f.mode || !bytes.Equal(current.previous, f.previous) {
 		return fmt.Errorf("output %s changed while preparing file changes; retry", f.path)
 	}
+
 	return nil
 }
 
@@ -180,6 +201,7 @@ func (p *Plan) Apply() error {
 	if err := p.Validate(); err != nil {
 		return err
 	}
+
 	for _, f := range p.operations {
 		switch {
 		case f.remove && f.exists:
@@ -192,12 +214,12 @@ func (p *Plan) Apply() error {
 			if err := os.Remove(f.path); err != nil {
 				return fmt.Errorf("failed to remove output %s: %w", f.path, err)
 			}
-			p.logger.Info("Removed file", "file", f.path)
+			p.logger.Info("Removed file", slog.String("file", f.path))
 		case f.write && (f.force || !f.exists || !bytes.Equal(f.previous, f.content)):
 			if err := p.replace(f, true); err != nil {
 				return err
 			}
-			p.logger.Info("Wrote file", "file", f.path)
+			p.logger.Info("Wrote file", slog.String("file", f.path))
 		}
 	}
 	return nil
@@ -207,9 +229,11 @@ func (p *Plan) replace(f *file, backupOriginal bool) error {
 	if err := f.checkUnchanged(); err != nil {
 		return err
 	}
+
 	if err := os.MkdirAll(filepath.Dir(f.path), 0700); err != nil {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
+
 	temporary, err := os.CreateTemp(filepath.Dir(f.path), "."+filepath.Base(f.path)+".tmp-*")
 	if err != nil {
 		return fmt.Errorf("failed to create temporary output: %w", err)
@@ -218,15 +242,19 @@ func (p *Plan) replace(f *file, backupOriginal bool) error {
 		_ = temporary.Close()
 		_ = os.Remove(temporary.Name())
 	}()
+
 	if _, err := temporary.Write(f.content); err != nil {
 		return fmt.Errorf("failed to write temporary output: %w", err)
 	}
+
 	if err := temporary.Chmod(f.mode); err != nil {
 		return fmt.Errorf("failed to preserve output permissions: %w", err)
 	}
+
 	if err := temporary.Sync(); err != nil {
 		return fmt.Errorf("failed to sync temporary output: %w", err)
 	}
+
 	if err := temporary.Close(); err != nil {
 		return fmt.Errorf("failed to close temporary output: %w", err)
 	}
@@ -238,9 +266,11 @@ func (p *Plan) replace(f *file, backupOriginal bool) error {
 	if err := f.checkUnchanged(); err != nil {
 		return err
 	}
+
 	if err := os.Rename(temporary.Name(), f.path); err != nil {
 		return fmt.Errorf("failed to replace output %s: %w", f.path, err)
 	}
+
 	return nil
 }
 
@@ -249,11 +279,13 @@ func checkParents(root, filename string) error {
 	if err != nil {
 		return err
 	}
+
 	current := root
 	if rel == "." {
 		return nil
 	}
-	for _, part := range strings.Split(rel, string(filepath.Separator)) {
+
+	for part := range strings.SplitSeq(rel, string(filepath.Separator)) {
 		current = filepath.Join(current, part)
 		info, err := os.Lstat(current)
 		if os.IsNotExist(err) {
@@ -274,6 +306,7 @@ func (p *Plan) backup(f *file) error {
 	if err != nil {
 		return fmt.Errorf("failed to resolve output directory: %w", err)
 	}
+
 	relative, err := filepath.Rel(root, f.path)
 	if err != nil {
 		return fmt.Errorf("failed to resolve backup path: %w", err)
@@ -284,10 +317,12 @@ func (p *Plan) backup(f *file) error {
 	if err := os.MkdirAll(filepath.Dir(backup), 0700); err != nil {
 		return fmt.Errorf("failed to create backup directory: %w", err)
 	}
+
 	if err := os.WriteFile(backup, f.previous, 0600); err != nil {
 		return fmt.Errorf("failed to back up %s: %w", f.path, err)
 	}
-	p.logger.Info("Backed up output", "file", f.path, "backup", backup)
+
+	p.logger.Info("Backed up output", slog.String("file", f.path), slog.String("backup", backup))
 	return nil
 }
 
@@ -305,16 +340,20 @@ func (p *Plan) Changes() []Change {
 		operation := ""
 		switch {
 		case f.remove && f.exists:
-			operation = "remove"
+			operation = OperationRemove
 		case f.write && !f.exists:
-			operation = "create"
+			operation = OperationCreate
 		case f.write && (f.force || !bytes.Equal(f.previous, f.content)):
-			operation = "update"
+			operation = OperationUpdate
 		}
-		if operation != "" {
+		if len(operation) > 0 {
 			root, _ := filepath.Abs(p.outputDir)
 			relative, _ := filepath.Rel(root, f.path)
-			changes = append(changes, Change{filepath.ToSlash(relative), operation, f.kind})
+			changes = append(changes, Change{
+				filepath.ToSlash(relative),
+				operation,
+				f.kind,
+			})
 		}
 	}
 	return changes

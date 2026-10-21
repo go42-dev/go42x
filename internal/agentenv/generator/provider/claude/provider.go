@@ -58,26 +58,26 @@ type Settings struct {
 }
 
 type Provider struct {
-	settings       Settings
 	logger         *slog.Logger
-	templateDir    string
 	templateEngine provider.TemplateEngineAccessor
+	settings       Settings
+	templateDir    string
 }
 
 func New(
 	logger *slog.Logger,
-	settings Settings,
 	templateEngine provider.TemplateEngineAccessor,
+	settings Settings,
 	templateDir string,
 ) *Provider {
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
 	}
 	return &Provider{
-		settings:       settings,
 		logger:         logger,
-		templateDir:    templateDir,
 		templateEngine: templateEngine,
+		settings:       settings,
+		templateDir:    templateDir,
 	}
 }
 
@@ -199,7 +199,12 @@ func (p *Provider) prepareAgents(
 			return fmt.Errorf("failed to prepare agent %s: %w", agentName, err)
 		}
 
-		p.logger.Debug("Prepared agent", "source", agentPath, "name", agentName, "dest", destPath)
+		p.logger.Debug(
+			"Prepared agent",
+			slog.String("source", agentPath),
+			slog.String("name", agentName),
+			slog.String("dest", destPath),
+		)
 	}
 
 	return nil

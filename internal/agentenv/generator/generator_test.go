@@ -34,12 +34,42 @@ func TestGenerateTempDirectory(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			for _, tt := range []struct{ name, shared, local, want string }{
-				{"omitted", "", "", ".build"},
-				{"empty", ", temp-dir: ''", "", ".build"},
-				{"relative", ", temp-dir: .scratch", "", ".scratch"},
-				{"absolute", ", temp-dir: /tmp/agent-output", "", "/tmp/agent-output"},
-				{"local override", ", temp-dir: .scratch", "context: {temp-dir: .local}", ".local"},
-				{"local clear", ", temp-dir: .scratch", "context: {temp-dir: null}", ".build"},
+				{
+					"omitted",
+					"",
+					"",
+					".build",
+				},
+				{
+					"empty",
+					", temp-dir: ''",
+					"",
+					".build",
+				},
+				{
+					"relative",
+					", temp-dir: .scratch",
+					"",
+					".scratch",
+				},
+				{
+					"absolute",
+					", temp-dir: /tmp/agent-output",
+					"",
+					"/tmp/agent-output",
+				},
+				{
+					"local override",
+					", temp-dir: .scratch",
+					"context: {temp-dir: .local}",
+					".local",
+				},
+				{
+					"local clear",
+					", temp-dir: .scratch",
+					"context: {temp-dir: null}",
+					".build",
+				},
 			} {
 				t.Run(tt.name, func(t *testing.T) {
 					dir, out := t.TempDir(), t.TempDir()
@@ -50,7 +80,7 @@ func TestGenerateTempDirectory(t *testing.T) {
 					if err := os.WriteFile(path, []byte(shared), 0600); err != nil {
 						t.Fatal(err)
 					}
-					if tt.local != "" {
+					if len(tt.local) > 0 {
 						if err := os.WriteFile(
 							filepath.Join(dir, config.LocalConfigFile),
 							[]byte(tt.local),
@@ -72,6 +102,7 @@ func TestGenerateTempDirectory(t *testing.T) {
 						t.Fatal(err)
 					}
 					want := "Use `" + tt.want + "` directory for intermediate storage"
+
 					if !strings.Contains(string(data), want) {
 						t.Fatalf("generated instructions missing %q:\n%s", want, data)
 					}
@@ -96,7 +127,8 @@ func TestGeneratorGoContextWithoutExecutable(t *testing.T) {
 	}
 	disabled := false
 	cfg := &config.Config{
-		Version: "1.0", Project: config.Project{Name: "example"},
+		Version:   "1.0",
+		Project:   config.Project{Name: "example"},
 		Context:   config.Context{Template: "agents.tpl.md"},
 		Providers: map[string]config.Provider{"codex": {Enabled: &disabled}},
 	}
@@ -119,11 +151,14 @@ func TestGeneratorContextAndProviderErrors(t *testing.T) {
 	t.Setenv("GITHUB_ACTIONS", "false")
 	t.Setenv("AGENTENV_TEST_CONTEXT", "included")
 	cfg := &config.Config{
-		Version:   "1.0",
-		Project:   config.Project{Name: "example"},
-		EnvVars:   []string{"AGENTENV_TEST_CONTEXT"},
-		Context:   config.Context{Template: "main.tpl.md"},
-		Providers: map[string]config.Provider{"claude": {}, "antigravity": {}},
+		Version: "1.0",
+		Project: config.Project{Name: "example"},
+		EnvVars: []string{"AGENTENV_TEST_CONTEXT"},
+		Context: config.Context{Template: "main.tpl.md"},
+		Providers: map[string]config.Provider{
+			"claude":      {},
+			"antigravity": {},
+		},
 	}
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "main.tpl.md"), []byte("{{ .project.name }}"), 0600); err != nil {
@@ -181,7 +216,8 @@ func TestGeneratorPreservesOutputsAfterProviderFailure(t *testing.T) {
 		Project: config.Project{Name: "example"},
 		Context: config.Context{Template: "valid.tpl.md"},
 		Providers: map[string]config.Provider{
-			"claude": {}, "antigravity": {},
+			"claude":      {},
+			"antigravity": {},
 		},
 	}
 	if err := os.MkdirAll(filepath.Join(out, ".claude/settings.local.json"), 0755); err != nil {
@@ -215,15 +251,21 @@ func TestGeneratePrepareEnvInstructions(t *testing.T) {
 	t.Setenv("PATH", "")
 	for _, entry := range os.Environ() {
 		key, _, _ := strings.Cut(entry, "=")
+
 		if strings.HasPrefix(key, "GITHUB_") || strings.HasPrefix(key, "RUNNER_") {
 			t.Setenv(key, "")
 		}
 	}
 	// The action passes the event inline and exports the short ref name.
 	for key, value := range map[string]string{
-		"GITHUB_ACTOR": "developer", "GITHUB_REPOSITORY": "org/repo",
-		"GITHUB_EVENT_NAME": "issue_comment", "GITHUB_HEAD_REF": "", "GITHUB_REF_NAME": "main",
-		"GITHUB_SHA": "checkout-sha", "GITHUB_SERVER_URL": "https://github.example", "GITHUB_RUN_ID": "42",
+		"GITHUB_ACTOR":         "developer",
+		"GITHUB_REPOSITORY":    "org/repo",
+		"GITHUB_EVENT_NAME":    "issue_comment",
+		"GITHUB_HEAD_REF":      "",
+		"GITHUB_REF_NAME":      "main",
+		"GITHUB_SHA":           "checkout-sha",
+		"GITHUB_SERVER_URL":    "https://github.example",
+		"GITHUB_RUN_ID":        "42",
 		"GITHUB_EVENT_PAYLOAD": `{"action":"created","issue":{"number":7,"title":"Fix the PR","body":"PR description","pull_request":{"html_url":"https://github.example/org/repo/pull/7"}},"comment":{"body":"@agent fix this"}}`,
 	} {
 		t.Setenv(key, value)
@@ -236,9 +278,21 @@ func TestGeneratePrepareEnvInstructions(t *testing.T) {
 	for _, tt := range []struct {
 		name, ci, actions, ref string
 	}{
-		{name: "action variables", ci: "true", actions: "true"},
-		{name: "full ref available", ci: "true", actions: "true", ref: "refs/heads/main"},
-		{name: "local generation", actions: "false"},
+		{
+			name:    "action variables",
+			ci:      "true",
+			actions: "true",
+		},
+		{
+			name:    "full ref available",
+			ci:      "true",
+			actions: "true",
+			ref:     "refs/heads/main",
+		},
+		{
+			name:    "local generation",
+			actions: "false",
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("CI", tt.ci)
@@ -256,35 +310,45 @@ func TestGeneratePrepareEnvInstructions(t *testing.T) {
 			content := string(data)
 			context, _ := decodeContextBlock(t, content)
 			environment := context["environment"].(map[string]any)
+
 			if environment["is_ci"] != (tt.ci == "true") {
 				t.Errorf("incorrect CI flag: %+v", environment)
 			}
-			if tt.ci != "" && environment["ci_mode"] != tt.ci {
+			if len(tt.ci) > 0 && environment["ci_mode"] != tt.ci {
 				t.Errorf("incorrect raw CI value: %+v", environment)
 			}
 			if tt.actions == "true" {
 				ref := tt.ref
-				if ref == "" {
+
+				if len(ref) == 0 {
 					ref = "main"
 				}
 				want := map[string]any{
 					"repository": map[string]any{"full_name": "org/repo"},
 					"actor":      map[string]any{"login": "developer"},
-					"event":      map[string]any{"name": "issue_comment", "action": "created"},
-					"ref":        ref, "sha": "checkout-sha",
+					"event": map[string]any{
+						"name":   "issue_comment",
+						"action": "created",
+					},
+					"ref":       ref,
+					"sha":       "checkout-sha",
 					"build_url": "https://github.example/org/repo/actions/runs/42",
 					"pull_request": map[string]any{
-						"number": 7, "title": "Fix the PR", "body": "PR description",
-						"url": "https://github.example/org/repo/pull/7",
+						"number": 7,
+						"title":  "Fix the PR",
+						"body":   "PR description",
+						"url":    "https://github.example/org/repo/pull/7",
 					},
 					"user_request": "@agent fix this",
 				}
+
 				if !reflect.DeepEqual(context["github_actions"], want) {
 					t.Errorf("GitHub context = %+v, want %+v", context["github_actions"], want)
 				}
 			} else if _, exists := context["github_actions"]; exists {
 				t.Error("local context includes GitHub Actions")
 			}
+
 			if strings.Contains(content, "{{") || strings.Contains(content, "<no value>") {
 				t.Error("generated instructions contain unresolved template values")
 			}
@@ -329,7 +393,11 @@ func TestGenerateMCPConfigurations(t *testing.T) {
 		Command: "example",
 		Args:    []string{"--token=$TOKEN"},
 		Tools:   []string{"tool.v2"},
-		Env:     map[string]string{"TOKEN": "${TOKEN:-fallback}", "LITERAL": "true", "READY": "$COPILOT_MCP_READY"},
+		Env: map[string]string{
+			"TOKEN":   "${TOKEN:-fallback}",
+			"LITERAL": "true",
+			"READY":   "$COPILOT_MCP_READY",
+		},
 	}
 	cfg.MCP["disabled"] = provider.MCPServer{
 		Name:    "disabled",
@@ -349,12 +417,14 @@ func TestGenerateMCPConfigurations(t *testing.T) {
 	claudeMCP := readJSON[claude.MCPConfig](t, out, ".mcp.json")
 	antigravityConfig := readJSON[antigravity.MCPConfig](t, out, ".agents/plugins/project-tools/mcp_config.json")
 	manifest := readJSON[antigravity.PluginManifest](t, out, ".agents/plugins/project-tools/plugin.json")
+
 	if manifest.Name != "project-tools" || manifest.Schema != "https://antigravity.google/schemas/v1/plugin.json" ||
-		manifest.Description == "" {
+		len(manifest.Description) == 0 {
 		t.Fatalf("invalid Antigravity plugin manifest: %+v", manifest)
 	}
 	crushConfig := readJSON[crush.Config](t, out, ".crush.json")
 	copilotConfig := readJSON[copilot.MCPConfig](t, out, ".mcp.json")
+
 	if len(claudeMCP.MCPServers) != 9 || len(antigravityConfig.MCPServers) != 9 || len(copilotConfig.MCPServers) != 9 ||
 		len(crushConfig.MCP) != 9 {
 		t.Fatal("enabled server set does not match generated configurations")
@@ -411,18 +481,21 @@ func TestGenerateMCPConfigurations(t *testing.T) {
 		t.Error("Copilot GitHub secret reference changed")
 	}
 	local := copilotConfig.MCPServers["local"]
+
 	if local.Env["TOKEN"] != "${TOKEN:-fallback}" || local.Env["LITERAL"] != "true" ||
 		local.Env["READY"] != "$COPILOT_MCP_READY" ||
 		local.Args[0] != "--token=$TOKEN" {
 		t.Fatalf("Copilot environment references changed = %+v", local)
 	}
 	antigravityLocal := antigravityConfig.MCPServers["local"]
-	if antigravityLocal.Command != "example" || antigravityLocal.ServerURL != "" ||
+
+	if antigravityLocal.Command != "example" || len(antigravityLocal.ServerURL) > 0 ||
 		!reflect.DeepEqual(antigravityLocal.Env, cfg.MCP["local"].Env) ||
 		!slices.Equal(antigravityLocal.Args, cfg.MCP["local"].Args) {
 		t.Fatalf("Antigravity stdio configuration changed = %+v", antigravityLocal)
 	}
 	raw := readJSON[map[string]any](t, out, ".agents/plugins/project-tools/mcp_config.json")
+
 	if len(raw) != 1 {
 		t.Errorf("unexpected Antigravity preferences: %v", raw)
 	}

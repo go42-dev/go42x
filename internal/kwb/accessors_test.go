@@ -63,9 +63,21 @@ func TestContextReadsGuidanceWithoutIndexQueries(t *testing.T) {
 		name, root string
 		rootError  error
 	}{
-		{"missing index with explicit root", "", os.ErrNotExist},
-		{"available root", root, nil},
-		{"root mismatch", "", kwb.ErrRootMismatch},
+		{
+			"missing index with explicit root",
+			"",
+			os.ErrNotExist,
+		},
+		{
+			"available root",
+			root,
+			nil,
+		},
+		{
+			"root mismatch",
+			"",
+			kwb.ErrRootMismatch,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
@@ -78,6 +90,7 @@ func TestContextReadsGuidanceWithoutIndexQueries(t *testing.T) {
 			}
 			service := kwb.NewServiceForTest(t, settings, index, documentation)
 			result, err := service.Context(t.Context(), kwb.ContextOptions{})
+
 			if errors.Is(test.rootError, kwb.ErrRootMismatch) {
 				if result != nil || !errors.Is(err, kwb.ErrRootMismatch) {
 					t.Fatalf("root mismatch: result=%+v error=%v", result, err)

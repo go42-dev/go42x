@@ -16,6 +16,7 @@ import (
 
 func TestRunnersUseTypedSettingsAndFactoryStreams(t *testing.T) {
 	root := t.TempDir()
+
 	if err := os.WriteFile(
 		filepath.Join(root, "auth.md"),
 		[]byte("# Authentication\nrefresh token\n"),
@@ -50,26 +51,44 @@ func TestRunnersUseTypedSettingsAndFactoryStreams(t *testing.T) {
 		name string
 		run  func() error
 	}{
-		{"search", func() error {
-			return runSearchCommand(
-				factory,
-				&kwb.SearchSettings{
-					KnowledgeBase: knowledge,
-					Search:        kwb.SearchOptions{Query: "refresh token", Limit: 10},
-					JSON:          true,
-				},
-			)
-		}},
-		{"read", func() error {
-			return runReadCommand(
-				factory,
-				&kwb.ReadSettings{KnowledgeBase: knowledge, Path: "auth.md", StartLine: 2, EndLine: 2, JSON: true},
-			)
-		}},
+		{
+			"search",
+			func() error {
+				return runSearchCommand(
+					factory,
+					&kwb.SearchSettings{
+						KnowledgeBase: knowledge,
+						Search: kwb.SearchOptions{
+							Query: "refresh token",
+							Limit: 10,
+						},
+						JSON: true,
+					},
+				)
+			},
+		},
+		{
+			"read",
+			func() error {
+				return runReadCommand(
+					factory,
+					&kwb.ReadSettings{
+						KnowledgeBase: knowledge,
+						Path:          "auth.md",
+						StartLine:     2,
+						EndLine:       2,
+						JSON:          true,
+					},
+				)
+			},
+		},
 		{
 			"stats",
 			func() error {
-				return runStatsCommand(factory, &kwb.StatsSettings{KnowledgeBase: knowledge, JSON: true})
+				return runStatsCommand(factory, &kwb.StatsSettings{
+					KnowledgeBase: knowledge,
+					JSON:          true,
+				})
 			},
 		},
 	}

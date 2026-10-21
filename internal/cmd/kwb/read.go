@@ -22,23 +22,30 @@ func newReadCommand(f *cmdutil.Factory) *cobra.Command {
 			settings := &kwb.ReadSettings{
 				KnowledgeBase: queryKnowledgeBaseSettings(cmd),
 				Path:          args[0],
-				StartLine:     viper.GetInt("start-line"),
-				EndLine:       viper.GetInt("end-line"),
-				JSON:          viper.GetBool("json"),
+				StartLine:     viper.GetInt(flagStartLine),
+				EndLine:       viper.GetInt(flagEndLine),
+				JSON:          viper.GetBool(flagJSON),
 			}
-			if !cmdutil.ExplicitFlag(cmd, "end-line") {
+			if !cmdutil.ExplicitFlag(cmd, flagEndLine) {
 				settings.EndLine = settings.StartLine + 199
 			}
 			if err := settings.Validate(); err != nil {
 				return cmdutil.UsageError(err)
 			}
+
 			return runReadCommand(f, settings)
 		},
 	}
 
-	cmd.Flags().Bool("json", false, "print structured file content")
-	cmd.Flags().Int("start-line", 1, "first line, one-based")
-	cmd.Flags().Int("end-line", 0, "last line, inclusive (default start-line + 199)")
+	cmd.Flags().Bool(
+		flagJSON, false,
+		"print structured file content")
+	cmd.Flags().Int(
+		flagStartLine, 1,
+		"first line, one-based")
+	cmd.Flags().Int(
+		flagEndLine, 0,
+		"last line, inclusive (default start-line + 199)")
 
 	return cmd
 }
@@ -48,6 +55,7 @@ func runReadCommand(f *cmdutil.Factory, settings *kwb.ReadSettings) error {
 	if err != nil {
 		return cli.ReportRead(f.Output(), f.ErrorOutput(), settings, nil, err)
 	}
+
 	result, err := service.GetFile(f.Context(), settings.Path, settings.StartLine, settings.EndLine)
 	err = errors.Join(err, service.Close())
 	return cli.ReportRead(f.Output(), f.ErrorOutput(), settings, result, err)

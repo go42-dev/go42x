@@ -10,7 +10,9 @@ import (
 
 type Adapter struct{ client *http.Client }
 
-func New(client *http.Client) *Adapter { return &Adapter{client: client} }
+func New(client *http.Client) *Adapter {
+	return &Adapter{client: client}
+}
 
 func (a *Adapter) Fetch(
 	ctx context.Context,
@@ -23,12 +25,16 @@ func (a *Adapter) Fetch(
 		expected = locked.SHA256
 	}
 	checksum := ""
-	if expected != "" {
+	if len(expected) > 0 {
 		checksum = "sha256:" + expected
 	}
 	root, hash, err := source.FetchURL(ctx, a.client, s.URL, checksum, expected, workspace, "")
 	if err != nil {
 		return source.Result{}, err
 	}
-	return source.Result{Root: root, Resolved: source.Resolved{SHA256: hash}}, nil
+
+	return source.Result{
+		Root:     root,
+		Resolved: source.Resolved{SHA256: hash},
+	}, nil
 }

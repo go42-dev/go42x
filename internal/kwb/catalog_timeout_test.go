@@ -11,6 +11,7 @@ import (
 func TestCatalogWaitHonorsCancellation(t *testing.T) {
 	for _, deadline := range []bool{false, true} {
 		name := "caller cancellation"
+
 		if deadline {
 			name = "read deadline"
 		}
@@ -19,20 +20,24 @@ func TestCatalogWaitHonorsCancellation(t *testing.T) {
 				root := t.TempDir()
 				catalog := newDocumentCatalog()
 				// Hold access as if an earlier request were refreshing the cache.
-				catalog.access <- struct{}{}
+				catalog.access <- catalogToken{}
 				held := true
 				defer func() {
 					if held {
 						<-catalog.access
 					}
 				}()
+
 				ctx, cancel := context.WithCancel(t.Context())
 				defer cancel()
+
 				want := context.Canceled
+
 				if deadline {
 					var stop context.CancelFunc
 					ctx, stop = context.WithTimeout(ctx, time.Second)
 					defer stop()
+
 					want = context.DeadlineExceeded
 				}
 				done := make(chan error, 1)
@@ -51,6 +56,7 @@ func TestCatalogWaitHonorsCancellation(t *testing.T) {
 				} else {
 					cancel()
 				}
+
 				synctest.Wait()
 				select {
 				case err := <-done:
@@ -60,7 +66,7 @@ func TestCatalogWaitHonorsCancellation(t *testing.T) {
 				default:
 					t.Fatal("canceled read is still waiting for the cache")
 				}
-				if catalog.root != "" {
+				if len(catalog.root) > 0 {
 					t.Fatal("canceled waiter changed the cache")
 				}
 				<-catalog.access
@@ -80,13 +86,14 @@ func TestCatalogRejectsAlreadyCanceledRead(t *testing.T) {
 	if result, err := catalog.Load(ctx, t.TempDir()); result != nil || !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled read: result=%+v error=%v", result, err)
 	}
-	if catalog.root != "" {
+	if len(catalog.root) > 0 {
 		t.Fatal("already canceled read changed the cache")
 	}
 	if _, err := catalog.Load(t.Context(), t.TempDir()); err != nil {
 		t.Fatalf("canceled read retained cache access: %v", err)
 	}
-	if result, err := (&Catalog{}).impact(
+	emptyCatalog := &Catalog{}
+	if result, err := emptyCatalog.impact(
 		ctx,
 		[]string{"README.md"},
 	); result != nil ||

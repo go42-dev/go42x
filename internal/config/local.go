@@ -18,15 +18,18 @@ func LoadProjectConfig(path string, providers []string) (*Config, error) {
 	if err := provider.ValidateProviders(providers, ProviderNames()); err != nil {
 		return nil, err
 	}
+
 	base, err := readConfig(path)
 	if err != nil {
 		return nil, fmt.Errorf("project configuration: %w", err)
 	}
+
 	localPath := filepath.Join(filepath.Dir(path), LocalConfigFile)
 	local, err := readConfig(localPath)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("local configuration: %w", err)
 	}
+
 	return ParseProjectConfig(base, local, providers)
 }
 
@@ -37,19 +40,23 @@ func ParseProjectConfig(baseData, localData []byte, providers []string) (*Config
 	if err := provider.ValidateProviders(providers, ProviderNames()); err != nil {
 		return nil, err
 	}
+
 	base, err := decodeConfigMap(baseData)
 	if err != nil {
 		return nil, fmt.Errorf("project configuration: %w", err)
 	}
+
 	local, err := decodeConfigMap(localData)
 	if err != nil {
 		return nil, fmt.Errorf("local configuration: %w", err)
 	}
+
 	mergeConfigMaps(base, local)
 	data, err := yaml.Marshal(base)
 	if err != nil {
 		return nil, fmt.Errorf("encode effective configuration: %w", err)
 	}
+
 	cfg, err := decodeConfig(data)
 	if err != nil {
 		return nil, err
@@ -71,6 +78,7 @@ func ParseProjectConfig(baseData, localData []byte, providers []string) (*Config
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid effective config: %w", err)
 	}
+
 	return cfg, nil
 }
 
@@ -80,6 +88,7 @@ func decodeConfigMap(data []byte) (map[string]any, error) {
 	if _, err := decodeConfig(data); err != nil {
 		return nil, err
 	}
+
 	values := make(map[string]any)
 	if err := yaml.Unmarshal(data, &values); err != nil {
 		return nil, fmt.Errorf("decode configuration mapping: %w", err)

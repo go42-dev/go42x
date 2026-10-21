@@ -6,14 +6,14 @@ import (
 	"fmt"
 )
 
-type Status string
-
 const (
 	Pass    Status = "pass"
 	Warn    Status = "warn"
 	Fail    Status = "fail"
 	Skipped Status = "skipped"
 )
+
+type Status string
 
 type Result struct {
 	Children    []Result `json:"checks,omitempty"`
@@ -46,12 +46,14 @@ func Run(ctx context.Context, checks ...Check) (*Report, error) {
 	byID := make(map[string]Check, len(checks))
 
 	for _, check := range checks {
-		if check.ID == "" || check.Run == nil {
+		if len(check.ID) == 0 || check.Run == nil {
 			return nil, fmt.Errorf("check ID and Run are required")
 		}
+
 		if _, exists := byID[check.ID]; exists {
 			return nil, fmt.Errorf("duplicate check %q", check.ID)
 		}
+
 		byID[check.ID] = check
 	}
 
@@ -67,10 +69,12 @@ func Run(ctx context.Context, checks ...Check) (*Report, error) {
 		if state[id] == 1 {
 			return fmt.Errorf("check dependency cycle at %q", id)
 		}
+
 		check, ok := byID[id]
 		if !ok {
 			return fmt.Errorf("unknown check dependency %q", id)
 		}
+
 		state[id] = 1
 		for _, dependency := range check.DependsOn {
 			if err := visit(dependency); err != nil {
@@ -88,13 +92,18 @@ func Run(ctx context.Context, checks ...Check) (*Report, error) {
 		}
 	}
 
-	report := &Report{SchemaVersion: 1, Status: Pass, Checks: []Result{}}
+	report := &Report{
+		SchemaVersion: 1,
+		Status:        Pass,
+		Checks:        []Result{},
+	}
 	results := make(map[string]Status)
 
 	for _, check := range ordered {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
+
 		result := Result{Status: Skipped}
 		for _, dependency := range check.DependsOn {
 			if results[dependency] == Fail || results[dependency] == Skipped {
@@ -102,7 +111,7 @@ func Run(ctx context.Context, checks ...Check) (*Report, error) {
 				break
 			}
 		}
-		if result.Message == "" {
+		if len(result.Message) == 0 {
 			result = check.Run(ctx)
 		}
 		result.ID = check.ID

@@ -22,16 +22,18 @@ Relative directories resolve from --root. With no directory, use --root itself.`
 		Args:    cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			settings := &vendoring.Settings{
-				RootPath:     viper.GetString("root"),
-				ManifestPath: viper.GetString("manifest"),
-				LockPath:     viper.GetString("lock"),
+				RootPath:     viper.GetString(flagRoot),
+				ManifestPath: viper.GetString(flagManifest),
+				LockPath:     viper.GetString(flagLock),
 				TempDir:      defaults.TempDir,
 				Timeout:      defaults.Timeout,
-				JSON:         viper.GetBool("json"),
+				JSON:         viper.GetBool(flagJSON),
 			}
+
 			if err := settings.Validate(); err != nil {
 				return cmdutil.UsageError(err)
 			}
+
 			directory := "."
 			if len(args) == 1 {
 				directory = args[0]
@@ -46,5 +48,5 @@ Relative directories resolve from --root. With no directory, use --root itself.`
 
 func runTouchCommand(f *cmdutil.Factory, settings *vendoring.Settings, directory string) error {
 	result, err := vendoring.Touch(f.Context(), directory)
-	return cli.Report(f.Output(), settings, "touch", result, err)
+	return cli.Report(f.Output(), settings, vendoring.OperationTouch, result, err)
 }

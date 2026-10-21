@@ -39,26 +39,32 @@ type contextBuilder struct {
 func (s *Service) Context(ctx context.Context, options ContextOptions) (*ContextResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.settings.SearchTimeout)
 	defer cancel()
+
 	if options.MaxBytes == 0 {
 		options.MaxBytes = s.settings.DefaultContentBytes
 	}
 	if options.MaxBytes < 1 || options.MaxBytes > MaxContentBytes {
 		return nil, fmt.Errorf("max_bytes must be between 1 and %d", MaxContentBytes)
 	}
+
 	paths, err := NormalizePaths(options.Paths)
 	if err != nil {
 		return nil, err
 	}
+
 	projectRoot, err := s.ProjectRoot()
 	if err != nil {
 		return nil, err
 	}
+
 	catalog, err := s.catalog.Load(ctx, projectRoot)
 	if err != nil {
 		return nil, err
 	}
+
 	b := &contextBuilder{
-		service: s, catalog: catalog,
+		service:    s,
+		catalog:    catalog,
 		candidates: map[string]candidate{},
 		result: &ContextResult{
 			Root:        projectRoot,
@@ -70,6 +76,7 @@ func (s *Service) Context(ctx context.Context, options ContextOptions) (*Context
 	if err := b.documentation(ctx, paths); err != nil {
 		return nil, err
 	}
+
 	root, err := os.OpenRoot(projectRoot)
 	if err != nil {
 		return nil, err
@@ -78,6 +85,7 @@ func (s *Service) Context(ctx context.Context, options ContextOptions) (*Context
 	if err := b.explicitSources(ctx, root, paths); err != nil {
 		return nil, err
 	}
+
 	return b.render(ctx, options.MaxBytes)
 }
 
@@ -87,7 +95,11 @@ func (b *contextBuilder) diagnostic(code, path, message string) {
 			return
 		}
 	}
-	b.result.Diagnostics = append(b.result.Diagnostics, Diagnostic{code, path, message})
+	b.result.Diagnostics = append(b.result.Diagnostics, Diagnostic{
+		code,
+		path,
+		message,
+	})
 }
 
 func (b *contextBuilder) add(c candidate) {
@@ -108,13 +120,21 @@ func compareCandidates(a, b candidate) int {
 	if a.path != b.path {
 		return strings.Compare(a.path, b.path)
 	}
+
 	return a.start - b.start
 }
 
 func documentCandidate(doc *Document, reason string, priority int) candidate {
 	return candidate{
-		doc: doc, path: doc.Path, title: doc.Title, reason: reason, priority: priority,
-		content: doc.Content, hash: doc.Hash, start: doc.BodyStartLine, end: doc.TotalLines,
+		doc:      doc,
+		path:     doc.Path,
+		title:    doc.Title,
+		reason:   reason,
+		priority: priority,
+		content:  doc.Content,
+		hash:     doc.Hash,
+		start:    doc.BodyStartLine,
+		end:      doc.TotalLines,
 	}
 }
 
@@ -128,16 +148,19 @@ func (b *contextBuilder) documentation(ctx context.Context, paths []string) erro
 			b.diagnostic("guidance_unavailable", id, err.Error())
 			continue
 		}
+
 		b.add(documentCandidate(doc, "project_guidance", priorityGuidance))
 	}
 	impact, err := b.catalog.impact(ctx, paths)
 	if err != nil {
 		return err
 	}
+
 	for _, hit := range impact.Documents {
-		if hit.Collection == "templates" {
+		if hit.Collection == collectionTemplates {
 			continue
 		}
+
 		priority := priorityLinked
 		if hit.Reason == "related_document" {
 			priority = priorityRelated
@@ -171,6 +194,7 @@ func (b *contextBuilder) explicitSources(ctx context.Context, root *os.Root, pat
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+
 		info, err := root.Stat(path)
 		if err != nil {
 			b.diagnostic(
@@ -183,18 +207,26 @@ func (b *contextBuilder) explicitSources(ctx context.Context, root *os.Root, pat
 		if info.IsDir() {
 			continue
 		}
+
 		if doc := b.catalog.ByPath(path); doc != nil {
 			b.add(documentCandidate(doc, "explicit_source", priorityExplicit))
 			continue
 		}
+
 		data, err := readCandidate(ctx, root, path)
 		if err != nil {
 			b.diagnostic("source_unavailable", path, err.Error())
 			continue
 		}
+
 		b.add(candidate{
-			path: path, reason: "explicit_source", priority: priorityExplicit,
-			content: string(data), hash: Hash(data), start: 1, end: len(sourceLines(string(data))),
+			path:     path,
+			reason:   "explicit_source",
+			priority: priorityExplicit,
+			content:  string(data),
+			hash:     Hash(data),
+			start:    1,
+			end:      len(sourceLines(string(data))),
 		})
 	}
 	return ctx.Err()
@@ -227,6 +259,7 @@ func (b *contextBuilder) render(ctx context.Context, budget int) (*ContextResult
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
+
 		remaining := budget - b.result.ContentBytes
 		if remaining == 0 || len(b.result.Items) == MaxItems {
 			b.truncated()
@@ -252,22 +285,32 @@ func (b *contextBuilder) renderCandidate(c candidate, budget int) bool {
 	if c.end < c.start {
 		return false
 	}
+
 	source, err := ReadLines(c.content, c.start, 0)
 	if err != nil {
 		b.diagnostic("source_range_unavailable", c.path, err.Error())
 		return false
 	}
+
 	source, cut := fitSource(source, budget)
 	if cut {
 		b.truncated()
 	} else if source.NextStartLine != nil {
 		b.result.Truncated = true
 	}
-	if strings.TrimSpace(source.Content) == "" {
+
+	if len(strings.TrimSpace(source.Content)) == 0 {
 		return cut
 	}
-	item := ContextItem{Path: c.path, Hash: c.hash, Title: c.title,
-		Reason: c.reason, Evidence: c.evidence, Source: source}
+
+	item := ContextItem{
+		Path:     c.path,
+		Hash:     c.hash,
+		Title:    c.title,
+		Reason:   c.reason,
+		Evidence: c.evidence,
+		Source:   source,
+	}
 	if c.doc != nil {
 		metadata := c.doc.Metadata
 		item.Document, item.StatusMeaning = &metadata, StatusMeaning(metadata)
@@ -287,6 +330,7 @@ func (b *contextBuilder) bound(ctx context.Context) (*ContextResult, error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
+
 		data, err := json.Marshal(b.result)
 		if err != nil {
 			return nil, err
@@ -294,6 +338,7 @@ func (b *contextBuilder) bound(ctx context.Context) (*ContextResult, error) {
 		if len(data) <= MaxResponseBytes {
 			return b.result, nil
 		}
+
 		b.result.Truncated = true
 		if len(b.result.Diagnostics) > 0 {
 			b.result.Diagnostics = b.result.Diagnostics[:len(b.result.Diagnostics)-1]

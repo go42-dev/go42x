@@ -28,11 +28,12 @@ func (s *Settings) Validate() error {
 	if s == nil {
 		return fmt.Errorf("settings cannot be nil")
 	}
-	if s.RootPath == "" {
+	if len(s.RootPath) == 0 {
 		return fmt.Errorf("project root is required")
 	}
 	if s.Timeout <= 0 {
 		return fmt.Errorf("timeout must be positive")
 	}
+
 	return provider.ValidateProviders(s.Providers, config.ProviderNames())
 }

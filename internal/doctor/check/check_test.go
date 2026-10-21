@@ -12,7 +12,10 @@ func TestDependenciesAndIndependentChecks(t *testing.T) {
 		return Check{
 			ID:        id,
 			DependsOn: deps,
-			Run:       func(context.Context) Result { ran = append(ran, id); return Result{Status: status} },
+			Run: func(context.Context) Result {
+				ran = append(ran, id)
+				return Result{Status: status}
+			},
 		}
 	}
 	report, err := Run(
@@ -30,8 +33,26 @@ func TestDependenciesAndIndependentChecks(t *testing.T) {
 
 func TestInvalidGraphNeverExecutes(t *testing.T) {
 	called := false
-	check := Check{ID: "a", Run: func(context.Context) Result { called = true; return Result{Status: Pass} }}
-	for _, checks := range [][]Check{{check, check}, {check, {ID: "b", DependsOn: []string{"missing"}, Run: check.Run}}, {{ID: "a", DependsOn: []string{"b"}, Run: check.Run}, {ID: "b", DependsOn: []string{"a"}, Run: check.Run}}} {
+	check := Check{
+		ID: "a",
+		Run: func(context.Context) Result {
+			called = true
+			return Result{Status: Pass}
+		},
+	}
+	for _, checks := range [][]Check{{check, check}, {check, {
+		ID:        "b",
+		DependsOn: []string{"missing"},
+		Run:       check.Run,
+	}}, {{
+		ID:        "a",
+		DependsOn: []string{"b"},
+		Run:       check.Run,
+	}, {
+		ID:        "b",
+		DependsOn: []string{"a"},
+		Run:       check.Run,
+	}}} {
 		if _, err := Run(t.Context(), checks...); err == nil || called {
 			t.Fatalf("invalid graph executed: %v", err)
 		}

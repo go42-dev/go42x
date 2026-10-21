@@ -14,9 +14,11 @@ import (
 )
 
 type Service struct {
-	logger   *slog.Logger
+	logger *slog.Logger
+
 	settings *Settings
-	checks   []check.Check
+
+	checks []check.Check
 }
 
 // NewService registers the built-in subsystem checks for the selected project.
@@ -42,7 +44,7 @@ func NewService(settings *Settings, opts ...Option) (*Service, error) {
 	}
 
 	indexPath := svc.settings.IndexPath
-	if indexPath != "" {
+	if len(indexPath) > 0 {
 		indexPath, err = filepath.Abs(indexPath)
 		if err != nil {
 			return nil, fmt.Errorf("resolve index path: %w", err)
@@ -51,7 +53,7 @@ func NewService(settings *Settings, opts ...Option) (*Service, error) {
 
 	agentEnvSvc, err := agentenv.NewAgentEnvService(
 		&agentenv.Settings{Providers: svc.settings.Providers},
-		agentenv.WithLogger(svc.logger.With("component", "agentenv")))
+		agentenv.WithLogger(svc.logger))
 	if err != nil {
 		return nil, err
 	}

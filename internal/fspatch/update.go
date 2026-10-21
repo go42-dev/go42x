@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
@@ -49,11 +50,16 @@ type updateBackupFile struct {
 func (p *Plan) ApplyUpdate(ctx context.Context, cliVersion string) (*UpdateResult, error) {
 	var files []*file
 	result := &UpdateResult{}
-	manifest := updateManifest{Version: 1, CLIVersion: cliVersion, Status: updateBackingUp}
+	manifest := updateManifest{
+		Version:    1,
+		CLIVersion: cliVersion,
+		Status:     updateBackingUp,
+	}
 	for _, f := range p.ordered {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
+
 		if err := f.checkUnchanged(); err != nil {
 			return nil, err
 		}
@@ -62,20 +68,24 @@ func (p *Plan) ApplyUpdate(ctx context.Context, cliVersion string) (*UpdateResul
 		if (!f.remove || !f.exists) && (!f.write || (f.exists && !f.force && bytes.Equal(f.previous, f.content))) {
 			continue
 		}
-		operation := "update"
+
+		operation := OperationUpdate
 		if f.remove {
-			operation = "remove"
+			operation = OperationRemove
 		} else if !f.exists {
-			operation = "create"
+			operation = OperationCreate
 		}
+
 		root, err := filepath.Abs(p.outputDir)
 		if err != nil {
 			return nil, err
 		}
+
 		path, err := filepath.Rel(root, f.path)
 		if err != nil {
 			return nil, err
 		}
+
 		files = append(files, f)
 		manifest.Files = append(manifest.Files, updateBackupFile{
 			Path: filepath.ToSlash(
@@ -94,18 +104,22 @@ func (p *Plan) ApplyUpdate(ctx context.Context, cliVersion string) (*UpdateResul
 	if len(files) == 0 {
 		return result, nil
 	}
+
 	backupRoot := filepath.Join(p.backupDir, "updates")
 	if err := os.MkdirAll(backupRoot, 0700); err != nil {
 		return nil, fmt.Errorf("create update backup directory: %w", err)
 	}
+
 	backupDir, err := os.MkdirTemp(backupRoot, time.Now().UTC().Format("20060102T150405Z")+"-")
 	if err != nil {
 		return nil, fmt.Errorf("create update backup: %w", err)
 	}
+
 	result.BackupDir = backupDir
 	if err := manifest.save(backupDir); err != nil {
 		return result, err
 	}
+
 	for i, f := range files {
 		if err := ctx.Err(); err != nil {
 			return result, err
@@ -113,6 +127,7 @@ func (p *Plan) ApplyUpdate(ctx context.Context, cliVersion string) (*UpdateResul
 		if !f.exists {
 			continue
 		}
+
 		path := filepath.Join(backupDir, updateBackupFiles, filepath.FromSlash(manifest.Files[i].Path))
 		if err := writeUpdateFile(path, f.previous); err != nil {
 			return result, fmt.Errorf("back up %s: %w", f.path, err)
@@ -128,7 +143,8 @@ func (p *Plan) ApplyUpdate(ctx context.Context, cliVersion string) (*UpdateResul
 	if err := manifest.save(backupDir); err != nil {
 		return result, err
 	}
-	p.logger.Info("Update backup completed", "backup", backupDir)
+
+	p.logger.InfoContext(ctx, "Update backup completed", slog.String("backup", backupDir))
 	for i, f := range files {
 		if err := ctx.Err(); err != nil {
 			return result, err
@@ -146,6 +162,7 @@ func (p *Plan) ApplyUpdate(ctx context.Context, cliVersion string) (*UpdateResul
 		if err := manifest.save(backupDir); err != nil {
 			return result, err
 		}
+
 		var err error
 		if f.remove {
 			err = f.checkUnchanged()
@@ -155,15 +172,23 @@ func (p *Plan) ApplyUpdate(ctx context.Context, cliVersion string) (*UpdateResul
 		} else {
 			err = p.replace(f, false)
 		}
+
 		if err != nil {
 			return result, err
 		}
+
 		result.Applied++
 		manifest.Files[i].Status = updateApplied
 		if err := manifest.save(backupDir); err != nil {
 			return result, err
 		}
-		p.logger.Info("Applied file change", "file", f.path, "operation", manifest.Files[i].Operation)
+
+		p.logger.InfoContext(
+			ctx,
+			"Applied file change",
+			slog.String("file", f.path),
+			slog.String("operation", manifest.Files[i].Operation),
+		)
 	}
 	manifest.Status = updateComplete
 	return result, manifest.save(backupDir)
@@ -174,9 +199,11 @@ func (m *updateManifest) save(directory string) error {
 	if err != nil {
 		return err
 	}
+
 	if err := writeUpdateFile(filepath.Join(directory, updateManifestFile), append(data, '\n')); err != nil {
 		return fmt.Errorf("write update recovery manifest: %w", err)
 	}
+
 	return nil
 }
 
@@ -186,6 +213,7 @@ func writeUpdateFile(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}
+
 	temporary, err := os.CreateTemp(filepath.Dir(path), ".backup-*")
 	if err != nil {
 		return err
@@ -194,14 +222,18 @@ func writeUpdateFile(path string, data []byte) error {
 		_ = temporary.Close()
 		_ = os.Remove(temporary.Name())
 	}()
+
 	if _, err := temporary.Write(data); err != nil {
 		return err
 	}
+
 	if err := temporary.Sync(); err != nil {
 		return err
 	}
+
 	if err := temporary.Close(); err != nil {
 		return err
 	}
+
 	return os.Rename(temporary.Name(), path)
 }

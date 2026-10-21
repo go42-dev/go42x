@@ -6,7 +6,11 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/blevesearch/bleve/v2/index/scorch"
 )
+
+const indexTypeUpsideDown = "upsidedown"
 
 type Settings struct {
 	// RequireRootMatch rejects indexes belonging to a different explicit project root.
@@ -34,7 +38,7 @@ func NewSettings() *Settings {
 		IndexPath:           ".go42x/kwb/index",
 		MaxFileSize:         5 * 1024 * 1024,
 		BatchSize:           1000,
-		IndexType:           "scorch",
+		IndexType:           scorch.Name,
 		SearchTimeout:       5 * time.Second,
 		SearchLimit:         10,
 	}
@@ -44,7 +48,7 @@ func (s *Settings) Validate() error {
 	if s == nil {
 		return fmt.Errorf("settings cannot be nil")
 	}
-	if s.RootPath == "" || s.IndexPath == "" {
+	if len(s.RootPath) == 0 || len(s.IndexPath) == 0 {
 		return fmt.Errorf("root and index paths are required")
 	}
 	if s.DefaultContentBytes < 1 || s.DefaultContentBytes > MaxContentBytes {
@@ -53,8 +57,9 @@ func (s *Settings) Validate() error {
 	if len(s.ContextDocs) > 8 {
 		return fmt.Errorf("context docs allows at most 8 authored IDs")
 	}
+
 	for _, id := range s.ContextDocs {
-		if strings.TrimSpace(id) == "" || len(id) > 128 {
+		if len(strings.TrimSpace(id)) == 0 || len(id) > 128 {
 			return fmt.Errorf("context document IDs must contain 1 to 128 bytes")
 		}
 	}
@@ -70,9 +75,10 @@ func (s *Settings) Validate() error {
 	if s.SearchTimeout <= 0 {
 		return fmt.Errorf("search timeout must be greater than 0")
 	}
-	if s.IndexType != "scorch" && s.IndexType != "upsidedown" {
+	if s.IndexType != scorch.Name && s.IndexType != indexTypeUpsideDown {
 		return fmt.Errorf("invalid index type: %s (must be 'scorch' or 'upsidedown')", s.IndexType)
 	}
+
 	return nil
 }
 
@@ -92,15 +98,18 @@ func (s *SearchSettings) Validate() error {
 	if s == nil {
 		return fmt.Errorf("settings cannot be nil")
 	}
+
 	if err := s.KnowledgeBase.Validate(); err != nil {
 		return err
 	}
+
 	if err := s.Search.Validate(); err != nil {
 		return err
 	}
 	if s.Search.Limit == 0 {
 		return fmt.Errorf("limit must be positive")
 	}
+
 	return nil
 }
 
@@ -116,15 +125,17 @@ func (s *ReadSettings) Validate() error {
 	if s == nil {
 		return fmt.Errorf("settings cannot be nil")
 	}
+
 	if err := s.KnowledgeBase.Validate(); err != nil {
 		return err
 	}
-	if s.Path == "" {
+	if len(s.Path) == 0 {
 		return fmt.Errorf("path is required")
 	}
 	if s.StartLine < 1 || s.EndLine < s.StartLine || s.EndLine-s.StartLine >= MaxReadLines {
 		return fmt.Errorf("request between 1 and %d lines using positive line numbers", MaxReadLines)
 	}
+
 	return nil
 }
 
@@ -138,6 +149,7 @@ func (s *CheckSettings) Validate() error {
 	if s == nil {
 		return fmt.Errorf("settings cannot be nil")
 	}
+
 	return s.KnowledgeBase.Validate()
 }
 
@@ -151,5 +163,6 @@ func (s *StatsSettings) Validate() error {
 	if s == nil {
 		return fmt.Errorf("settings cannot be nil")
 	}
+
 	return s.KnowledgeBase.Validate()
 }

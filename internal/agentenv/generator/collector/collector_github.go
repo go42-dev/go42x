@@ -22,38 +22,42 @@ func NewGitHubActionsCollector() *GitHubActionsCollector {
 	}
 }
 
-// Decode only the event fields that contribute to the generated instructions.
+// githubEvent contains only event fields used in generated instructions.
 type githubEvent struct {
-	Action     string `json:"action"`
-	Number     int    `json:"number"`
-	Repository struct {
-		FullName string `json:"full_name"`
-	} `json:"repository"`
-	PullRequest *githubSubject `json:"pull_request"`
-	Issue       *githubSubject `json:"issue"`
-	Comment     struct {
-		Body string `json:"body"`
-	} `json:"comment"`
-	Review struct {
-		Body string `json:"body"`
-	} `json:"review"`
+	Action      string           `json:"action"`
+	Number      int              `json:"number"`
+	Repository  githubRepository `json:"repository"`
+	PullRequest *githubSubject   `json:"pull_request"`
+	Issue       *githubSubject   `json:"issue"`
+	Comment     githubMessage    `json:"comment"`
+	Review      githubMessage    `json:"review"`
+}
+
+type githubRepository struct {
+	FullName string `json:"full_name"`
+}
+
+type githubMessage struct {
+	Body string `json:"body"`
+}
+
+type githubBranch struct {
+	Ref string `json:"ref"`
+}
+
+type githubPullRequestLink struct {
+	HTMLURL string `json:"html_url"`
 }
 
 type githubSubject struct {
-	Number  int    `json:"number"`
-	Title   string `json:"title"`
-	Body    string `json:"body"`
-	HTMLURL string `json:"html_url"`
-	Head    struct {
-		Ref string `json:"ref"`
-	} `json:"head"`
-	Base struct {
-		Ref string `json:"ref"`
-	} `json:"base"`
+	Number  int          `json:"number"`
+	Title   string       `json:"title"`
+	Body    string       `json:"body"`
+	HTMLURL string       `json:"html_url"`
+	Head    githubBranch `json:"head"`
+	Base    githubBranch `json:"base"`
 	// issue_comment events identify PR conversations through issue.pull_request.
-	PullRequest *struct {
-		HTMLURL string `json:"html_url"`
-	} `json:"pull_request"`
+	PullRequest *githubPullRequestLink `json:"pull_request"`
 }
 
 func (c *GitHubActionsCollector) Collect(_ context.Context) (map[string]any, error) {
@@ -67,34 +71,32 @@ func (c *GitHubActionsCollector) Collect(_ context.Context) (map[string]any, err
 	payload := readGitHubEvent()
 	repository := cmp.Or(os.Getenv("GITHUB_REPOSITORY"), payload.Repository.FullName)
 	repo := make(map[string]any)
-	if repository != "" {
+	if len(repository) > 0 {
 		repo["full_name"] = repository
 	}
 	owner := os.Getenv("GITHUB_REPOSITORY_OWNER")
-	if owner == "" {
+	if len(owner) == 0 {
 		if name, _, ok := strings.Cut(repository, "/"); ok {
 			owner = name
 		}
 	}
-	if owner != "" {
+	if len(owner) > 0 {
 		repo["owner"] = owner
 	}
 	if len(repo) > 0 {
 		result["repository"] = repo
 	}
 	event := make(map[string]any)
-	for key, value := range map[string]string{
-		"name":   os.Getenv("GITHUB_EVENT_NAME"),
-		"action": payload.Action,
-	} {
-		if value != "" {
-			event[key] = value
-		}
+	if name := os.Getenv("GITHUB_EVENT_NAME"); len(name) > 0 {
+		event["name"] = name
+	}
+	if len(payload.Action) > 0 {
+		event["action"] = payload.Action
 	}
 	if len(event) > 0 {
 		result["event"] = event
 	}
-	if request := cmp.Or(payload.Comment.Body, payload.Review.Body); request != "" {
+	if request := cmp.Or(payload.Comment.Body, payload.Review.Body); len(request) > 0 {
 		result["user_request"] = request
 	}
 
@@ -108,22 +110,24 @@ func (c *GitHubActionsCollector) Collect(_ context.Context) (map[string]any, err
 		if number := cmp.Or(subject.Number, payload.Number); number > 0 {
 			details["number"] = number
 		}
-		for key, value := range map[string]string{"title": subject.Title, "body": subject.Body, "url": subject.HTMLURL} {
-			if value != "" {
-				details[key] = value
-			}
+		if len(subject.Title) > 0 {
+			details["title"] = subject.Title
+		}
+		if len(subject.Body) > 0 {
+			details["body"] = subject.Body
+		}
+		if len(subject.HTMLURL) > 0 {
+			details["url"] = subject.HTMLURL
 		}
 		if isPR {
-			if subject.PullRequest != nil && subject.PullRequest.HTMLURL != "" {
+			if subject.PullRequest != nil && len(subject.PullRequest.HTMLURL) > 0 {
 				details["url"] = subject.PullRequest.HTMLURL
 			}
-			for key, value := range map[string]string{
-				"head": cmp.Or(subject.Head.Ref, os.Getenv("GITHUB_HEAD_REF")),
-				"base": cmp.Or(subject.Base.Ref, os.Getenv("GITHUB_BASE_REF")),
-			} {
-				if value != "" {
-					details[key] = value
-				}
+			if head := cmp.Or(subject.Head.Ref, os.Getenv("GITHUB_HEAD_REF")); len(head) > 0 {
+				details["head"] = head
+			}
+			if base := cmp.Or(subject.Base.Ref, os.Getenv("GITHUB_BASE_REF")); len(base) > 0 {
+				details["base"] = base
 			}
 			result["pull_request"] = details
 		} else {
@@ -131,7 +135,7 @@ func (c *GitHubActionsCollector) Collect(_ context.Context) (map[string]any, err
 		}
 	}
 	serverURL, runID := os.Getenv("GITHUB_SERVER_URL"), os.Getenv("GITHUB_RUN_ID")
-	if serverURL != "" && repository != "" && runID != "" {
+	if len(serverURL) > 0 && len(repository) > 0 && len(runID) > 0 {
 		result["build_url"] = fmt.Sprintf("%s/%s/actions/runs/%s", strings.TrimRight(serverURL, "/"), repository, runID)
 	}
 
@@ -159,7 +163,7 @@ func (c *GitHubActionsCollector) collectWorkflowContext(result map[string]any) {
 		"workspace":        "GITHUB_WORKSPACE",
 		"server_url":       "GITHUB_SERVER_URL",
 	} {
-		if value := os.Getenv(env); value != "" {
+		if value := os.Getenv(env); len(value) > 0 {
 			result[key] = value
 		}
 	}
@@ -184,7 +188,7 @@ func (c *GitHubActionsCollector) collectWorkflowContext(result map[string]any) {
 	} {
 		group := make(map[string]any)
 		for name, value := range fields {
-			if value != "" {
+			if len(value) > 0 {
 				group[name] = value
 			}
 		}
@@ -197,13 +201,13 @@ func (c *GitHubActionsCollector) collectWorkflowContext(result map[string]any) {
 func readGitHubEvent() githubEvent {
 	var event githubEvent
 	// ai-prepare-env passes the payload inline; standard Actions event files are a fallback.
-	if payload := os.Getenv("GITHUB_EVENT_PAYLOAD"); payload != "" {
+	if payload := os.Getenv("GITHUB_EVENT_PAYLOAD"); len(payload) > 0 {
 		if err := json.Unmarshal([]byte(payload), &event); err == nil {
 			return event
 		}
 	}
 	event = githubEvent{}
-	if path := os.Getenv("GITHUB_EVENT_PATH"); path != "" {
+	if path := os.Getenv("GITHUB_EVENT_PATH"); len(path) > 0 {
 		// #nosec G304 G703 -- The trusted runner supplies its event-file path; event payload content cannot select it.
 		if data, err := os.ReadFile(path); err == nil {
 			if err := json.Unmarshal(data, &event); err == nil {

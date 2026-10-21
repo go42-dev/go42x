@@ -22,16 +22,20 @@ Exit with status 1 unless a complete scan confirms the index is fresh.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			settings := &kwb.CheckSettings{
 				KnowledgeBase: queryKnowledgeBaseSettings(cmd),
-				JSON:          viper.GetBool("json"),
+				JSON:          viper.GetBool(flagJSON),
 			}
+
 			if err := settings.Validate(); err != nil {
 				return cmdutil.UsageError(err)
 			}
+
 			return runCheckCommand(f, settings)
 		},
 	}
 
-	cmd.Flags().Bool("json", false, "output structured freshness results")
+	cmd.Flags().Bool(
+		flagJSON, false,
+		"output structured freshness results")
 
 	return cmd
 }
@@ -41,10 +45,13 @@ func runCheckCommand(f *cmdutil.Factory, settings *kwb.CheckSettings) error {
 	if err != nil {
 		return cli.ReportCheck(f.Output(), settings, nil, err)
 	}
+
 	result, err := service.CheckFreshness(f.Context())
+
 	if closeErr := service.Close(); closeErr != nil {
 		// A close failure is not described by the freshness report.
 		return cli.ReportCheck(f.Output(), settings, nil, errors.Join(err, closeErr))
 	}
+
 	return cli.ReportCheck(f.Output(), settings, result, err)
 }

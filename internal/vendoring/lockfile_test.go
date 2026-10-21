@@ -24,7 +24,7 @@ func TestLockRoundTripAndConsistency(t *testing.T) {
 	}
 	hash := hash([]byte("content"))
 	lock := &Lock{
-		Manifest:       ".vendor.yaml",
+		Manifest:       ManifestFile,
 		ManifestSHA256: digest,
 		Dependencies: map[string]LockedDependency{
 			"file": {
@@ -74,21 +74,65 @@ func TestLockResolvedIdentityValidation(t *testing.T) {
 		name, identity string
 		valid          bool
 	}{
-		{"Git", "{commit: '" + strings.Repeat("ab", 20) + "'}", true},
-		{"Git SHA-256", "{commit: '" + hash + "'}", true},
-		{"short commit", "{commit: short}", false},
-		{"mixed Git and HTTP", "{commit: '" + strings.Repeat("ab", 20) + "', sha256: '" + hash + "'}", false},
-		{"HTTP", "{sha256: '" + hash + "'}", true},
-		{"empty identity", "{}", false},
-		{"short HTTP hash", "{sha256: short}", false},
-		{"HTTP duplicated URL", "{url: https://example.com/file, sha256: '" + hash + "'}", false},
-		{"npm", "{url: https://example.com/file.tgz, version: '1.2.3', integrity: '" + integrity + "', sha256: '" + hash + "'}", true},
-		{"npm missing integrity", "{url: https://example.com/file.tgz, version: '1.2.3', sha256: '" + hash + "'}", false},
-		{"npm nonexact version", "{url: https://example.com/file.tgz, version: latest, integrity: '" + integrity + "', sha256: '" + hash + "'}", false},
+		{
+			"Git",
+			"{commit: '" + strings.Repeat("ab", 20) + "'}",
+			true,
+		},
+		{
+			"Git SHA-256",
+			"{commit: '" + hash + "'}",
+			true,
+		},
+		{
+			"short commit",
+			"{commit: short}",
+			false,
+		},
+		{
+			"mixed Git and HTTP",
+			"{commit: '" + strings.Repeat("ab", 20) + "', sha256: '" + hash + "'}",
+			false,
+		},
+		{
+			"HTTP",
+			"{sha256: '" + hash + "'}",
+			true,
+		},
+		{
+			"empty identity",
+			"{}",
+			false,
+		},
+		{
+			"short HTTP hash",
+			"{sha256: short}",
+			false,
+		},
+		{
+			"HTTP duplicated URL",
+			"{url: https://example.com/file, sha256: '" + hash + "'}",
+			false,
+		},
+		{
+			"npm",
+			"{url: https://example.com/file.tgz, version: '1.2.3', integrity: '" + integrity + "', sha256: '" + hash + "'}",
+			true,
+		},
+		{
+			"npm missing integrity",
+			"{url: https://example.com/file.tgz, version: '1.2.3', sha256: '" + hash + "'}",
+			false,
+		},
+		{
+			"npm nonexact version",
+			"{url: https://example.com/file.tgz, version: latest, integrity: '" + integrity + "', sha256: '" + hash + "'}",
+			false,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			data := fmt.Sprintf(
-				"manifest: .vendor.yaml\nmanifest-sha256: '%s'\ndependencies:\n  file:\n    resolved: %s\n    files:\n      assets/file: '%s'\n",
+				"manifest: "+ManifestFile+"\nmanifest-sha256: '%s'\ndependencies:\n  file:\n    resolved: %s\n    files:\n      assets/file: '%s'\n",
 				hash,
 				tc.identity,
 				hash,

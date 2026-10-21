@@ -18,7 +18,7 @@ func TestKnowledgeBaseFreshnessCLI(t *testing.T) {
 			[]byte(output.stdout),
 			&result,
 		); err != nil || result.Status != want ||
-			output.stderr != "" {
+			len(output.stderr) > 0 {
 			t.Fatalf("freshness status %s: %+v %v", want, output, err)
 		}
 		return result
@@ -31,6 +31,7 @@ func TestKnowledgeBaseFreshnessCLI(t *testing.T) {
 	fresh := assertStatus("fresh", 0)
 	p.write(t, "source.xyz", "modified custom source\n")
 	stale := assertStatus("stale", 1)
+
 	if stale.Changed.Count != 1 || stale.Generation != fresh.Generation {
 		t.Fatalf("check changed generation or ignored custom source: %+v", stale)
 	}

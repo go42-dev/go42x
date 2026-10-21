@@ -20,6 +20,7 @@ func ReportBuild(output io.Writer, settings *kwb.Settings, result *kwb.BuildResu
 			if runErr != nil {
 				return nil
 			}
+
 			_, err := fmt.Fprintf(w,
 				"Knowledge base updated: %d indexed, %d unchanged, %d deleted; %d files, %d chunks.\n",
 				result.Indexed, result.Unchanged, result.Deleted, result.Files, result.Chunks)
@@ -36,6 +37,7 @@ func ReportSearch(output io.Writer, settings *kwb.SearchSettings, result *kwb.Se
 			if runErr != nil {
 				return nil
 			}
+
 			for _, hit := range result.Results {
 				if _, err := fmt.Fprintf(w, "%s:%d-%d %s\n%s\n\n",
 					hit.Path, hit.StartLine, hit.EndLine, hit.Title, hit.Snippet); err != nil {
@@ -49,6 +51,7 @@ func ReportSearch(output io.Writer, settings *kwb.SearchSettings, result *kwb.Se
 				_, err := fmt.Fprintf(w, "Next offset: %d\n", *result.NextOffset)
 				return err
 			}
+
 			return nil
 		}
 	}
@@ -67,6 +70,7 @@ func ReportRead(
 			if runErr != nil {
 				return nil
 			}
+
 			if _, err := fmt.Fprint(w, result.Content); err != nil {
 				return err
 			}
@@ -74,6 +78,7 @@ func ReportRead(
 				_, err := fmt.Fprintf(errorOutput, "Continue with --start-line=%d\n", *result.NextStartLine)
 				return err
 			}
+
 			return nil
 		}
 	}
@@ -87,6 +92,7 @@ func ReportStats(output io.Writer, settings *kwb.StatsSettings, result *kwb.Stat
 			if runErr != nil {
 				return nil
 			}
+
 			_, err := fmt.Fprintf(w, "Root: %s\nIndex: %s\nGeneration: %s\nFiles: %d\nChunks: %d\n",
 				result.RootPath, result.IndexPath, result.Generation, result.DocumentCount, result.ChunkCount)
 			return err
@@ -96,7 +102,7 @@ func ReportStats(output io.Writer, settings *kwb.StatsSettings, result *kwb.Stat
 }
 
 func ReportCheck(output io.Writer, settings *kwb.CheckSettings, result *kwb.FreshnessResult, runErr error) error {
-	if result != nil && (runErr != nil || !result.Complete || result.Status != "fresh") {
+	if result != nil && (runErr != nil || !result.Complete || result.Status != kwb.FreshnessFresh) {
 		runErr = cmdutil.ReportedError(fmt.Errorf("index freshness: %s", result.Status))
 	}
 	var text func(io.Writer) error
@@ -105,12 +111,14 @@ func ReportCheck(output io.Writer, settings *kwb.CheckSettings, result *kwb.Fres
 			if result == nil {
 				return nil
 			}
+
 			if _, err := fmt.Fprintf(w,
 				"%s: %d checked; %d new, %d changed, %d deleted, %d excluded\nGeneration: %s\n",
 				result.Status, result.CheckedFiles, result.New.Count, result.Changed.Count,
 				result.Deleted.Count, result.Excluded.Count, result.Generation); err != nil {
 				return err
 			}
+
 			for _, diagnostic := range result.Diagnostics {
 				if _, err := fmt.Fprintln(w, diagnostic.Message); err != nil {
 					return err

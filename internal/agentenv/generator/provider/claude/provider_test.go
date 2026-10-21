@@ -56,9 +56,10 @@ func TestClaudeAgents(t *testing.T) {
 			if stage == "success" || stage == "write" || stage == "directory" {
 				engine.EXPECT().Process("Review {{ .project }}", data).Return("Review example", nil)
 			}
-			p := New(slog.New(slog.DiscardHandler), pc, engine, dir)
+			p := New(slog.New(slog.DiscardHandler), engine, pc, dir)
 			err := p.prepareAgents(plan, data)
-			if want != "" {
+
+			if len(want) > 0 {
 				if err == nil || !strings.Contains(err.Error(), want) {
 					t.Fatalf("prepareAgents() = %v, want %s", err, want)
 				}
@@ -88,6 +89,7 @@ func TestClaudeAdditionalOutputFailures(t *testing.T) {
 				WriteMCPFile: true,
 			}
 			want := ""
+
 			if stage == "mcp" {
 				if err := os.Mkdir(filepath.Join(out, ".mcp.json"), 0755); err != nil {
 					t.Fatal(err)
@@ -97,8 +99,9 @@ func TestClaudeAdditionalOutputFailures(t *testing.T) {
 				pc.Agents = []string{"missing"}
 				want = "failed to prepare agents"
 			}
+
 			plan := fspatch.NewPlan(slog.New(slog.DiscardHandler), out, filepath.Join(out, ".go42x", "backups"))
-			p := New(slog.New(slog.DiscardHandler), pc, engine, dir)
+			p := New(slog.New(slog.DiscardHandler), engine, pc, dir)
 			if err := p.Prepare(plan, nil); err == nil || !strings.Contains(err.Error(), want) {
 				t.Fatalf("Prepare() = %v, want %s", err, want)
 			}

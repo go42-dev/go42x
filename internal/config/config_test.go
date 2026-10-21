@@ -25,7 +25,11 @@ func validConfig() *Config {
 			"claude": {},
 		},
 		MCP: map[string]provider.MCPServer{
-			"example": {Name: "example", Command: "example", Tools: []string{"search", "getIssue", "tool.v2-test"}},
+			"example": {
+				Name:    "example",
+				Command: "example",
+				Tools:   []string{"search", "getIssue", "tool.v2-test"},
+			},
 		},
 	}
 }
@@ -41,13 +45,55 @@ func TestMCPContainerValidation(t *testing.T) {
 		container                 *provider.MCPContainer
 		want                      string
 	}{
-		{"valid", "gh-aw", provider.MCPServerTypeStdio, &container, ""},
-		{"local provider", "codex", provider.MCPServerTypeStdio, &container, ""},
-		{"no container", "gh-aw", provider.MCPServerTypeStdio, nil, ""},
-		{"remote server", "gh-aw", provider.MCPServerTypeHTTP, &container, "only supported for stdio"},
-		{"SSE server", "gh-aw", provider.MCPServerTypeSSE, &container, "only supported for stdio"},
-		{"missing image", "gh-aw", provider.MCPServerTypeStdio, &provider.MCPContainer{Command: "go42x"}, "image and command are required"},
-		{"missing command", "gh-aw", provider.MCPServerTypeStdio, &provider.MCPContainer{Image: "go42x:test"}, "image and command are required"},
+		{
+			"valid",
+			"gh-aw",
+			provider.MCPServerTypeStdio,
+			&container,
+			"",
+		},
+		{
+			"local provider",
+			"codex",
+			provider.MCPServerTypeStdio,
+			&container,
+			"",
+		},
+		{
+			"no container",
+			"gh-aw",
+			provider.MCPServerTypeStdio,
+			nil,
+			"",
+		},
+		{
+			"remote server",
+			"gh-aw",
+			provider.MCPServerTypeHTTP,
+			&container,
+			"only supported for stdio",
+		},
+		{
+			"SSE server",
+			"gh-aw",
+			provider.MCPServerTypeSSE,
+			&container,
+			"only supported for stdio",
+		},
+		{
+			"missing image",
+			"gh-aw",
+			provider.MCPServerTypeStdio,
+			&provider.MCPContainer{Command: "go42x"},
+			"image and command are required",
+		},
+		{
+			"missing command",
+			"gh-aw",
+			provider.MCPServerTypeStdio,
+			&provider.MCPContainer{Image: "go42x:test"},
+			"image and command are required",
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := validConfig()
@@ -60,10 +106,10 @@ func TestMCPContainerValidation(t *testing.T) {
 			server.URL = "https://example.com/mcp"
 			cfg.MCP["example"] = server
 			err := cfg.Validate()
-			if tt.want == "" && err != nil {
+			if len(tt.want) == 0 && err != nil {
 				t.Fatal(err)
 			}
-			if tt.want != "" && (err == nil || !strings.Contains(err.Error(), tt.want)) {
+			if len(tt.want) > 0 && (err == nil || !strings.Contains(err.Error(), tt.want)) {
 				t.Fatalf("Validate() = %v, want %q", err, tt.want)
 			}
 		})
@@ -74,13 +120,29 @@ func TestProjectWithDefaults(t *testing.T) {
 	for _, tt := range []struct {
 		name, entrypoint, want string
 	}{
-		{"default", "", DefaultDocumentationEntrypoint},
-		{"custom", "handbook/index.md", "handbook/index.md"},
-		{"normalized", "./handbook/../team/index.markdown", "team/index.markdown"},
+		{
+			"default",
+			"",
+			DefaultDocumentationEntrypoint,
+		},
+		{
+			"custom",
+			"handbook/index.md",
+			"handbook/index.md",
+		},
+		{
+			"normalized",
+			"./handbook/../team/index.markdown",
+			"team/index.markdown",
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			project := Project{Repository: "git@example.com:org/repo.git", DocumentationEntrypoint: tt.entrypoint}
+			project := Project{
+				Repository:              "git@example.com:org/repo.git",
+				DocumentationEntrypoint: tt.entrypoint,
+			}
 			effective := project.WithDefaults()
+
 			if effective.DocumentationEntrypoint != tt.want || effective.Repository != project.Repository ||
 				project.DocumentationEntrypoint != tt.entrypoint {
 				t.Fatalf("effective project = %+v, original = %+v, want entrypoint %q", effective, project, tt.want)
@@ -94,22 +156,86 @@ func TestValidateDocumentationEntrypoint(t *testing.T) {
 		name, entrypoint string
 		valid            bool
 	}{
-		{"optional", "", true},
-		{"custom Markdown", "handbook/index.md", true},
-		{"Markdown extension", "team/start.markdown", true},
-		{"normalized path", "./handbook/../team/start.md", true},
-		{"uppercase extension", "docs/README.MD", true},
-		{"blank", " \t", false},
-		{"absolute", "/outside.md", false},
-		{"outside root", "../outside.md", false},
-		{"nested escape", "docs/../../outside.md", false},
-		{"Windows path", `C:\docs\README.md`, false},
-		{"backslash", `docs\README.md`, false},
-		{"URL", "https://example.com/docs.md", false},
-		{"NUL", "docs/\x00README.md", false},
-		{"oversized", strings.Repeat("a", 4096) + ".md", false},
-		{"directory", "docs", false},
-		{"other format", "docs/index.txt", false},
+		{
+			"optional",
+			"",
+			true,
+		},
+		{
+			"custom Markdown",
+			"handbook/index.md",
+			true,
+		},
+		{
+			"Markdown extension",
+			"team/start.markdown",
+			true,
+		},
+		{
+			"normalized path",
+			"./handbook/../team/start.md",
+			true,
+		},
+		{
+			"uppercase extension",
+			"docs/README.MD",
+			true,
+		},
+		{
+			"blank",
+			" \t",
+			false,
+		},
+		{
+			"absolute",
+			"/outside.md",
+			false,
+		},
+		{
+			"outside root",
+			"../outside.md",
+			false,
+		},
+		{
+			"nested escape",
+			"docs/../../outside.md",
+			false,
+		},
+		{
+			"Windows path",
+			`C:\docs\README.md`,
+			false,
+		},
+		{
+			"backslash",
+			`docs\README.md`,
+			false,
+		},
+		{
+			"URL",
+			"https://example.com/docs.md",
+			false,
+		},
+		{
+			"NUL",
+			"docs/\x00README.md",
+			false,
+		},
+		{
+			"oversized",
+			strings.Repeat("a", 4096) + ".md",
+			false,
+		},
+		{
+			"directory",
+			"docs",
+			false,
+		},
+		{
+			"other format",
+			"docs/index.txt",
+			false,
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := validConfig()
@@ -129,21 +255,66 @@ func TestValidate(t *testing.T) {
 		change func(*Config)
 		want   string
 	}{
-		{"valid", func(*Config) {}, ""},
-		{"missing version", func(c *Config) { c.Version = "" }, "version is required"},
-		{"future version", func(c *Config) { c.Version = "99.0" }, "unsupported configuration version"},
-		{"old version", func(c *Config) { c.Version = "0.9" }, "unsupported configuration version"},
-		{"malformed version", func(c *Config) { c.Version = "banana" }, "unsupported configuration version"},
-		{"missing project", func(c *Config) { c.Project.Name = "" }, "project name is required"},
-		{"missing providers", func(c *Config) { c.Providers = nil }, "at least one provider"},
+		{
+			"valid",
+			func(*Config) {
+			},
+			"",
+		},
+		{
+			"missing version",
+			func(c *Config) {
+				c.Version = ""
+			},
+			"version is required",
+		},
+		{
+			"future version",
+			func(c *Config) {
+				c.Version = "99.0"
+			},
+			"unsupported configuration version",
+		},
+		{
+			"old version",
+			func(c *Config) {
+				c.Version = "0.9"
+			},
+			"unsupported configuration version",
+		},
+		{
+			"malformed version",
+			func(c *Config) {
+				c.Version = "banana"
+			},
+			"unsupported configuration version",
+		},
+		{
+			"missing project",
+			func(c *Config) {
+				c.Project.Name = ""
+			},
+			"project name is required",
+		},
+		{
+			"missing providers",
+			func(c *Config) {
+				c.Providers = nil
+			},
+			"at least one provider",
+		},
 		{
 			"missing template",
-			func(c *Config) { c.Context.Template = "" },
+			func(c *Config) {
+				c.Context.Template = ""
+			},
 			"context.template is required",
 		},
 		{
 			"missing server name",
-			func(c *Config) { c.MCP["example"] = provider.MCPServer{Command: "example"} },
+			func(c *Config) {
+				c.MCP["example"] = provider.MCPServer{Command: "example"}
+			},
 			"name is required",
 		},
 	}
@@ -152,7 +323,8 @@ func TestValidate(t *testing.T) {
 			cfg := validConfig()
 			tt.change(cfg)
 			err := cfg.Validate()
-			if tt.want == "" {
+
+			if len(tt.want) == 0 {
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -175,66 +347,135 @@ func TestValidateMCPServers(t *testing.T) {
 		server provider.MCPServer
 		want   string
 	}{
-		{"implicit stdio", provider.MCPServer{Command: "go42x"}, ""},
-		{"explicit stdio", provider.MCPServer{
-			Type:    "stdio",
-			Command: "go42x",
-		}, ""},
-		{"http", provider.MCPServer{
-			Type: "http",
-			URL:  "https://example.com/mcp",
-		}, ""},
-		{"sse", provider.MCPServer{
-			Type: "sse",
-			URL:  "http://localhost:9000/sse",
-		}, ""},
-		{"missing command", provider.MCPServer{}, "command is required"},
-		{"blank command", provider.MCPServer{Command: "  "}, "command is required"},
-		{"missing URL", provider.MCPServer{Type: "http"}, "valid HTTP(S) URL"},
-		{"relative URL", provider.MCPServer{
-			Type: "sse",
-			URL:  "/sse",
-		}, "valid HTTP(S) URL"},
-		{"wrong URL scheme", provider.MCPServer{
-			Type: "http",
-			URL:  "file:///tmp/mcp",
-		}, "valid HTTP(S) URL"},
-		{"malformed URL", provider.MCPServer{
-			Type: "http",
-			URL:  "https://%",
-		}, "valid HTTP(S) URL"},
-		{"unknown transport", provider.MCPServer{Type: "websocket"}, "invalid type"},
-		{"qualified name", provider.MCPServer{
-			Command: "example",
-			Tools:   []string{"mcp__example__search"},
-		}, "raw MCP tool name"},
-		{"empty tool", provider.MCPServer{
-			Command: "example",
-			Tools:   []string{""},
-		}, "invalid tool"},
-		{"tool whitespace", provider.MCPServer{
-			Command: "example",
-			Tools:   []string{"get issue"},
-		}, "invalid tool"},
-		{"long tool", provider.MCPServer{
-			Command: "example",
-			Tools:   []string{strings.Repeat("a", 129)},
-		}, "invalid tool"},
-		{"duplicate tool", provider.MCPServer{
-			Command: "example",
-			Tools:   []string{"search", "search"},
-		}, "duplicate tool"},
-		{"case sensitive names", provider.MCPServer{
-			Command: "example",
-			Tools:   []string{"search", "Search"},
-		}, ""},
+		{
+			"implicit stdio",
+			provider.MCPServer{Command: "go42x"},
+			"",
+		},
+		{
+			"explicit stdio",
+			provider.MCPServer{
+				Type:    "stdio",
+				Command: "go42x",
+			},
+			"",
+		},
+		{
+			"http",
+			provider.MCPServer{
+				Type: "http",
+				URL:  "https://example.com/mcp",
+			},
+			"",
+		},
+		{
+			"sse",
+			provider.MCPServer{
+				Type: "sse",
+				URL:  "http://localhost:9000/sse",
+			},
+			"",
+		},
+		{
+			"missing command",
+			provider.MCPServer{},
+			"command is required",
+		},
+		{
+			"blank command",
+			provider.MCPServer{Command: "  "},
+			"command is required",
+		},
+		{
+			"missing URL",
+			provider.MCPServer{Type: "http"},
+			"valid HTTP(S) URL",
+		},
+		{
+			"relative URL",
+			provider.MCPServer{
+				Type: "sse",
+				URL:  "/sse",
+			},
+			"valid HTTP(S) URL",
+		},
+		{
+			"wrong URL scheme",
+			provider.MCPServer{
+				Type: "http",
+				URL:  "file:///tmp/mcp",
+			},
+			"valid HTTP(S) URL",
+		},
+		{
+			"malformed URL",
+			provider.MCPServer{
+				Type: "http",
+				URL:  "https://%",
+			},
+			"valid HTTP(S) URL",
+		},
+		{
+			"unknown transport",
+			provider.MCPServer{Type: "websocket"},
+			"invalid type",
+		},
+		{
+			"qualified name",
+			provider.MCPServer{
+				Command: "example",
+				Tools:   []string{"mcp__example__search"},
+			},
+			"raw MCP tool name",
+		},
+		{
+			"empty tool",
+			provider.MCPServer{
+				Command: "example",
+				Tools:   []string{""},
+			},
+			"invalid tool",
+		},
+		{
+			"tool whitespace",
+			provider.MCPServer{
+				Command: "example",
+				Tools:   []string{"get issue"},
+			},
+			"invalid tool",
+		},
+		{
+			"long tool",
+			provider.MCPServer{
+				Command: "example",
+				Tools:   []string{strings.Repeat("a", 129)},
+			},
+			"invalid tool",
+		},
+		{
+			"duplicate tool",
+			provider.MCPServer{
+				Command: "example",
+				Tools:   []string{"search", "search"},
+			},
+			"duplicate tool",
+		},
+		{
+			"case sensitive names",
+			provider.MCPServer{
+				Command: "example",
+				Tools:   []string{"search", "Search"},
+			},
+			"",
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := validConfig()
 			tt.server.Name = "example"
 			cfg.MCP["example"] = tt.server
 			err := cfg.Validate()
-			if tt.want == "" {
+
+			if len(tt.want) == 0 {
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -258,9 +499,21 @@ func TestLoadConfig(t *testing.T) {
 		t.Fatalf("missing file error = %v", err)
 	}
 	for _, tt := range []struct{ name, content, want string }{
-		{"malformed YAML", "version: [", "failed to parse YAML"},
-		{"invalid config", "version: '1.0'", "invalid config: project name"},
-		{"empty file", "", "invalid config: version"},
+		{
+			"malformed YAML",
+			"version: [",
+			"failed to parse YAML",
+		},
+		{
+			"invalid config",
+			"version: '1.0'",
+			"invalid config: project name",
+		},
+		{
+			"empty file",
+			"",
+			"invalid config: version",
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			if err := os.WriteFile(path, []byte(tt.content), 0600); err != nil {
@@ -293,15 +546,60 @@ func TestLoadConfigSingleDocument(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tt := range []struct{ name, prefix, suffix, want string }{
-		{"single document", "", "", ""},
-		{"trailing comments", "", "\n# trailing comment\n\n", ""},
-		{"explicit document markers", "---\n", "...\n# trailing comment\n", ""},
-		{"second mapping", "", "---\nproject: {name: ignored}\n", "exactly one YAML document"},
-		{"second scalar", "", "---\nignored\n", "exactly one YAML document"},
-		{"second empty document", "", "---\n", "exactly one YAML document"},
-		{"second null document", "", "---\nnull\n", "exactly one YAML document"},
-		{"malformed second document", "", "---\nversion: [\n", "failed to parse YAML"},
-		{"malformed trailing content", "", "...\ninvalid trailing content\n", "failed to parse YAML"},
+		{
+			"single document",
+			"",
+			"",
+			"",
+		},
+		{
+			"trailing comments",
+			"",
+			"\n# trailing comment\n\n",
+			"",
+		},
+		{
+			"explicit document markers",
+			"---\n",
+			"...\n# trailing comment\n",
+			"",
+		},
+		{
+			"second mapping",
+			"",
+			"---\nproject: {name: ignored}\n",
+			"exactly one YAML document",
+		},
+		{
+			"second scalar",
+			"",
+			"---\nignored\n",
+			"exactly one YAML document",
+		},
+		{
+			"second empty document",
+			"",
+			"---\n",
+			"exactly one YAML document",
+		},
+		{
+			"second null document",
+			"",
+			"---\nnull\n",
+			"exactly one YAML document",
+		},
+		{
+			"malformed second document",
+			"",
+			"---\nversion: [\n",
+			"failed to parse YAML",
+		},
+		{
+			"malformed trailing content",
+			"",
+			"...\ninvalid trailing content\n",
+			"failed to parse YAML",
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "go42x.yaml")
@@ -309,7 +607,8 @@ func TestLoadConfigSingleDocument(t *testing.T) {
 				t.Fatal(err)
 			}
 			cfg, err := LoadConfig(path)
-			if tt.want == "" {
+
+			if len(tt.want) == 0 {
 				if err != nil || cfg == nil || cfg.Project.Name != "example" {
 					t.Fatalf("LoadConfig() = %+v, %v; want the single project configuration", cfg, err)
 				}
@@ -389,8 +688,35 @@ func TestValidateGoEnv(t *testing.T) {
 		name  string
 		valid bool
 	}{
-		{"GOFLAGS", true}, {"GOPRIVATE", true}, {"CC", true}, {"CGO_ENABLED", true},
-		{"", false}, {"gopath", false}, {"-w", false}, {"GOFLAGS=-x", false}, {"GO FLAGS", false},
+		{
+			"GOFLAGS",
+			true,
+		}, {
+			"GOPRIVATE",
+			true,
+		}, {
+			"CC",
+			true,
+		}, {
+			"CGO_ENABLED",
+			true,
+		},
+		{
+			"",
+			false,
+		}, {
+			"gopath",
+			false,
+		}, {
+			"-w",
+			false,
+		}, {
+			"GOFLAGS=-x",
+			false,
+		}, {
+			"GO FLAGS",
+			false,
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := validConfig()
@@ -408,12 +734,36 @@ func TestLoadConfigTempDirectoryValidation(t *testing.T) {
 		name, path string
 		valid      bool
 	}{
-		{"empty", "", true},
-		{"default", ".build", true},
-		{"relative", "tmp/agent outputs", true},
-		{"absolute", "/tmp/agent-output", true},
-		{"blank", " \t ", false},
-		{"NUL", "tmp\x00outputs", false},
+		{
+			"empty",
+			"",
+			true,
+		},
+		{
+			"default",
+			".build",
+			true,
+		},
+		{
+			"relative",
+			"tmp/agent outputs",
+			true,
+		},
+		{
+			"absolute",
+			"/tmp/agent-output",
+			true,
+		},
+		{
+			"blank",
+			" \t ",
+			false,
+		},
+		{
+			"NUL",
+			"tmp\x00outputs",
+			false,
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			data := fmt.Appendf(nil, "version: '1.0'\nproject: {name: example}\n"+
@@ -451,9 +801,21 @@ func TestLoadConfigProviderEnabled(t *testing.T) {
 		name, entry string
 		want        bool
 	}{
-		{"omitted", "{}", true},
-		{"enabled", "{enabled: true}", true},
-		{"disabled", "{enabled: false}", false},
+		{
+			"omitted",
+			"{}",
+			true,
+		},
+		{
+			"enabled",
+			"{enabled: true}",
+			true,
+		},
+		{
+			"disabled",
+			"{enabled: false}",
+			false,
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "go42x.yaml")
@@ -508,18 +870,66 @@ context: {template: agents.tpl.md}
 		name, content string
 		wantErr       bool
 	}{
-		{"provider enabled by default", "providers: {codex: {}}", false},
-		{"disabled provider", "providers: {codex: {enabled: false}}", false},
-		{"missing providers", "", true},
-		{"empty providers", "providers: {}", true},
-		{"unknown provider", "providers: {unknown: {}}", true},
-		{"retired Gemini provider", "providers: {gemini: {}}", true},
-		{"Antigravity provider", "providers: {antigravity: {}}", false},
-		{"disabled Antigravity", "providers: {antigravity: {enabled: false}}", false},
-		{"Antigravity legacy tool approvals", "providers: {antigravity: {auto-approve-tools: []}}", true},
-		{"Antigravity approval policy", "providers: {antigravity: {approval-policy: never}}", true},
-		{"Antigravity MCP approvals", "providers: {antigravity: {mcp-approval: auto}}", true},
-		{"unsupported provider option", "providers: {copilot: {approval-policy: never}}", true},
+		{
+			"provider enabled by default",
+			"providers: {codex: {}}",
+			false,
+		},
+		{
+			"disabled provider",
+			"providers: {codex: {enabled: false}}",
+			false,
+		},
+		{
+			"missing providers",
+			"",
+			true,
+		},
+		{
+			"empty providers",
+			"providers: {}",
+			true,
+		},
+		{
+			"unknown provider",
+			"providers: {unknown: {}}",
+			true,
+		},
+		{
+			"retired Gemini provider",
+			"providers: {gemini: {}}",
+			true,
+		},
+		{
+			"Antigravity provider",
+			"providers: {antigravity: {}}",
+			false,
+		},
+		{
+			"disabled Antigravity",
+			"providers: {antigravity: {enabled: false}}",
+			false,
+		},
+		{
+			"Antigravity legacy tool approvals",
+			"providers: {antigravity: {auto-approve-tools: []}}",
+			true,
+		},
+		{
+			"Antigravity approval policy",
+			"providers: {antigravity: {approval-policy: never}}",
+			true,
+		},
+		{
+			"Antigravity MCP approvals",
+			"providers: {antigravity: {mcp-approval: auto}}",
+			true,
+		},
+		{
+			"unsupported provider option",
+			"providers: {copilot: {approval-policy: never}}",
+			true,
+		},
 		{
 			name:    "workflow bindings",
 			content: "providers: {gh-aw: {bindings: {TOKEN: '${{ github.token }}', MODEL: '${{ vars.MODEL }}'}}}",
@@ -558,10 +968,26 @@ context: {template: agents.tpl.md}
 			content: "providers: {gh-aw: {bindings: {TOKEN: []}}}",
 			wantErr: true,
 		},
-		{"unsupported agents", "providers: {codex: {agents: []}}", true},
-		{"blank approved tool", "providers: {claude: {auto-approve-tools: [' ']}}", true},
-		{"invalid approval policy", "providers: {codex: {approval-policy: invalid}}", true},
-		{"invalid MCP approval", "providers: {codex: {mcp-approval: invalid}}", true},
+		{
+			"unsupported agents",
+			"providers: {codex: {agents: []}}",
+			true,
+		},
+		{
+			"blank approved tool",
+			"providers: {claude: {auto-approve-tools: [' ']}}",
+			true,
+		},
+		{
+			"invalid approval policy",
+			"providers: {codex: {approval-policy: invalid}}",
+			true,
+		},
+		{
+			"invalid MCP approval",
+			"providers: {codex: {mcp-approval: invalid}}",
+			true,
+		},
 		{
 			"raw MCP tool names",
 			`providers: {codex: {}}
@@ -633,9 +1059,21 @@ func TestDisabledProvidersAllowMCPCWD(t *testing.T) {
 			enabled *bool
 			wantErr bool
 		}{
-			{"omitted", nil, true},
-			{"enabled", &enabled, true},
-			{"disabled", &disabled, false},
+			{
+				"omitted",
+				nil,
+				true,
+			},
+			{
+				"enabled",
+				&enabled,
+				true,
+			},
+			{
+				"disabled",
+				&disabled,
+				false,
+			},
 		} {
 			t.Run(name+"/"+tt.name, func(t *testing.T) {
 				cfg := validProviderConfig()
@@ -703,6 +1141,7 @@ mcp:
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := ParseProjectConfig([]byte(base), []byte(tt.local), tt.selection)
+
 			if len(tt.want) == 0 {
 				if err != nil {
 					t.Fatal(err)

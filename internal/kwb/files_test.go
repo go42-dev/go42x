@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/go42-dev/go42x/assets"
+	"github.com/go42-dev/go42x/internal/config"
 )
 
 func TestEnsureSourceIgnore(t *testing.T) {
@@ -45,6 +46,7 @@ func TestEnsureSourceIgnore(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			root := t.TempDir()
 			manager := newIndexManager(NewSettings(), slog.New(slog.DiscardHandler))
+
 			if tt.exists {
 				writeFixture(t, root, sourceIgnorePath, tt.previous)
 			}
@@ -85,7 +87,7 @@ func TestEnsureSourceIgnoreCancellation(t *testing.T) {
 	if _, err := manager.ensureSourceIgnore(ctx, root); !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled creation = %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(root, agentEnvDir)); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(root, config.Directory)); !os.IsNotExist(err) {
 		t.Fatalf("canceled creation changed project: %v", err)
 	}
 }
@@ -101,6 +103,7 @@ func TestSourceExclusionsUsesBundledDefaultsAndCustomExceptions(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := []string{".github", "workflows", "agent.lock.yml"}
+
 	if !matcher.Match(path, false) {
 		t.Fatal("bundled defaults did not exclude a compiled workflow")
 	}

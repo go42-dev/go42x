@@ -28,6 +28,7 @@ func (p *Plan) WriteManagedBlock(path, template string, kind Kind) error {
 	if err != nil {
 		return fmt.Errorf("prepare %s: %w", path, err)
 	}
+
 	start, end, err := managedBlockRange(previous)
 	if err != nil {
 		return fmt.Errorf("prepare %s: %w", path, err)
@@ -74,5 +75,6 @@ func managedBlockRange(content []byte) (int, int, error) {
 	if start != -1 && end == -1 {
 		return -1, -1, fmt.Errorf("must contain a single matching pair of go42x markers")
 	}
+
 	return start, end, nil
 }

@@ -14,7 +14,9 @@ type updateLogHandler struct {
 	handle func(slog.Record)
 }
 
-func (h updateLogHandler) Enabled(context.Context, slog.Level) bool { return true }
+func (h updateLogHandler) Enabled(context.Context, slog.Level) bool {
+	return true
+}
 
 func (h updateLogHandler) Handle(_ context.Context, record slog.Record) error {
 	h.handle(record)
@@ -48,35 +50,51 @@ func TestUpdateBacksUpEntireBatchBeforeReplacing(t *testing.T) {
 		t.Fatal(err)
 	}
 	backupChecked := false
-	logger := slog.New(updateLogHandler{Handler: slog.NewTextHandler(os.Stderr, nil), handle: func(record slog.Record) {
-		if record.Message != "Update backup completed" {
-			return
-		}
-		var backup string
-		record.Attrs(func(attr slog.Attr) bool {
-			if attr.Key == "backup" {
-				backup = attr.Value.String()
+	logger := slog.New(updateLogHandler{
+		Handler: slog.NewTextHandler(os.Stderr, nil),
+		handle: func(record slog.Record) {
+			if record.Message != "Update backup completed" {
+				return
 			}
-			return true
-		})
-		for _, name := range []string{"first", "second"} {
-			for _, path := range []string{filepath.Join(dir, name), filepath.Join(backup, updateBackupFiles, name)} {
-				data, err := os.ReadFile(path)
-				if err != nil || string(data) != "original" {
-					t.Fatalf("before application %s = %q, %v", path, data, err)
+
+			var backup string
+			record.Attrs(func(attr slog.Attr) bool {
+				if attr.Key == "backup" {
+					backup = attr.Value.String()
+				}
+				return true
+			})
+			for _, name := range []string{"first", "second"} {
+				for _, path := range []string{filepath.Join(dir, name), filepath.Join(backup, updateBackupFiles, name)} {
+					data, err := os.ReadFile(path)
+					if err != nil || string(data) != "original" {
+						t.Fatalf("before application %s = %q, %v", path, data, err)
+					}
 				}
 			}
-		}
-		if _, err := os.Stat(created); !os.IsNotExist(err) {
-			t.Fatalf("new destination exists before backup completed: %v", err)
-		}
-		backupChecked = true
-	}})
+			if _, err := os.Stat(created); !os.IsNotExist(err) {
+				t.Fatalf("new destination exists before backup completed: %v", err)
+			}
+			backupChecked = true
+		},
+	})
 	plan := NewPlan(logger, dir, backupDir)
 	for _, destination := range []struct {
 		path, content string
 		kind          Kind
-	}{{first, "original", Sources}, {second, "updated", Settings}, {created, "created", Instructions}} {
+	}{{
+		first,
+		"original",
+		Sources,
+	}, {
+		second,
+		"updated",
+		Settings,
+	}, {
+		created,
+		"created",
+		Instructions,
+	}} {
 		if err := plan.Write(
 			destination.path,
 			[]byte(destination.content),
@@ -104,6 +122,7 @@ func TestUpdateBacksUpEntireBatchBeforeReplacing(t *testing.T) {
 		t.Fatal("original permissions were not preserved")
 	}
 	manifest := readUpdateManifest(t, result.BackupDir)
+
 	if manifest.Status != updateComplete || manifest.CLIVersion != "test-version" || len(manifest.Files) != 3 {
 		t.Fatalf("manifest = %+v", manifest)
 	}
@@ -125,18 +144,21 @@ func TestUpdateFailurePreservesBackupsAndProgress(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	logger := slog.New(updateLogHandler{Handler: slog.NewTextHandler(os.Stderr, nil), handle: func(record slog.Record) {
-		if record.Message != "Update backup completed" {
-			return
-		}
-		// Simulate a destination becoming unavailable after successful backup.
-		if err := os.RemoveAll(filepath.Dir(second)); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Dir(second), []byte("blocked"), 0600); err != nil {
-			t.Fatal(err)
-		}
-	}})
+	logger := slog.New(updateLogHandler{
+		Handler: slog.NewTextHandler(os.Stderr, nil),
+		handle: func(record slog.Record) {
+			if record.Message != "Update backup completed" {
+				return
+			}
+			// Simulate a destination becoming unavailable after successful backup.
+			if err := os.RemoveAll(filepath.Dir(second)); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Dir(second), []byte("blocked"), 0600); err != nil {
+				t.Fatal(err)
+			}
+		},
+	})
 	plan := NewPlan(logger, dir, filepath.Join(dir, "backups"))
 	for _, path := range []string{first, second} {
 		if err := plan.Write(path, []byte("updated"), Sources, false); err != nil {
@@ -148,6 +170,7 @@ func TestUpdateFailurePreservesBackupsAndProgress(t *testing.T) {
 		t.Fatalf("ApplyUpdate() = %+v, %v", result, err)
 	}
 	manifest := readUpdateManifest(t, result.BackupDir)
+
 	if manifest.Status != updateApplying || manifest.Files[0].Status != updateApplied ||
 		manifest.Files[1].Status != updateApplying {
 		t.Fatalf("incorrect application progress: %+v", manifest)
@@ -175,6 +198,7 @@ func TestUpdateRejectsChangedSnapshotsAndCancellation(t *testing.T) {
 			}
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
+
 			want := "original"
 			switch scenario {
 			case "concurrent edit":
@@ -217,7 +241,7 @@ func TestUpdateSkipsUnchangedAndRecordsRemovals(t *testing.T) {
 		t.Fatal(err)
 	}
 	result, err := plan.ApplyUpdate(t.Context(), "test")
-	if err != nil || result.Applied != 0 || result.BackupDir != "" {
+	if err != nil || result.Applied != 0 || len(result.BackupDir) > 0 {
 		t.Fatalf("no-op result=%+v, %v", result, err)
 	}
 	if _, err := os.Stat(filepath.Join(root, "backups")); !os.IsNotExist(err) {
@@ -243,6 +267,7 @@ func TestUpdateSkipsUnchangedAndRecordsRemovals(t *testing.T) {
 		t.Fatalf("lost removal backup: %q %v", backup, err)
 	}
 	m := readUpdateManifest(t, result.BackupDir)
+
 	if len(m.Files) != 1 || m.Files[0].Operation != "remove" {
 		t.Fatalf("missing recovery operation: %+v", m)
 	}
@@ -254,13 +279,16 @@ func TestUpdateUsesWriteOrderAndPreservesLockOnFailure(t *testing.T) {
 	if err := os.WriteFile(lock, []byte("old lock"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	logger := slog.New(updateLogHandler{Handler: slog.NewTextHandler(os.Stderr, nil), handle: func(record slog.Record) {
-		if record.Message == "Update backup completed" {
-			if err := os.WriteFile(filepath.Join(root, "blocked"), []byte("block"), 0600); err != nil {
-				t.Fatal(err)
+	logger := slog.New(updateLogHandler{
+		Handler: slog.NewTextHandler(os.Stderr, nil),
+		handle: func(record slog.Record) {
+			if record.Message == "Update backup completed" {
+				if err := os.WriteFile(filepath.Join(root, "blocked"), []byte("block"), 0600); err != nil {
+					t.Fatal(err)
+				}
 			}
-		}
-	}})
+		},
+	})
 	plan := NewPlan(logger, root, filepath.Join(root, "backups"))
 	if _, _, err := plan.Read(lock); err != nil {
 		t.Fatal(err)

@@ -12,25 +12,35 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/go42-dev/go42x/internal/vendoring"
 )
 
 func TestAuthoredCoverageAndProjectExclusions(t *testing.T) {
 	root := t.TempDir()
 	for path, content := range map[string]string{
-		".env.example": "EXAMPLE=value", ".go42x/go42x.yaml": "project: sample",
-		".go42x/agents.tpl.md": "Agent instructions", ".go42x/chunks/team/rules.tpl.md": "Project rules",
-		".go42x/go42x.local.yaml": "local only", ".go42x/go42x.schema.json": "{}",
-		".go42x/backups/old.tpl.md": "backup", ".go42x/state.json": "{}",
-		".go42x/upstream/go/names.md":       "# Names\nNaming conventions.",
-		".go42x/upstream/guide.markdown":    "# Guide\nStyle guidance.",
-		".go42x/upstream/.vendor.lock.yaml": "manifest: .vendor.yaml",
-		".go42x/upstream/raw.html":          "<h1>Raw HTML</h1>",
-		".go42x/upstream/LICENSE":           "license text",
-		".go42x/chunks/generated.json":      "{}", ".go42x/kwb/other/state.md": "index state",
-		".gitignore": ".go42x/chunks/private.tpl.md\n", ".go42x/chunks/private.tpl.md": "private",
-		".go42x/kwb.ignore":    "static/**\n!static/keep.min.js\n!static/handwritten.js\n!static/flagged.js\n",
-		"static/bundle.min.js": "generated bundle", "static/keep.min.js": "kept by exception",
-		"static/handwritten.js": "const handwritten = true", "static/flagged.js": "excluded by flag",
+		".env.example":                          "EXAMPLE=value",
+		".go42x/go42x.yaml":                     "project: sample",
+		".go42x/agents.tpl.md":                  "Agent instructions",
+		".go42x/chunks/team/rules.tpl.md":       "Project rules",
+		".go42x/go42x.local.yaml":               "local only",
+		".go42x/go42x.schema.json":              "{}",
+		".go42x/backups/old.tpl.md":             "backup",
+		".go42x/state.json":                     "{}",
+		".go42x/upstream/go/names.md":           "# Names\nNaming conventions.",
+		".go42x/upstream/guide.markdown":        "# Guide\nStyle guidance.",
+		".go42x/upstream/" + vendoring.LockFile: "manifest: " + vendoring.ManifestFile,
+		".go42x/upstream/raw.html":              "<h1>Raw HTML</h1>",
+		".go42x/upstream/LICENSE":               "license text",
+		".go42x/chunks/generated.json":          "{}",
+		".go42x/kwb/other/state.md":             "index state",
+		".gitignore":                            ".go42x/chunks/private.tpl.md\n",
+		".go42x/chunks/private.tpl.md":          "private",
+		".go42x/kwb.ignore":                     "static/**\n!static/keep.min.js\n!static/handwritten.js\n!static/flagged.js\n",
+		"static/bundle.min.js":                  "generated bundle",
+		"static/keep.min.js":                    "kept by exception",
+		"static/handwritten.js":                 "const handwritten = true",
+		"static/flagged.js":                     "excluded by flag",
 	} {
 		writeFixture(t, root, path, content)
 	}
@@ -52,6 +62,7 @@ func TestAuthoredCoverageAndProjectExclusions(t *testing.T) {
 	want := []string{".env.example", ".gitignore", ".go42x/agents.tpl.md", ".go42x/chunks/team/rules.tpl.md",
 		".go42x/go42x.yaml", ".go42x/kwb.ignore", ".go42x/upstream/go/names.md", ".go42x/upstream/guide.markdown",
 		"static/handwritten.js", "static/keep.min.js"}
+
 	if !slices.Equal(paths, want) {
 		t.Fatalf("coverage: %v, want %v", paths, want)
 	}
@@ -131,12 +142,15 @@ func TestFreshnessMissingRootMismatchAndDeadline(t *testing.T) {
 		t.Fatalf("read-only check created files: %v %v", entries, err)
 	}
 	buildFixture(t, service, root)
-	other := testService(t, t.TempDir(), service.settings.IndexPath, func(s *Settings) { s.RequireRootMatch = true })
+	other := testService(t, t.TempDir(), service.settings.IndexPath, func(s *Settings) {
+		s.RequireRootMatch = true
+	})
 	if _, err := other.CheckFreshness(t.Context()); !errors.Is(err, ErrRootMismatch) {
 		t.Fatalf("root mismatch: %v", err)
 	}
 	ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
 	defer cancel()
+
 	incomplete, err := service.CheckFreshness(ctx)
 	if !errors.Is(err, context.DeadlineExceeded) || incomplete == nil || incomplete.Complete ||
 		len(incomplete.Diagnostics) == 0 {

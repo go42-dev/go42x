@@ -26,6 +26,7 @@ func (s *Settings) Validate() error {
 	if s == nil {
 		return fmt.Errorf("settings cannot be nil")
 	}
+
 	return s.KnowledgeBaseSettings().Validate()
 }
 

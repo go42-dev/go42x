@@ -9,6 +9,7 @@ import (
 
 	"github.com/go42-dev/go42x/assets"
 	"github.com/go42-dev/go42x/internal/buildinfo"
+	"github.com/go42-dev/go42x/internal/config"
 	"github.com/go42-dev/go42x/internal/vendoring"
 )
 
@@ -16,8 +17,14 @@ func TestPinBundledSchemaURL(t *testing.T) {
 	for _, tt := range []struct {
 		path, schema string
 	}{
-		{configFile, "assets/schemas/go42x.schema.yaml"},
-		{".vendor.yaml", "assets/schemas/vendor.schema.yaml"},
+		{
+			config.ProjectConfigFile,
+			"assets/schemas/go42x.schema.yaml",
+		},
+		{
+			vendoring.ManifestFile,
+			"assets/schemas/vendor.schema.yaml",
+		},
 	} {
 		t.Run(tt.path, func(t *testing.T) {
 			data := []byte(
@@ -26,6 +33,7 @@ func TestPinBundledSchemaURL(t *testing.T) {
 			original := bytes.Clone(data)
 			pinned := pinBundledSchemaURL(tt.path, data)
 			want := "# yaml-language-server: $schema=" + buildinfo.SourceURL(tt.schema) + "\nversion: \"1.0\"\n"
+
 			if string(pinned) != want || !bytes.Equal(data, original) {
 				t.Fatalf("pinned schema = %q, original = %q", pinned, data)
 			}
@@ -41,15 +49,15 @@ func TestBundledUpstreamInventory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	manifestData, err := fs.ReadFile(bundle, ".vendor.yaml")
+	manifestData, err := fs.ReadFile(bundle, vendoring.ManifestFile)
 	if err != nil {
 		t.Fatal(err)
 	}
-	manifest, err := vendoring.ParseManifest(pinBundledSchemaURL(".vendor.yaml", manifestData))
+	manifest, err := vendoring.ParseManifest(pinBundledSchemaURL(vendoring.ManifestFile, manifestData))
 	if err != nil {
 		t.Fatal(err)
 	}
-	lockData, err := fs.ReadFile(bundle, ".vendor.lock.yaml")
+	lockData, err := fs.ReadFile(bundle, vendoring.LockFile)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +65,7 @@ func TestBundledUpstreamInventory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if lock.Manifest != ".vendor.yaml" {
+	if lock.Manifest != vendoring.ManifestFile {
 		t.Fatalf("bundled lock points to %q", lock.Manifest)
 	}
 	if err := lock.Matches(manifest); err != nil {

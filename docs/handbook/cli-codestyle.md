@@ -60,6 +60,9 @@ Only changed files are reindexed. Use --rebuild to rebuild the entire index.`,
 
 ## Flag registration
 
+Name flag constants with the shared `flag` prefix, such as `flagOutput` and
+`flagJSON`. Keep them in one `const` block, separate from unrelated constants.
+
 Register flags in a separate block after the command literal. Format each call
 across three lines: the method and opening parenthesis, the flag name and default
 value, then the help text and closing parenthesis. Include any shorthand beside
@@ -89,8 +92,8 @@ the root command binds the selected command's flags to Viper:
 
 ```go
 const (
-    cleanFlag = "clean"
-    jsonFlag  = "json"
+    flagClean = "clean"
+    flagJSON  = "json"
 )
 
 func newGenerateCommand(f *cmdutil.Factory) *cobra.Command {
@@ -100,8 +103,8 @@ func newGenerateCommand(f *cmdutil.Factory) *cobra.Command {
         Args:  cobra.NoArgs,
         RunE: func(_ *cobra.Command, _ []string) error {
             settings := &agentenv.Settings{
-                Clean: viper.GetBool(cleanFlag),
-                JSON:  viper.GetBool(jsonFlag),
+                Clean: viper.GetBool(flagClean),
+                JSON:  viper.GetBool(flagJSON),
             }
 
             if err := settings.Validate(); err != nil {
@@ -113,7 +116,7 @@ func newGenerateCommand(f *cmdutil.Factory) *cobra.Command {
     }
 
     cmd.Flags().Bool(
-        cleanFlag, false,
+        flagClean, false,
         "regenerate owned instruction files")
 
     return cmd

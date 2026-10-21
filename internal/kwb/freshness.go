@@ -9,6 +9,13 @@ import (
 	"slices"
 )
 
+const (
+	FreshnessFresh      = "fresh"
+	FreshnessStale      = "stale"
+	FreshnessIncomplete = "incomplete"
+	FreshnessMissing    = "missing"
+)
+
 // sourceSelection records build inputs so a later check uses the same policy.
 // The project ignore file is always read live, like nested .gitignore files.
 type sourceSelection struct {
@@ -19,8 +26,12 @@ type sourceSelection struct {
 }
 
 func selectionFrom(s *Settings) *sourceSelection {
-	return &sourceSelection{s.MaxFileSize, slices.Clone(s.ExtraExtensions),
-		slices.Clone(s.ExcludeDirs), slices.Clone(s.ExcludeFiles)}
+	return &sourceSelection{
+		s.MaxFileSize,
+		slices.Clone(s.ExtraExtensions),
+		slices.Clone(s.ExcludeDirs),
+		slices.Clone(s.ExcludeFiles),
+	}
 }
 
 func (s *sourceSelection) equal(other *sourceSelection) bool {
@@ -58,6 +69,7 @@ func (r *FreshnessResult) record(changes *FileChanges, path string) {
 		r.Truncated = true
 		return
 	}
+
 	changes.Paths = append(changes.Paths, path)
 	r.detailBytes += len(path)
 }
@@ -65,29 +77,38 @@ func (r *FreshnessResult) record(changes *FileChanges, path string) {
 func (s *Service) CheckFreshness(ctx context.Context) (*FreshnessResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.settings.SearchTimeout)
 	defer cancel()
+
 	return s.index.CheckFreshness(ctx)
 }
 
 func (m *indexManager) CheckFreshness(ctx context.Context) (*FreshnessResult, error) {
 	result := &FreshnessResult{
-		Status: "incomplete", Root: m.settings.RootPath, Diagnostics: []Diagnostic{},
-		New: FileChanges{Paths: []string{}}, Changed: FileChanges{Paths: []string{}},
-		Deleted: FileChanges{Paths: []string{}}, Excluded: FileChanges{Paths: []string{}},
+		Status:      FreshnessIncomplete,
+		Root:        m.settings.RootPath,
+		Diagnostics: []Diagnostic{},
+		New:         FileChanges{Paths: []string{}},
+		Changed:     FileChanges{Paths: []string{}},
+		Deleted:     FileChanges{Paths: []string{}},
+		Excluded:    FileChanges{Paths: []string{}},
 	}
 	err := m.withSnapshot(ctx, func(current *snapshot) error {
 		result.Root, result.Generation = current.manifest.Root, current.generation
 		settings := *m.settings
 		policy := current.manifest.Selection
 		if policy == nil {
-			result.Diagnostics = append(result.Diagnostics, Diagnostic{Code: "selection_unknown",
-				Message: "This index predates recorded build settings; run go42x kwb build before checking freshness"})
+			result.Diagnostics = append(result.Diagnostics, Diagnostic{
+				Code:    "selection_unknown",
+				Message: "This index predates recorded build settings; run go42x kwb build before checking freshness",
+			})
 			return nil
 		}
+
 		settings.MaxFileSize, settings.ExtraExtensions = policy.MaxFileSize, policy.ExtraExtensions
 		settings.ExcludeDirs, settings.ExcludeFiles = policy.ExcludeDirs, policy.ExcludeFiles
 		if err := settings.Validate(); err != nil {
 			return fmt.Errorf("invalid recorded build settings: %w", err)
 		}
+
 		result.Selection = policy
 		walker := newIndexManager(&settings, m.logger)
 		seen := map[string]bool{}
@@ -100,10 +121,12 @@ func (m *indexManager) CheckFreshness(ctx context.Context) (*FreshnessResult, er
 			} else if Hash(data) != previous.Hash {
 				result.record(&result.Changed, path)
 			}
+
 			return ctx.Err()
 		}); err != nil {
 			return err
 		}
+
 		root, err := os.OpenRoot(result.Root)
 		if err != nil {
 			return err
@@ -120,6 +143,7 @@ func (m *indexManager) CheckFreshness(ctx context.Context) (*FreshnessResult, er
 			if err := ctx.Err(); err != nil {
 				return err
 			}
+
 			_, err := root.Lstat(path)
 			switch {
 			case os.IsNotExist(err):
@@ -135,13 +159,16 @@ func (m *indexManager) CheckFreshness(ctx context.Context) (*FreshnessResult, er
 			return err
 		}
 		if generation != current.generation {
-			result.Diagnostics = append(result.Diagnostics, Diagnostic{Code: "index_changed",
-				Message: "Index changed during the scan; retry against the new generation"})
+			result.Diagnostics = append(result.Diagnostics, Diagnostic{
+				Code:    "index_changed",
+				Message: "Index changed during the scan; retry against the new generation",
+			})
 			return nil
 		}
-		result.Complete, result.Status = true, "fresh"
+
+		result.Complete, result.Status = true, FreshnessFresh
 		if result.New.Count+result.Changed.Count+result.Deleted.Count+result.Excluded.Count > 0 {
-			result.Status = "stale"
+			result.Status = FreshnessStale
 		}
 		return nil
 	})
@@ -149,10 +176,10 @@ func (m *indexManager) CheckFreshness(ctx context.Context) (*FreshnessResult, er
 		return nil, err
 	}
 	if err != nil {
-		if result.Generation == "" {
+		if len(result.Generation) == 0 {
 			result.Status = "unavailable"
 			if errors.Is(err, os.ErrNotExist) {
-				result.Status = "missing"
+				result.Status = FreshnessMissing
 			}
 		}
 		// Avoid unbounded filesystem error messages in machine-readable output.
@@ -160,7 +187,10 @@ func (m *indexManager) CheckFreshness(ctx context.Context) (*FreshnessResult, er
 		if len(message) > 1024 {
 			message = message[:1024]
 		}
-		result.Diagnostics = append(result.Diagnostics, Diagnostic{Code: "check_incomplete", Message: message})
+		result.Diagnostics = append(result.Diagnostics, Diagnostic{
+			Code:    "check_incomplete",
+			Message: message,
+		})
 	}
 	return result, errors.Join(err, result.bound())
 }
@@ -171,6 +201,7 @@ func (r *FreshnessResult) bound() error {
 		if err != nil || len(data) <= MaxResponseBytes {
 			return err
 		}
+
 		r.Truncated = true
 		largest := &r.New
 		for _, changes := range []*FileChanges{&r.Changed, &r.Deleted, &r.Excluded} {
@@ -183,8 +214,10 @@ func (r *FreshnessResult) bound() error {
 			largest.Paths = largest.Paths[:len(largest.Paths)-1]
 		case r.Selection != nil:
 			r.Selection = nil
-			r.Diagnostics = append(r.Diagnostics, Diagnostic{Code: "selection_detail_limit",
-				Message: "Recorded build settings omitted to keep the response bounded"})
+			r.Diagnostics = append(r.Diagnostics, Diagnostic{
+				Code:    "selection_detail_limit",
+				Message: "Recorded build settings omitted to keep the response bounded",
+			})
 		default:
 			return fmt.Errorf("freshness metadata exceeds response limit")
 		}

@@ -27,19 +27,22 @@ func TestMain(m *testing.M) {
 }
 
 func runTests(m *testing.M) int {
-	if dist := os.Getenv("GO42X_RELEASE_DIST"); dist != "" {
-		if os.Getenv("GO42X_E2E_BINARY") != "" || os.Getenv("GO42X_E2E_VERSION") != "" {
+	if dist := os.Getenv("GO42X_RELEASE_DIST"); len(dist) > 0 {
+		if len(os.Getenv("GO42X_E2E_BINARY")) > 0 || len(os.Getenv("GO42X_E2E_VERSION")) > 0 {
 			fmt.Fprintln(os.Stderr, "GO42X_RELEASE_DIST cannot be combined with GO42X_E2E_BINARY or GO42X_E2E_VERSION")
 			return 1
 		}
+
 		return runReleaseTests(m, dist)
 	}
-	if path := os.Getenv("GO42X_E2E_BINARY"); path != "" {
+
+	if path := os.Getenv("GO42X_E2E_BINARY"); len(path) > 0 {
 		// Release tests must use the supplied binary; never silently rebuild it.
-		if !filepath.IsAbs(path) || os.Getenv("GO42X_E2E_VERSION") == "" {
+		if !filepath.IsAbs(path) || len(os.Getenv("GO42X_E2E_VERSION")) == 0 {
 			fmt.Fprintln(os.Stderr, "GO42X_E2E_BINARY must be absolute and requires GO42X_E2E_VERSION")
 			return 1
 		}
+
 		info, err := os.Stat(path)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "read E2E binary:", err)
@@ -49,10 +52,11 @@ func runTests(m *testing.M) int {
 			fmt.Fprintln(os.Stderr, "GO42X_E2E_BINARY must be a regular executable file")
 			return 1
 		}
+
 		binaryPath, binaryVersion = path, os.Getenv("GO42X_E2E_VERSION")
 		return m.Run()
 	}
-	if os.Getenv("GO42X_E2E_VERSION") != "" {
+	if len(os.Getenv("GO42X_E2E_VERSION")) > 0 {
 		fmt.Fprintln(os.Stderr, "GO42X_E2E_VERSION requires GO42X_E2E_BINARY")
 		return 1
 	}
@@ -62,8 +66,12 @@ func runTests(m *testing.M) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	defer func() { _ = os.RemoveAll(dir) }()
+	defer func() {
+		_ = os.RemoveAll(dir)
+	}()
+
 	binaryPath = filepath.Join(dir, "go42x")
+
 	if runtime.GOOS == "windows" {
 		binaryPath += ".exe"
 	}
@@ -71,8 +79,10 @@ func runTests(m *testing.M) int {
 	// Build once for the entire suite. The child CLI also gets race detection.
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
+
 	coverDir := os.Getenv(e2eCoverDirEnv)
 	buildArgs := []string{"build", "-mod=readonly", "-race", "-trimpath", "-buildvcs=false"}
+
 	if len(coverDir) > 0 {
 		buildArgs = append(buildArgs, "-cover", "-covermode=atomic")
 	}
@@ -150,6 +160,7 @@ func (p *project) run(t *testing.T, wantExit int, args ...string) commandResult 
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 	defer cancel()
+
 	cmd := p.command(ctx, args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
@@ -168,7 +179,10 @@ func (p *project) run(t *testing.T, wantExit int, args ...string) commandResult 
 	if code != wantExit {
 		t.Fatalf("go42x %v: exit %d, want %d\nstdout: %s\nstderr: %s", args, code, wantExit, &stdout, &stderr)
 	}
-	return commandResult{stdout: stdout.String(), stderr: stderr.String()}
+	return commandResult{
+		stdout: stdout.String(),
+		stderr: stderr.String(),
+	}
 }
 
 func (p *project) write(t *testing.T, name, content string) {
@@ -214,20 +228,25 @@ func (p *project) snapshot(t *testing.T) map[string]fileState {
 		if err != nil {
 			return err
 		}
+
 		info, err := entry.Info()
 		if err != nil {
 			return err
 		}
+
 		relative, err := filepath.Rel(p.root, path)
 		if err != nil {
 			return err
 		}
+
 		state := fileState{mode: info.Mode()}
+
 		if !entry.IsDir() {
 			data, err := os.ReadFile(path)
 			if err != nil {
 				return err
 			}
+
 			state.content = string(data)
 		}
 		files[relative] = state
@@ -242,9 +261,11 @@ func (p *project) snapshot(t *testing.T) map[string]fileState {
 func (p *project) assertUnchanged(t *testing.T, before map[string]fileState) {
 	t.Helper()
 	after := p.snapshot(t)
+
 	if maps.Equal(before, after) {
 		return
 	}
+
 	for path, state := range before {
 		if current, ok := after[path]; !ok || current != state {
 			t.Errorf("file contents, permissions, or existence changed: %s", path)

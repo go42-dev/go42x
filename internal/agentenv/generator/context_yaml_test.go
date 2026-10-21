@@ -33,16 +33,19 @@ func renderDefaultContext(t *testing.T, data map[string]any) (string, error) {
 func decodeContextBlock(t *testing.T, content string) (map[string]any, string) {
 	t.Helper()
 	start := strings.Index(content, "```")
+
 	if start < 0 {
 		t.Fatal("generated context has no fenced block")
 	}
 	opening, rest, ok := strings.Cut(content[start:], "\n")
+
 	if !ok || !strings.HasSuffix(opening, "yaml") {
 		t.Fatalf("expected a YAML fence, got %q", opening)
 	}
 	fence := strings.TrimSuffix(opening, "yaml")
 	body, after, ok := strings.Cut(rest, "\n"+fence)
-	if !ok || (after != "" && !strings.HasPrefix(after, "\n")) {
+
+	if !ok || (len(after) > 0 && !strings.HasPrefix(after, "\n")) {
 		t.Fatal("YAML fence is not closed on its own line")
 	}
 	var data map[string]any
@@ -58,17 +61,32 @@ func TestContextYAMLRoundTrip(t *testing.T) {
 	request := "Fix this:\n```yaml\nversion: 1.27\n```\nKeep: \"yes\""
 	data := map[string]any{
 		"project": map[string]any{
-			"name": "go42x", "description": description, "language": "go", "tags": []string{"go42x", "cli"},
-			"repository": "github.com/go42-dev/go42x", "documentation-entrypoint": "handbook/index.md",
-			"metadata": map[string]string{"number": "1.27", "boolean": "true", "null": "null"},
+			"name":                     "go42x",
+			"description":              description,
+			"language":                 "go",
+			"tags":                     []string{"go42x", "cli"},
+			"repository":               "github.com/go42-dev/go42x",
+			"documentation-entrypoint": "handbook/index.md",
+			"metadata": map[string]string{
+				"number":  "1.27",
+				"boolean": "true",
+				"null":    "null",
+			},
 		},
 		"git": map[string]any{
-			"root": "/project", "remote": "git@example.com:org/repo.git",
-			"branch": "unpublished-branch", "commit": "unpublished-commit", "tag": "unpublished-tag",
+			"root":   "/project",
+			"remote": "git@example.com:org/repo.git",
+			"branch": "unpublished-branch",
+			"commit": "unpublished-commit",
+			"tag":    "unpublished-tag",
 		},
 		"environment": map[string]any{
-			"os": "darwin", "arch": "arm64", "is_ci": false, "ci_mode": "", "working_dir": "/project",
-			"variables": map[string]string{"CUSTOM": "false\nvalue: yes"},
+			"os":          "darwin",
+			"arch":        "arm64",
+			"is_ci":       false,
+			"ci_mode":     "",
+			"working_dir": "/project",
+			"variables":   map[string]string{"CUSTOM": "false\nvalue: yes"},
 		},
 		"golang": map[string]any{
 			"go_version": "1.27",
@@ -80,16 +98,23 @@ func TestContextYAMLRoundTrip(t *testing.T) {
 			},
 		},
 		"github_actions": map[string]any{
-			"ref_name": "main", "user_request": request,
-			"runner": map[string]any{"name": "unpublished-runner"},
+			"ref_name":     "main",
+			"user_request": request,
+			"runner":       map[string]any{"name": "unpublished-runner"},
 		},
 		"mcp": map[string]provider.MCPServer{
 			"enabled": {
-				Enabled: true, Type: "http", URL: "https://unpublished-host.example",
+				Enabled: true,
+				Type:    "http",
+				URL:     "https://unpublished-host.example",
 				Headers: map[string]string{"Authorization": "unpublished-token"},
-				Env:     map[string]string{"TOKEN": "unpublished-environment"}, Command: "unpublished-command",
+				Env:     map[string]string{"TOKEN": "unpublished-environment"},
+				Command: "unpublished-command",
 			},
-			"disabled": {Enabled: false, Type: "stdio"},
+			"disabled": {
+				Enabled: false,
+				Type:    "stdio",
+			},
 		},
 	}
 	content, err := renderDefaultContext(t, data)
@@ -101,6 +126,7 @@ func TestContextYAMLRoundTrip(t *testing.T) {
 	}
 	decoded, _ := decodeContextBlock(t, content)
 	project := decoded["project"].(map[string]any)
+
 	if project["description"] != description ||
 		project["repository"] != "github.com/go42-dev/go42x" ||
 		project["documentation-entrypoint"] != "handbook/index.md" ||
@@ -108,17 +134,23 @@ func TestContextYAMLRoundTrip(t *testing.T) {
 		t.Fatalf("project values did not round-trip: %+v", project)
 	}
 	metadata := project["metadata"].(map[string]any)
-	for key, want := range map[string]string{"number": "1.27", "boolean": "true", "null": "null"} {
+	for key, want := range map[string]string{
+		"number":  "1.27",
+		"boolean": "true",
+		"null":    "null",
+	} {
 		if metadata[key] != want {
 			t.Errorf("metadata %s = %#v; want string %q", key, metadata[key], want)
 		}
 	}
 	environment := decoded["environment"].(map[string]any)
+
 	if environment["is_ci"] != false || environment["go_version"] != nil ||
 		environment["variables"].(map[string]any)["CUSTOM"] != "false\nvalue: yes" {
 		t.Fatalf("environment values did not round-trip: %+v", environment)
 	}
 	golang := decoded["golang"].(map[string]any)
+
 	if golang["go_version"] != "1.27" {
 		t.Fatalf("Go requirement did not round-trip: %+v", golang)
 	}
@@ -131,6 +163,7 @@ func TestContextYAMLRoundTrip(t *testing.T) {
 		}
 	}
 	github := decoded["github_actions"].(map[string]any)
+
 	if github["ref"] != "main" || github["user_request"] != request {
 		t.Fatalf("GitHub context did not round-trip: %+v", github)
 	}
@@ -140,7 +173,11 @@ func TestContextYAMLRoundTrip(t *testing.T) {
 	if strings.Contains(content, "unpublished-") {
 		t.Fatal("context exposed fields outside the published context")
 	}
-	wantRepository := map[string]any{"root": "/project", "remote": "git@example.com:org/repo.git"}
+	wantRepository := map[string]any{
+		"root":   "/project",
+		"remote": "git@example.com:org/repo.git",
+	}
+
 	if !reflect.DeepEqual(decoded["repository"], wantRepository) {
 		t.Fatalf("repository context = %+v, want %+v", decoded["repository"], wantRepository)
 	}
@@ -163,6 +200,7 @@ func TestContextYAMLOmitsUnavailableSections(t *testing.T) {
 	}
 	data, _ := decodeContextBlock(t, content)
 	want := map[string]any{"project": map[string]any{"name": "example"}}
+
 	if !reflect.DeepEqual(data, want) {
 		t.Fatalf("context = %+v; want %+v", data, want)
 	}
@@ -182,17 +220,22 @@ func TestDefaultContextKeepsMarkdownChunks(t *testing.T) {
 		t.Fatal(err)
 	}
 	content, err := newTemplateEngine(dir).Render(
-		config.Context{Template: "agents.tpl.md", ChunksDir: "chunks"},
+		config.Context{
+			Template:  "agents.tpl.md",
+			ChunksDir: "chunks",
+		},
 		map[string]any{"project": map[string]any{"name": "example"}},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	data, after := decodeContextBlock(t, content)
+
 	if data["project"].(map[string]any)["name"] != "example" {
 		t.Fatal("missing YAML context")
 	}
 	want := "\n\n## Instructions\n\n" + strings.ReplaceAll(chunk, "{{ .project.name }}", "example") + "\n"
+
 	if after != want {
 		t.Fatalf("Markdown chunks changed: got %q, want %q", after, want)
 	}
@@ -212,9 +255,15 @@ a_settings: {{ yamlValue .settings }}
 {{ define "part" }}selected: {{ yamlValue .name }}{{ end }}
 {{ yamlBlock "part" .project }}`
 	data := map[string]any{
-		"project":  map[string]any{"name": "custom", "description": "omitted"},
-		"git":      map[string]any{"commit": "abc123"},
-		"settings": map[string]any{"enabled": false, "version": "1.27"},
+		"project": map[string]any{
+			"name":        "custom",
+			"description": "omitted",
+		},
+		"git": map[string]any{"commit": "abc123"},
+		"settings": map[string]any{
+			"enabled": false,
+			"version": "1.27",
+		},
 	}
 	content, err := engine.Process(source, data)
 	if err != nil {
@@ -222,9 +271,13 @@ a_settings: {{ yamlValue .settings }}
 	}
 	decoded, after := decodeContextBlock(t, content)
 	want := map[string]any{
-		"z_service":  map[string]any{"renamed": "custom", "revision": "abc123"},
+		"z_service": map[string]any{
+			"renamed":  "custom",
+			"revision": "abc123",
+		},
 		"a_settings": data["settings"],
 	}
+
 	if !reflect.DeepEqual(decoded, want) {
 		t.Fatalf("custom structure = %#v; want %#v", decoded, want)
 	}
@@ -233,6 +286,7 @@ a_settings: {{ yamlValue .settings }}
 		t.Fatal("authored field order or comments were lost")
 	}
 	selected, _ := decodeContextBlock(t, after)
+
 	if !reflect.DeepEqual(selected, map[string]any{"selected": "custom"}) {
 		t.Fatalf("second YAML block did not receive its selected data: %#v", selected)
 	}
@@ -245,12 +299,26 @@ func TestYAMLValueRoundTrip(t *testing.T) {
 		"first\u0085second", "first\u2028second\u2029third", "Ελληνικά 日本語 🚀",
 		"quotes: \"yes\"\n---\ninjected: true\n{{ .not_a_template }}\n",
 		[]any{"one", "false", 2},
-		map[string]any{"key:\nquoted": "value", "empty": nil},
 		map[string]any{
-			"CGO_ENABLED": "1", "true": "false", "null": "null", "1": "0", "2026-09-15": "date",
-			"colon: key": "value", "hash # key": "value", "": "empty key", " first ": "spaces",
-			"line\nbreak": "LF", "line\rbreak": "CR", "line\u0085break": "NEL",
-			"line\u2028break": "LS", "line\u2029break": "PS", "\x00": "NUL",
+			"key:\nquoted": "value",
+			"empty":        nil,
+		},
+		map[string]any{
+			"CGO_ENABLED":     "1",
+			"true":            "false",
+			"null":            "null",
+			"1":               "0",
+			"2026-09-15":      "date",
+			"colon: key":      "value",
+			"hash # key":      "value",
+			"":                "empty key",
+			" first ":         "spaces",
+			"line\nbreak":     "LF",
+			"line\rbreak":     "CR",
+			"line\u0085break": "NEL",
+			"line\u2028break": "LS",
+			"line\u2029break": "PS",
+			"\x00":            "NUL",
 		},
 	} {
 		t.Run(fmt.Sprintf("%T/%v", value, value), func(t *testing.T) {
@@ -262,6 +330,7 @@ func TestYAMLValueRoundTrip(t *testing.T) {
 				t.Fatal(err)
 			}
 			data, _ := decodeContextBlock(t, content)
+
 			if len(data) != 1 || !reflect.DeepEqual(data["value"], value) {
 				t.Fatalf("value = %#v; want %#v; rendered %q", data, value, content)
 			}
@@ -271,18 +340,46 @@ func TestYAMLValueRoundTrip(t *testing.T) {
 
 func TestYAMLBlockErrors(t *testing.T) {
 	for _, tt := range []struct{ name, body, want string }{
-		{"syntax", "value: [", "parse YAML template"},
-		{"duplicate keys", "value: a\nvalue: b\n", "validate YAML template"},
-		{"multiple documents", "value: a\n---\nvalue: b\n", "exactly one document"},
-		{"malformed trailing document", "value: a\n---\nvalue: [", "parse trailing YAML"},
-		{"empty", "", "parse YAML template"},
-		{"recursive", `{{ yamlBlock "context" . }}`, "nested yamlBlock"},
-		{"unsupported value", `value: {{ yamlValue .unsupported }}`, "encode YAML value"},
+		{
+			"syntax",
+			"value: [",
+			"parse YAML template",
+		},
+		{
+			"duplicate keys",
+			"value: a\nvalue: b\n",
+			"validate YAML template",
+		},
+		{
+			"multiple documents",
+			"value: a\n---\nvalue: b\n",
+			"exactly one document",
+		},
+		{
+			"malformed trailing document",
+			"value: a\n---\nvalue: [",
+			"parse trailing YAML",
+		},
+		{
+			"empty",
+			"",
+			"parse YAML template",
+		},
+		{
+			"recursive",
+			`{{ yamlBlock "context" . }}`,
+			"nested yamlBlock",
+		},
+		{
+			"unsupported value",
+			`value: {{ yamlValue .unsupported }}`,
+			"encode YAML value",
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			source := `{{ define "context" }}` + tt.body + `{{ end }}partial{{ yamlBlock "context" . }}`
 			result, err := newTemplateEngine("").Process(source, map[string]any{"unsupported": make(chan int)})
-			if err == nil || !strings.Contains(err.Error(), tt.want) || result != "" {
+			if err == nil || !strings.Contains(err.Error(), tt.want) || len(result) > 0 {
 				t.Fatalf("Process() = %q, %v; want no output and %q", result, err, tt.want)
 			}
 		})
@@ -304,6 +401,7 @@ func TestYAMLTemplateConcurrentRenders(t *testing.T) {
 				t.Fatal(err)
 			}
 			data, _ := decodeContextBlock(t, content)
+
 			if data["value"] != i {
 				t.Fatalf("render received another call's context: %#v", data)
 			}
@@ -340,10 +438,19 @@ list: [null, "", [], {}, {missing: null}, false, 0, {drop: "", keep: 0}]
 	}
 	data, after := decodeContextBlock(t, content)
 	want := map[string]any{
-		"z_flags": map[string]any{"enabled": false, "retries": 0},
-		"a_text":  map[string]any{"space": " ", "newline": "\n", "null_string": "null", "zero_string": "0"},
-		"list":    []any{false, 0, map[string]any{"keep": 0}},
+		"z_flags": map[string]any{
+			"enabled": false,
+			"retries": 0,
+		},
+		"a_text": map[string]any{
+			"space":       " ",
+			"newline":     "\n",
+			"null_string": "null",
+			"zero_string": "0",
+		},
+		"list": []any{false, 0, map[string]any{"keep": 0}},
 	}
+
 	if !reflect.DeepEqual(data, want) {
 		t.Fatalf("omitted context = %#v; want %#v", data, want)
 	}
@@ -380,6 +487,7 @@ copied_key: *key
 		"copy":       map[string]any{"enabled": false},
 		"copied_key": "key",
 	}
+
 	if !reflect.DeepEqual(data, want) {
 		t.Fatalf("omission broke YAML aliases: %#v; want %#v", data, want)
 	}
@@ -393,6 +501,7 @@ func TestYAMLBlockOmitEmptyRoot(t *testing.T) {
 			t.Fatal(err)
 		}
 		data, _ := decodeContextBlock(t, content)
+
 		if data == nil || len(data) != 0 {
 			t.Fatalf("empty root must remain a valid empty mapping: %#v", data)
 		}
@@ -401,15 +510,27 @@ func TestYAMLBlockOmitEmptyRoot(t *testing.T) {
 
 func TestYAMLBlockOmitEmptyErrors(t *testing.T) {
 	for _, tc := range []struct{ body, option, want string }{
-		{"value: null", "omit-emtpy", "unknown option"},
-		{"value: null\nvalue: null\n", "omit-empty", "validate YAML template"},
-		{"value: &cycle [*cycle]", "omit-empty", "validate YAML template"},
+		{
+			"value: null",
+			"omit-emtpy",
+			"unknown option",
+		},
+		{
+			"value: null\nvalue: null\n",
+			"omit-empty",
+			"validate YAML template",
+		},
+		{
+			"value: &cycle [*cycle]",
+			"omit-empty",
+			"validate YAML template",
+		},
 	} {
 		source := `{{ define "context" }}` + tc.body + `{{ end }}{{ yamlBlock "context" . ` + strconv.Quote(
 			tc.option,
 		) + ` }}`
 		content, err := newTemplateEngine("").Process(source, nil)
-		if err == nil || !strings.Contains(err.Error(), tc.want) || content != "" {
+		if err == nil || !strings.Contains(err.Error(), tc.want) || len(content) > 0 {
 			t.Fatalf("Process() = %q, %v; want no output and %q", content, err, tc.want)
 		}
 	}

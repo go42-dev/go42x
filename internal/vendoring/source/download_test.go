@@ -36,7 +36,11 @@ func TestRejectZIPLink(t *testing.T) {
 func TestExpandedArchiveLimit(t *testing.T) {
 	var b bytes.Buffer
 	w := tar.NewWriter(&b)
-	if err := w.WriteHeader(&tar.Header{Name: "huge", Size: MaxExpandedBytes + 1, Typeflag: tar.TypeReg}); err != nil {
+	if err := w.WriteHeader(&tar.Header{
+		Name:     "huge",
+		Size:     MaxExpandedBytes + 1,
+		Typeflag: tar.TypeReg,
+	}); err != nil {
 		t.Fatal(err)
 	}
 	// The header alone is sufficient to reject an oversized entry.

@@ -21,18 +21,20 @@ The destination must not already exist. Schema references match this binary's re
 		Args:    cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			settings := &agentenv.ExportSettings{
-				OutputDir: viper.GetString("output"),
-				JSON:      viper.GetBool("json"),
+				OutputDir: viper.GetString(flagOutput),
+				JSON:      viper.GetBool(flagJSON),
 			}
+
 			if err := settings.Validate(); err != nil {
 				return cmdutil.UsageError(err)
 			}
+
 			return runExportCommand(f, settings)
 		},
 	}
 
 	cmd.Flags().String(
-		"output", "",
+		flagOutput, "",
 		"new directory for the exported bundle (required)")
 
 	return cmd
@@ -43,6 +45,7 @@ func runExportCommand(f *cmdutil.Factory, settings *agentenv.ExportSettings) err
 	if err != nil {
 		return cli.ReportExport(f.Output(), settings, nil, err)
 	}
+
 	result, err := service.Export(f.Context(), settings.OutputDir)
 	return cli.ReportExport(f.Output(), settings, result, err)
 }

@@ -60,7 +60,7 @@ command = "obsolete"
 				},
 			}
 			logger := slog.New(slog.DiscardHandler)
-			p := New(logger, settings, nil, "")
+			p := New(logger, nil, settings, "")
 			plan := fspatch.NewPlan(logger, root, filepath.Join(root, ".build/backups"))
 
 			if err := p.Prepare(plan, nil); err != nil {
@@ -89,6 +89,7 @@ command = "obsolete"
 				t.Fatalf("managed server section was not replaced: %+v", got.MCPServers)
 			}
 			entry := got.MCPServers["current"]
+
 			if len(entry.EnvVars) != 1 || entry.EnvVars[0] != "API_KEY" ||
 				bytes.Contains(content, []byte("local-secret-must-not-be-written")) {
 				t.Fatalf("environment reference was not preserved: %s", content)
@@ -119,7 +120,7 @@ func TestPreparationFailurePreservesConfiguration(t *testing.T) {
 		t.Fatal(err)
 	}
 	logger := slog.New(slog.DiscardHandler)
-	p := New(logger, Settings{OutputDir: root}, nil, "")
+	p := New(logger, nil, Settings{OutputDir: root}, "")
 	plan := fspatch.NewPlan(logger, root, filepath.Join(root, ".build/backups"))
 
 	err := p.Prepare(plan, nil)

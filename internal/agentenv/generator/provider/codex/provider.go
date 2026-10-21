@@ -51,8 +51,8 @@ type Provider struct {
 
 func New(
 	_ *slog.Logger,
-	settings Settings,
 	_ provider.TemplateEngineAccessor,
+	settings Settings,
 	_ string,
 ) *Provider {
 	return &Provider{settings: settings}
@@ -73,6 +73,7 @@ func (p *Provider) prepareConfigFiles(plan *fspatch.Plan) error {
 		if !server.Enabled {
 			continue
 		}
+
 		entry, err := codexMCPServer(server)
 		if err != nil {
 			return fmt.Errorf("MCP server %s: %w", name, err)
@@ -88,6 +89,7 @@ func (p *Provider) prepareConfigFiles(plan *fspatch.Plan) error {
 	if err != nil {
 		return fmt.Errorf("failed to encode codex MCP settings: %w", err)
 	}
+
 	serverSettings := make(map[string]any)
 	if err := toml.Unmarshal(serverContent, &serverSettings); err != nil {
 		return fmt.Errorf("failed to normalize codex MCP settings: %w", err)
@@ -98,6 +100,7 @@ func (p *Provider) prepareConfigFiles(plan *fspatch.Plan) error {
 	if err != nil {
 		return err
 	}
+
 	settings := make(map[string]any)
 	if exists {
 		if err := toml.Unmarshal(previous, &settings); err != nil {
@@ -123,6 +126,7 @@ func (p *Provider) prepareConfigFiles(plan *fspatch.Plan) error {
 	if err := plan.Write(path, content, fspatch.Settings, false); err != nil {
 		return fmt.Errorf("failed to prepare %s: %w", path, err)
 	}
+
 	return nil
 }
 
@@ -135,12 +139,10 @@ func codexMCPServer(server provider.MCPServer) (MCPServer, error) {
 				"codex command and cwd must be literal paths; use a wrapper command for environment expansion",
 			)
 		}
-		for _, arg := range server.Args {
-			if codexEnvExpression.MatchString(arg) {
-				return entry, fmt.Errorf(
-					"codex args must be literal values; use a wrapper command for environment expansion",
-				)
-			}
+		if slices.ContainsFunc(server.Args, codexEnvExpression.MatchString) {
+			return entry, fmt.Errorf(
+				"codex args must be literal values; use a wrapper command for environment expansion",
+			)
 		}
 		entry.Command = server.Command
 		entry.Args = server.Args

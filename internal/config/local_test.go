@@ -41,7 +41,7 @@ func writeConfigFixture(t *testing.T, shared, local string) string {
 	if err := os.WriteFile(path, []byte(shared), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if local != "" {
+	if len(local) > 0 {
 		if err := os.WriteFile(filepath.Join(dir, LocalConfigFile), []byte(local), 0600); err != nil {
 			t.Fatal(err)
 		}
@@ -60,19 +60,31 @@ func TestProjectConfigContainerOverrides(t *testing.T) {
 		name, local string
 		want        *provider.MCPContainer
 	}{
-		{"inherit", "", &provider.MCPContainer{
-			Image:   "example/tools",
-			Version: "v1",
-			Command: "gopls",
-			Args:    []string{"mcp"},
-		}},
-		{"override", "mcp: {server: {container: {version: v2}}}", &provider.MCPContainer{
-			Image:   "example/tools",
-			Version: "v2",
-			Command: "gopls",
-			Args:    []string{"mcp"},
-		}},
-		{"clear", "mcp: {server: {container: null}}", nil},
+		{
+			"inherit",
+			"",
+			&provider.MCPContainer{
+				Image:   "example/tools",
+				Version: "v1",
+				Command: "gopls",
+				Args:    []string{"mcp"},
+			},
+		},
+		{
+			"override",
+			"mcp: {server: {container: {version: v2}}}",
+			&provider.MCPContainer{
+				Image:   "example/tools",
+				Version: "v2",
+				Command: "gopls",
+				Args:    []string{"mcp"},
+			},
+		},
+		{
+			"clear",
+			"mcp: {server: {container: null}}",
+			nil,
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg, err := LoadProjectConfig(writeConfigFixture(t, shared, tt.local), nil)
@@ -80,6 +92,7 @@ func TestProjectConfigContainerOverrides(t *testing.T) {
 				t.Fatal(err)
 			}
 			server := cfg.MCP["server"]
+
 			if !reflect.DeepEqual(server.Container, tt.want) || server.Command != "task" {
 				t.Fatalf("merged MCP server = %+v, want container %+v and local task command", server, tt.want)
 			}
@@ -93,10 +106,26 @@ func TestProjectConfigGoEnv(t *testing.T) {
 		name, local string
 		want        []string
 	}{
-		{"shared", "", []string{"GOFLAGS"}},
-		{"override", "context: {go-env: [CC, GOPRIVATE]}", []string{"CC", "GOPRIVATE"}},
-		{"clear", "context: {go-env: []}", nil},
-		{"null", "context: {go-env: null}", nil},
+		{
+			"shared",
+			"",
+			[]string{"GOFLAGS"},
+		},
+		{
+			"override",
+			"context: {go-env: [CC, GOPRIVATE]}",
+			[]string{"CC", "GOPRIVATE"},
+		},
+		{
+			"clear",
+			"context: {go-env: []}",
+			nil,
+		},
+		{
+			"null",
+			"context: {go-env: null}",
+			nil,
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg, err := LoadProjectConfig(writeConfigFixture(t, shared, tt.local), nil)
@@ -136,7 +165,10 @@ mcp:
 	if cfg.Project.Name != "shared" || len(cfg.Project.Tags) != 0 || len(cfg.EnvVars) != 0 ||
 		cfg.Project.Repository != "github.com/example/local" ||
 		cfg.Project.DocumentationEntrypoint != "team/index.md" ||
-		!reflect.DeepEqual(cfg.Project.Metadata, map[string]string{"keep": "value", "change": "local"}) {
+		!reflect.DeepEqual(cfg.Project.Metadata, map[string]string{
+			"keep":   "value",
+			"change": "local",
+		}) {
 		t.Fatalf("incorrect project merge: %+v", cfg)
 	}
 	if cfg.Context.Template != "agents.tpl.md" || cfg.Context.ChunksDir != "custom/" {
@@ -148,12 +180,19 @@ mcp:
 		t.Fatalf("incorrect provider merge: %+v", cfg.Providers)
 	}
 	server := cfg.MCP["server"]
+
 	if server.Enabled || server.Name != "server" || server.Command != "task" ||
 		!slices.Equal(server.Args, []string{"mcp"}) ||
-		!reflect.DeepEqual(server.Env, map[string]string{"KEEP": "shared", "CHANGE": "local"}) {
+		!reflect.DeepEqual(server.Env, map[string]string{
+			"KEEP":   "shared",
+			"CHANGE": "local",
+		}) {
 		t.Fatalf("incorrect MCP merge: %+v", server)
 	}
-	for name, want := range map[string]string{"go42x.yaml": sharedConfig, LocalConfigFile: local} {
+	for name, want := range map[string]string{
+		"go42x.yaml":    sharedConfig,
+		LocalConfigFile: local,
+	} {
 		got, err := os.ReadFile(filepath.Join(filepath.Dir(path), name))
 		if err != nil || !bytes.Equal(got, []byte(want)) {
 			t.Fatalf("source changed: %s: %v", name, err)
@@ -167,12 +206,36 @@ func TestProjectConfigExactProviderSelection(t *testing.T) {
 		name            string
 		selection, want []string
 	}{
-		{"configuration fallback", nil, []string{"claude", "codex"}},
-		{"override local and project", []string{"codex"}, []string{"codex"}},
-		{"supported but unconfigured", []string{"antigravity"}, []string{"antigravity"}},
-		{"agentic workflow fragment", []string{"gh-aw"}, []string{"gh-aw"}},
-		{"multiple", []string{"codex", "copilot"}, []string{"codex", "copilot"}},
-		{"explicit none", []string{}, []string{}},
+		{
+			"configuration fallback",
+			nil,
+			[]string{"claude", "codex"},
+		},
+		{
+			"override local and project",
+			[]string{"codex"},
+			[]string{"codex"},
+		},
+		{
+			"supported but unconfigured",
+			[]string{"antigravity"},
+			[]string{"antigravity"},
+		},
+		{
+			"agentic workflow fragment",
+			[]string{"gh-aw"},
+			[]string{"gh-aw"},
+		},
+		{
+			"multiple",
+			[]string{"codex", "copilot"},
+			[]string{"codex", "copilot"},
+		},
+		{
+			"explicit none",
+			[]string{},
+			[]string{},
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg, err := LoadProjectConfig(path, tt.selection)
@@ -211,12 +274,36 @@ func TestProjectConfigMissingAndInvalidFiles(t *testing.T) {
 		t.Fatalf("unreadable local config was ignored: %v", err)
 	}
 	for _, tt := range []struct{ name, local, want string }{
-		{"bad YAML", "providers: [", "failed to parse YAML"},
-		{"unknown field", "providers: {codex: {enable: true}}", "field enable"},
-		{"wrong value type", "providers: {codex: {enabled: definitely}}", "cannot unmarshal"},
-		{"duplicate keys", "env: []\nenv: []", "already defined"},
-		{"extra document", "providers: {}\n---\n", "exactly one YAML document"},
-		{"clear required field", "context: {template: null}", "context.template is required"},
+		{
+			"bad YAML",
+			"providers: [",
+			"failed to parse YAML",
+		},
+		{
+			"unknown field",
+			"providers: {codex: {enable: true}}",
+			"field enable",
+		},
+		{
+			"wrong value type",
+			"providers: {codex: {enabled: definitely}}",
+			"cannot unmarshal",
+		},
+		{
+			"duplicate keys",
+			"env: []\nenv: []",
+			"already defined",
+		},
+		{
+			"extra document",
+			"providers: {}\n---\n",
+			"exactly one YAML document",
+		},
+		{
+			"clear required field",
+			"context: {template: null}",
+			"context.template is required",
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			path := writeConfigFixture(t, sharedConfig, tt.local)

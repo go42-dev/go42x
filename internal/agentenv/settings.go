@@ -22,6 +22,7 @@ func (o *Settings) Validate() error {
 	if len(o.BaseDir) > 0 && len(strings.TrimSpace(o.BaseDir)) == 0 {
 		return fmt.Errorf("base directory must not be blank")
 	}
+
 	return provider.ValidateProviders(o.Providers, config.ProviderNames())
 }
 
@@ -38,5 +39,6 @@ func (s *ExportSettings) Validate() error {
 	if len(strings.TrimSpace(s.OutputDir)) == 0 {
 		return fmt.Errorf("output directory is required")
 	}
+
 	return nil
 }

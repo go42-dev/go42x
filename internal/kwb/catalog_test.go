@@ -30,19 +30,50 @@ providers: {codex: {enabled: false}}
 	for _, tt := range []struct {
 		name, config, local, entrypoint string
 	}{
-		{"no configuration", "", "", "docs/README.md"},
-		{"shared", shared, "", "handbook/shared.md"},
-		{"repository root", strings.ReplaceAll(shared, "handbook/shared.md", "README.md"), "", "README.md"},
-		{"local override", shared, "project: {documentation-entrypoint: team/local.markdown}", "team/local.markdown"},
-		{"local clear", shared, "project: {documentation-entrypoint: null}", "docs/README.md"},
-		{"normalized", shared, "project: {documentation-entrypoint: ./team/../handbook/shared.md}", "handbook/shared.md"},
+		{
+			"no configuration",
+			"",
+			"",
+			"docs/README.md",
+		},
+		{
+			"shared",
+			shared,
+			"",
+			"handbook/shared.md",
+		},
+		{
+			"repository root",
+			strings.ReplaceAll(shared, "handbook/shared.md", "README.md"),
+			"",
+			"README.md",
+		},
+		{
+			"local override",
+			shared,
+			"project: {documentation-entrypoint: team/local.markdown}",
+			"team/local.markdown",
+		},
+		{
+			"local clear",
+			shared,
+			"project: {documentation-entrypoint: null}",
+			"docs/README.md",
+		},
+		{
+			"normalized",
+			shared,
+			"project: {documentation-entrypoint: ./team/../handbook/shared.md}",
+			"handbook/shared.md",
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			root := t.TempDir()
-			if tt.config != "" {
+
+			if len(tt.config) > 0 {
 				writeFixture(t, root, ".go42x/go42x.yaml", tt.config)
 			}
-			if tt.local != "" {
+			if len(tt.local) > 0 {
 				writeFixture(t, root, ".go42x/go42x.local.yaml", tt.local)
 			}
 			writeFixture(t, root, tt.entrypoint, "# Project documentation\n")
@@ -79,14 +110,26 @@ func TestCatalogRejectsInvalidProjectConfiguration(t *testing.T) {
 	for _, tt := range []struct {
 		name, shared, local string
 	}{
-		{"malformed shared", "project: [", ""},
-		{"invalid shared", "version: '1.0'\n", ""},
-		{"malformed local", "version: '1.0'\n", "project: ["},
+		{
+			"malformed shared",
+			"project: [",
+			"",
+		},
+		{
+			"invalid shared",
+			"version: '1.0'\n",
+			"",
+		},
+		{
+			"malformed local",
+			"version: '1.0'\n",
+			"project: [",
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			root := t.TempDir()
 			writeFixture(t, root, ".go42x/go42x.yaml", tt.shared)
-			if tt.local != "" {
+			if len(tt.local) > 0 {
 				writeFixture(t, root, ".go42x/go42x.local.yaml", tt.local)
 			}
 			catalog, err := newDocumentCatalog().Load(t.Context(), root)
@@ -127,7 +170,10 @@ func TestCatalogExcludesUpstreamMarkdown(t *testing.T) {
 	if _, err := service.BuildIndex(t.Context(), root); err != nil {
 		t.Fatal(err)
 	}
-	found, err := service.Search(t.Context(), SearchOptions{Query: "upstreamneedle", PathPrefix: "upstream/"})
+	found, err := service.Search(t.Context(), SearchOptions{
+		Query:      "upstreamneedle",
+		PathPrefix: "upstream/",
+	})
 	if err != nil || len(found.Results) != 1 || found.Results[0].Path != "upstream/copy.md" {
 		t.Fatalf("upstream is no longer searchable: %+v %v", found, err)
 	}
@@ -437,7 +483,7 @@ func TestMetadataDiscoveryRespectsIgnoreRules(t *testing.T) {
 	}
 	ids := []string{}
 	for _, doc := range catalog.Documents {
-		if doc.ID != "" {
+		if len(doc.ID) > 0 {
 			ids = append(ids, doc.ID)
 		}
 	}
@@ -481,7 +527,7 @@ func TestCollectionAndImpactFollowMetadata(t *testing.T) {
 		t.Fatalf("links: %+v", result.Document.Links)
 	}
 	generic, err := s.GetDocument(t.Context(), "generic", 0, 0)
-	if err != nil || generic.Document.Collection != "" || len(generic.Diagnostics) != 0 {
+	if err != nil || len(generic.Document.Collection) > 0 || len(generic.Diagnostics) != 0 {
 		t.Fatalf("directory inferred metadata: %+v %v", generic, err)
 	}
 	impact, err := s.Impact(t.Context(), []string{"src/auth.go"})

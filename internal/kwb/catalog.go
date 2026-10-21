@@ -26,15 +26,17 @@ const (
 	MaxRelationshipDepth = 2
 )
 
+type catalogToken struct{}
+
 type documentCatalog struct {
-	access chan struct{}
+	access chan catalogToken
 	root   string
 	cache  map[string]*Document
 }
 
 func newDocumentCatalog() *documentCatalog {
 	return &documentCatalog{
-		access: make(chan struct{}, 1),
+		access: make(chan catalogToken, 1),
 		cache:  map[string]*Document{},
 	}
 }
@@ -47,6 +49,13 @@ type Catalog struct {
 	entrypoint  string
 }
 
+type impactNode struct {
+	path    string
+	depth   int
+	trail   []string
+	changed string
+}
+
 func (c *Catalog) ByID(id string) (*Document, error) {
 	matches := c.byID[id]
 	if len(matches) == 0 {
@@ -55,6 +64,7 @@ func (c *Catalog) ByID(id string) (*Document, error) {
 	if len(matches) > 1 {
 		return nil, fmt.Errorf("document ID %q is ambiguous (%d files)", id, len(matches))
 	}
+
 	return matches[0], nil
 }
 
@@ -70,16 +80,19 @@ func (c *Catalog) ByPath(path string) *Document {
 func (s *documentCatalog) Load(ctx context.Context, rootPath string) (*Catalog, error) {
 	// Waiting for another reader's cache refresh consumes this request's budget.
 	select {
-	case s.access <- struct{}{}:
-		defer func() { <-s.access }()
+	case s.access <- catalogToken{}:
+		defer func() {
+			<-s.access
+		}()
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+
 	project := config.Project{}
-	cfg, err := config.LoadProjectConfig(filepath.Join(rootPath, ".go42x", "go42x.yaml"), nil)
+	cfg, err := config.LoadProjectConfig(filepath.Join(rootPath, config.Directory, config.ProjectConfigFile), nil)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("load documentation configuration: %w", err)
 	}
@@ -118,10 +131,12 @@ func (s *documentCatalog) Load(ctx context.Context, rootPath string) (*Catalog, 
 			)
 			return nil
 		}
+
 		files++
 		if files > maxCatalogFiles {
 			return fmt.Errorf("documentation discovery exceeds %d Markdown files", maxCatalogFiles)
 		}
+
 		file, err := root.Open(path)
 		if err != nil {
 			return err
@@ -132,10 +147,12 @@ func (s *documentCatalog) Load(ctx context.Context, rootPath string) (*Catalog, 
 		if readErr != nil {
 			return readErr
 		}
+
 		total += len(data)
 		if total > maxCatalogBytes {
 			return fmt.Errorf("documentation catalog exceeds %d bytes", maxCatalogBytes)
 		}
+
 		doc := s.cache[path]
 		if doc == nil || doc.Hash != Hash(data) {
 			doc, err = Parse(path, data)
@@ -152,9 +169,10 @@ func (s *documentCatalog) Load(ctx context.Context, rootPath string) (*Catalog, 
 		if !doc.hasFrontMatter && path != entrypoint {
 			return nil
 		}
+
 		catalog.Documents = append(catalog.Documents, doc)
 		catalog.byPath[path] = doc
-		if doc.ID != "" {
+		if len(doc.ID) > 0 {
 			catalog.byID[doc.ID] = append(catalog.byID[doc.ID], doc)
 		}
 		if doc.hasFrontMatter {
@@ -162,11 +180,13 @@ func (s *documentCatalog) Load(ctx context.Context, rootPath string) (*Catalog, 
 		} else {
 			catalog.Diagnostics = append(catalog.Diagnostics, doc.Diagnostics...)
 		}
+
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
+
 	s.cache = nextCache
 	if catalog.ByPath(entrypoint) == nil {
 		catalog.Diagnostics = append(
@@ -183,7 +203,7 @@ func (s *documentCatalog) Load(ctx context.Context, rootPath string) (*Catalog, 
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		if doc.ID != "" && len(catalog.byID[doc.ID]) > 1 {
+		if len(doc.ID) > 0 && len(catalog.byID[doc.ID]) > 1 {
 			catalog.Diagnostics = append(
 				catalog.Diagnostics,
 				Diagnostic{
@@ -193,7 +213,7 @@ func (s *documentCatalog) Load(ctx context.Context, rootPath string) (*Catalog, 
 				},
 			)
 		}
-		if doc.Collection == "handbook" && doc.SidebarPosition > 0 {
+		if doc.Collection == collectionHandbook && doc.SidebarPosition > 0 {
 			if previous, ok := positions[doc.SidebarPosition]; ok {
 				catalog.Diagnostics = append(
 					catalog.Diagnostics,
@@ -208,7 +228,7 @@ func (s *documentCatalog) Load(ctx context.Context, rootPath string) (*Catalog, 
 		}
 		for _, related := range doc.Related {
 			target, err := catalog.ByID(related)
-			if err != nil || target.Collection == "templates" {
+			if err != nil || target.Collection == collectionTemplates {
 				catalog.Diagnostics = append(
 					catalog.Diagnostics,
 					Diagnostic{
@@ -219,7 +239,7 @@ func (s *documentCatalog) Load(ctx context.Context, rootPath string) (*Catalog, 
 				)
 			}
 		}
-		if doc.SupersededBy != "" {
+		if len(doc.SupersededBy) > 0 {
 			_, diagnostics := catalog.Replacements(doc)
 			catalog.Diagnostics = append(catalog.Diagnostics, diagnostics...)
 		}
@@ -227,6 +247,7 @@ func (s *documentCatalog) Load(ctx context.Context, rootPath string) (*Catalog, 
 			if err := ctx.Err(); err != nil {
 				return nil, err
 			}
+
 			if _, err := root.Stat(link.Path); err != nil {
 				catalog.Diagnostics = append(
 					catalog.Diagnostics,
@@ -246,7 +267,7 @@ func (c *Catalog) Replacements(doc *Document) ([]Metadata, []Diagnostic) {
 	result := []Metadata{}
 	diagnostics := []Diagnostic{}
 	seen := map[string]bool{doc.ID: true}
-	for doc.SupersededBy != "" {
+	for len(doc.SupersededBy) > 0 {
 		id := doc.SupersededBy
 		if seen[id] || len(result) >= 32 {
 			diagnostics = append(
@@ -261,8 +282,8 @@ func (c *Catalog) Replacements(doc *Document) ([]Metadata, []Diagnostic) {
 		}
 		seen[id] = true
 		replacement, err := c.ByID(id)
-		if err != nil || replacement.Collection != "decisions" ||
-			!slices.Contains([]string{"accepted", "superseded"}, replacement.Status) {
+		if err != nil || replacement.Collection != collectionDecisions ||
+			!slices.Contains([]string{statusAccepted, statusSuperseded}, replacement.Status) {
 			diagnostics = append(
 				diagnostics,
 				Diagnostic{
@@ -300,6 +321,7 @@ func walkMarkdown(ctx context.Context, root *os.Root, directory string, visit fu
 		if err != nil {
 			return err
 		}
+
 		inherited := patterns[path.Dir(name)]
 		if name != "." {
 			if entry.IsDir() && (entry.Name() == ".git" || !PathsOverlap(name, directory)) {
@@ -309,6 +331,7 @@ func walkMarkdown(ctx context.Context, root *os.Root, directory string, visit fu
 				if entry.IsDir() {
 					return fs.SkipDir
 				}
+
 				return nil
 			}
 		}
@@ -317,14 +340,15 @@ func walkMarkdown(ctx context.Context, root *os.Root, directory string, visit fu
 			if err != nil && !os.IsNotExist(err) {
 				return err
 			}
+
 			local := slices.Clone(inherited)
 			var domain []string
 			if name != "." {
 				domain = strings.Split(name, "/")
 			}
-			for _, line := range strings.Split(string(data), "\n") {
+			for line := range strings.SplitSeq(string(data), "\n") {
 				line = strings.TrimSuffix(line, "\r")
-				if line == "" || strings.HasPrefix(line, "#") {
+				if len(line) == 0 || strings.HasPrefix(line, "#") {
 					continue
 				}
 				// Preserve descendant-only matching when pruning directories.
@@ -345,9 +369,11 @@ func walkMarkdown(ctx context.Context, root *os.Root, directory string, visit fu
 		if directory != "." && !strings.HasPrefix(name, directory+"/") {
 			return nil
 		}
+
 		if ext := strings.ToLower(path.Ext(name)); ext == ".md" || ext == ".markdown" {
 			return visit(name, entry)
 		}
+
 		return nil
 	})
 }
@@ -379,19 +405,22 @@ func NormalizePaths(paths []string) ([]string, error) {
 	if len(paths) > MaxImpactPaths {
 		return nil, fmt.Errorf("at most %d paths are supported", MaxImpactPaths)
 	}
+
 	result := []string{}
 	total := 0
 	for _, p := range paths {
 		total += len(p)
-		if p == "" || strings.ContainsAny(p, "\\\x00") || strings.HasPrefix(p, "/") || strings.Contains(p, ":") ||
+		if len(p) == 0 || strings.ContainsAny(p, "\\\x00") || strings.HasPrefix(p, "/") || strings.Contains(p, ":") ||
 			len(p) > 4096 ||
 			total > 16*1024 {
 			return nil, fmt.Errorf("paths must be project-relative and total at most 16 KiB")
 		}
+
 		p = path.Clean(p)
 		if p == ".." || strings.HasPrefix(p, "../") {
 			return nil, fmt.Errorf("paths must remain inside the project root")
 		}
+
 		result = append(result, p)
 	}
 	slices.Sort(result)
@@ -412,6 +441,7 @@ func (c *Catalog) impact(ctx context.Context, paths []string) (*ImpactResult, er
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+
 	result := &ImpactResult{
 		Documents:     []ImpactDocument{},
 		UnmappedPaths: []string{},
@@ -460,8 +490,9 @@ func (c *Catalog) impact(ctx context.Context, paths []string) (*ImpactResult, er
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
+
 		ids := slices.Clone(doc.Related)
-		if doc.SupersededBy != "" {
+		if len(doc.SupersededBy) > 0 {
 			ids = append(ids, doc.SupersededBy)
 		}
 		for _, id := range ids {
@@ -469,6 +500,7 @@ func (c *Catalog) impact(ctx context.Context, paths []string) (*ImpactResult, er
 			if err != nil {
 				continue
 			}
+
 			edges[doc.Path] = append(edges[doc.Path], target.Path)
 			edges[target.Path] = append(edges[target.Path], doc.Path)
 		}
@@ -477,17 +509,11 @@ func (c *Catalog) impact(ctx context.Context, paths []string) (*ImpactResult, er
 		slices.Sort(edges[key])
 		edges[key] = slices.Compact(edges[key])
 	}
-	type node struct {
-		path    string
-		depth   int
-		trail   []string
-		changed string
-	}
-	queue := []node{}
+	queue := []impactNode{}
 	seen := map[string]bool{}
 	for _, doc := range c.Documents {
 		if hit := hits[doc.Path]; hit != nil {
-			queue = append(queue, node{
+			queue = append(queue, impactNode{
 				doc.Path,
 				0,
 				[]string{doc.ID},
@@ -500,15 +526,18 @@ func (c *Catalog) impact(ctx context.Context, paths []string) (*ImpactResult, er
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
+
 		current := queue[0]
 		queue = queue[1:]
 		if current.depth >= MaxRelationshipDepth {
 			continue
 		}
+
 		for _, next := range edges[current.path] {
 			if seen[next] {
 				continue
 			}
+
 			seen[next] = true
 			doc := c.byPath[next]
 			if doc == nil {
@@ -521,7 +550,7 @@ func (c *Catalog) impact(ctx context.Context, paths []string) (*ImpactResult, er
 				ChangedPath:  current.changed,
 				Relationship: trail,
 			})
-			queue = append(queue, node{
+			queue = append(queue, impactNode{
 				next,
 				current.depth + 1,
 				trail,
@@ -548,6 +577,7 @@ func (c *Catalog) impact(ctx context.Context, paths []string) (*ImpactResult, er
 		if difference := rank(a.Reason) - rank(b.Reason); difference != 0 {
 			return difference
 		}
+
 		return strings.Compare(a.Path, b.Path)
 	})
 	for _, p := range paths {
@@ -570,6 +600,7 @@ func impactHit(hits map[string]*ImpactDocument, doc *Document, reason string) *I
 	if hit := hits[doc.Path]; hit != nil {
 		return hit
 	}
+
 	hit := &ImpactDocument{
 		Metadata:      doc.Metadata,
 		Path:          doc.Path,
@@ -590,6 +621,7 @@ func boundImpact(result *ImpactResult) error {
 		if len(data) <= MaxResponseBytes {
 			return nil
 		}
+
 		result.Truncated = true
 		if len(result.Diagnostics) > 0 {
 			result.Diagnostics = result.Diagnostics[:len(result.Diagnostics)-1]

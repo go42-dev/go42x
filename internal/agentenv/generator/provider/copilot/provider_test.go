@@ -10,13 +10,14 @@ import (
 func TestEmptyTools(t *testing.T) {
 	p := New(
 		slog.New(slog.DiscardHandler),
+		nil,
 		Settings{MCPServers: map[string]provider.MCPServer{"empty": {
 			Enabled: true,
 			Command: "example",
 		}}},
-		nil,
 		"",
 	)
+
 	if p.extractMCPServers()["empty"].Tools == nil {
 		t.Error("Name requires a tools array, even when empty")
 	}

@@ -56,8 +56,8 @@ type Provider struct {
 
 func New(
 	_ *slog.Logger,
-	settings Settings,
 	_ provider.TemplateEngineAccessor,
+	settings Settings,
 	_ string,
 ) *Provider {
 	return &Provider{settings: settings}
@@ -67,6 +67,7 @@ func (p *Provider) Prepare(plan *fspatch.Plan, _ map[string]any) error {
 	if err := p.prepareConfigFiles(plan); err != nil {
 		return fmt.Errorf("failed to prepare config files: %w", err)
 	}
+
 	return nil
 }
 
@@ -88,6 +89,7 @@ func (p *Provider) prepareConfigFiles(plan *fspatch.Plan) error {
 		if !server.Enabled {
 			continue
 		}
+
 		var entry MCPServer
 		if server.Transport() == provider.MCPServerTypeStdio {
 			entry.Command = server.Command
@@ -100,8 +102,10 @@ func (p *Provider) prepareConfigFiles(plan *fspatch.Plan) error {
 			if err != nil {
 				return fmt.Errorf("MCP server %s: %w", name, err)
 			}
+
 			entry.Headers = headers
 		}
+
 		servers[name] = entry
 	}
 
@@ -120,7 +124,7 @@ func resolveAntigravityHeaders(headers map[string]string) (map[string]string, er
 	resolved := make(map[string]string, len(headers))
 	for _, key := range slices.Sorted(maps.Keys(headers)) {
 		var expansionErr error
-		resolved[key] = os.Expand(headers[key], func(name string) string {
+		lookupEnv := func(name string) string {
 			if expansionErr != nil {
 				return ""
 			}
@@ -128,16 +132,23 @@ func resolveAntigravityHeaders(headers map[string]string) (map[string]string, er
 				expansionErr = fmt.Errorf("unsupported environment reference syntax; use $NAME or ${NAME}")
 				return ""
 			}
+
 			value, exists := os.LookupEnv(name)
-			if !exists || value == "" {
+			if !exists || len(value) == 0 {
 				expansionErr = fmt.Errorf("environment variable %q is unset or empty", name)
+				return ""
 			}
+
 			return value
-		})
+		}
+
+		value := os.Expand(headers[key], lookupEnv)
 		if expansionErr != nil {
 			return nil, fmt.Errorf("header %s: %w", key, expansionErr)
 		}
+		resolved[key] = value
 	}
+
 	return resolved, nil
 }
 

@@ -39,19 +39,63 @@ func TestRejectUnsafeArchivesBeforeExtraction(t *testing.T) {
 		name    string
 		headers []tar.Header
 	}{
-		{"traversal", []tar.Header{{Name: "../escape", Typeflag: tar.TypeReg}}},
-		{"absolute", []tar.Header{{Name: "/escape", Typeflag: tar.TypeReg}}},
-		{"symlink", []tar.Header{{Name: "link", Typeflag: tar.TypeSymlink, Linkname: "file"}}},
-		{"hardlink", []tar.Header{{Name: "link", Typeflag: tar.TypeLink, Linkname: "file"}}},
-		{"fifo", []tar.Header{{Name: "fifo", Typeflag: tar.TypeFifo}}},
-		{"case collision", []tar.Header{{Name: "file", Typeflag: tar.TypeReg}, {Name: "FILE", Typeflag: tar.TypeReg}}},
+		{
+			"traversal",
+			[]tar.Header{{
+				Name:     "../escape",
+				Typeflag: tar.TypeReg,
+			}},
+		},
+		{
+			"absolute",
+			[]tar.Header{{
+				Name:     "/escape",
+				Typeflag: tar.TypeReg,
+			}},
+		},
+		{
+			"symlink",
+			[]tar.Header{{
+				Name:     "link",
+				Typeflag: tar.TypeSymlink,
+				Linkname: "file",
+			}},
+		},
+		{
+			"hardlink",
+			[]tar.Header{{
+				Name:     "link",
+				Typeflag: tar.TypeLink,
+				Linkname: "file",
+			}},
+		},
+		{
+			"fifo",
+			[]tar.Header{{
+				Name:     "fifo",
+				Typeflag: tar.TypeFifo,
+			}},
+		},
+		{
+			"case collision",
+			[]tar.Header{{
+				Name:     "file",
+				Typeflag: tar.TypeReg,
+			}, {
+				Name:     "FILE",
+				Typeflag: tar.TypeReg,
+			}},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			data := tarFixture(t, tc.headers...)
 			server := httptest.NewServer(
-				http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(data) }),
+				http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					_, _ = w.Write(data)
+				}),
 			)
 			defer server.Close()
+
 			workspace := t.TempDir()
 			if _, _, err := source.FetchURL(
 				t.Context(), source.NewHTTPClient(time.Second), server.URL+"/source.tar", "", "", workspace, "",
@@ -102,9 +146,12 @@ func TestCompressedFilesRetainURLBasename(t *testing.T) {
 				}
 			}
 			server := httptest.NewServer(
-				http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(b.Bytes()) }),
+				http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					_, _ = w.Write(b.Bytes())
+				}),
 			)
 			defer server.Close()
+
 			root, hash, err := source.FetchURL(
 				t.Context(), source.NewHTTPClient(time.Second), server.URL+"/file.txt."+format, "", "", t.TempDir(), "",
 			)

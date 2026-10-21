@@ -20,5 +20,6 @@ func (c *HTMLToMarkdownConverter) Convert(data []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return append(bytes.TrimSpace(markdown), '\n'), nil
 }

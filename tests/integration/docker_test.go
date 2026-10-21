@@ -190,6 +190,7 @@ func TestDockerRegistryRetention(t *testing.T) {
 				t.Fatal(err)
 			}
 			want := ""
+
 			if tt.deleted {
 				want = "orgs/go42-dev/packages/container/go42x/versions/1\n"
 			}
@@ -272,6 +273,7 @@ func TestDockerScanArchitectures(t *testing.T) {
 	}
 
 	scan := workflow.Jobs["trivy"]
+
 	if !slices.Equal(scan.Strategy.Matrix.Arch, []string{"amd64", "arm64"}) {
 		t.Fatalf("scan architectures = %v, want amd64 and arm64", scan.Strategy.Matrix.Arch)
 	}
@@ -392,6 +394,7 @@ esac
 			}
 
 			summary, err := os.ReadFile(filepath.Join(dir, "summary"))
+
 			if tt.valid {
 				if err != nil {
 					t.Fatal(err)
@@ -448,7 +451,10 @@ func dockerRegistryFixture(t *testing.T, versions []map[string]any, current map[
 		t.Fatal("Docker cleanup tests require jq")
 	}
 	dir := t.TempDir()
-	for name, value := range map[string]any{"versions.json": versions, "current.json": current} {
+	for name, value := range map[string]any{
+		"versions.json": versions,
+		"current.json":  current,
+	} {
 		data, err := json.Marshal(value)
 		if err != nil {
 			t.Fatal(err)

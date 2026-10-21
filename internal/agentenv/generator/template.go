@@ -56,10 +56,12 @@ func (e *templateEngine) Render(cfg config.Context, ctxData map[string]any) (str
 	if err != nil {
 		return "", fmt.Errorf("failed to load template: %w", err)
 	}
+
 	chunks, err := e.loadTemplates(cfg.ChunksDir)
 	if err != nil {
 		return "", fmt.Errorf("failed to load chunks: %w", err)
 	}
+
 	return e.Process(e.InjectChunks(content, mergeStrings(chunks)), ctxData)
 }
 
@@ -69,11 +71,12 @@ func (e *templateEngine) loadTemplate(path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to read template %s: %w", path, err)
 	}
+
 	return string(data), nil
 }
 
 func (e *templateEngine) loadTemplates(dir string) ([]string, error) {
-	if dir == "" {
+	if len(dir) == 0 {
 		return nil, nil
 	}
 	// os.ReadDir returns entries sorted by filename.
@@ -81,15 +84,18 @@ func (e *templateEngine) loadTemplates(dir string) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read template directory %s: %w", dir, err)
 	}
+
 	contents := make([]string, 0, len(entries))
 	for _, entry := range entries {
 		if !entry.Type().IsRegular() || !strings.HasSuffix(entry.Name(), ".tpl.md") {
 			continue
 		}
+
 		content, err := e.loadTemplate(filepath.Join(dir, entry.Name()))
 		if err != nil {
 			return nil, err
 		}
+
 		contents = append(contents, content)
 	}
 	return contents, nil

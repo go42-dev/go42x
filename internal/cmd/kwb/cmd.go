@@ -10,6 +10,27 @@ import (
 	"github.com/go42-dev/go42x/internal/kwb"
 )
 
+const (
+	flagBatchSize     = "batch-size"
+	flagEndLine       = "end-line"
+	flagExcludeDir    = "exclude-dir"
+	flagExcludeFile   = "exclude-file"
+	flagIncludeExt    = "include-ext"
+	flagIndex         = "index"
+	flagIndexType     = "index-type"
+	flagJSON          = "json"
+	flagKind          = "kind"
+	flagLanguage      = "language"
+	flagLimit         = "limit"
+	flagMaxFileSize   = "max-file-size"
+	flagOffset        = "offset"
+	flagPathPrefix    = "path-prefix"
+	flagRebuild       = "rebuild"
+	flagRoot          = "root"
+	flagSearchTimeout = "search-timeout"
+	flagStartLine     = "start-line"
+)
+
 func NewKnowledgeBaseCommand(f *cmdutil.Factory) *cobra.Command {
 	defaults := kwb.NewSettings()
 
@@ -23,13 +44,13 @@ func NewKnowledgeBaseCommand(f *cmdutil.Factory) *cobra.Command {
 	}
 
 	cmd.PersistentFlags().String(
-		"index", defaults.IndexPath,
+		flagIndex, defaults.IndexPath,
 		"path to the index")
 	cmd.PersistentFlags().String(
-		"root", defaults.RootPath,
+		flagRoot, defaults.RootPath,
 		"project root")
 	cmd.PersistentFlags().Duration(
-		"search-timeout", defaults.SearchTimeout,
+		flagSearchTimeout, defaults.SearchTimeout,
 		"maximum duration of knowledge-base reads and freshness checks")
 
 	cmd.AddCommand(
@@ -46,12 +67,15 @@ func NewKnowledgeBaseCommand(f *cmdutil.Factory) *cobra.Command {
 // queryKnowledgeBaseSettings assembles common read options at the CLI boundary.
 func queryKnowledgeBaseSettings(cmd *cobra.Command) *kwb.Settings {
 	settings := kwb.NewSettings()
-	settings.RootPath = viper.GetString("root")
-	settings.IndexPath = viper.GetString("index")
-	settings.RequireRootMatch = cmdutil.ExplicitFlag(cmd, "root")
-	if settings.RequireRootMatch && !cmdutil.ExplicitFlag(cmd, "index") {
-		settings.IndexPath = filepath.Join(settings.RootPath, kwb.NewSettings().IndexPath)
+	defaultIndexPath := settings.IndexPath
+	settings.RootPath = viper.GetString(flagRoot)
+	settings.IndexPath = viper.GetString(flagIndex)
+	settings.RequireRootMatch = cmdutil.ExplicitFlag(cmd, flagRoot)
+	settings.SearchTimeout = viper.GetDuration(flagSearchTimeout)
+
+	if settings.RequireRootMatch && !cmdutil.ExplicitFlag(cmd, flagIndex) {
+		settings.IndexPath = filepath.Join(settings.RootPath, defaultIndexPath)
 	}
-	settings.SearchTimeout = viper.GetDuration("search-timeout")
+
 	return settings
 }

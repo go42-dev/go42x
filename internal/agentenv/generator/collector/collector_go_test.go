@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-// Reuse the native test binary as Go so subprocess checks work without a shell.
+// TestMain reuses the native test binary as Go so subprocess checks work without a shell.
 func TestMain(m *testing.M) {
 	switch os.Getenv("GO42X_TEST_GO_COLLECTOR") {
 	case "env":
@@ -34,8 +34,13 @@ func TestMain(m *testing.M) {
 			os.Exit(4)
 		}
 		if err := json.NewEncoder(os.Stdout).Encode(map[string]string{
-			"GOVERSION": "go1.27.9", "GOTOOLCHAIN": "auto", "GOMOD": filepath.Join(wd, "go.mod"),
-			"CGO_ENABLED": "0", "GOFLAGS": "-tags=example", "GOBIN": "", "UNREQUESTED": "private-value",
+			"GOVERSION":   "go1.27.9",
+			"GOTOOLCHAIN": "auto",
+			"GOMOD":       filepath.Join(wd, "go.mod"),
+			"CGO_ENABLED": "0",
+			"GOFLAGS":     "-tags=example",
+			"GOBIN":       "",
+			"UNREQUESTED": "private-value",
 		}); err != nil {
 			os.Exit(5)
 		}
@@ -61,6 +66,7 @@ func fakeGo(t *testing.T, mode string) {
 	}
 	dir := t.TempDir()
 	name := "go"
+
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}
@@ -103,10 +109,14 @@ func TestGoCollectorEffectiveEnvironment(t *testing.T) {
 	want := map[string]any{
 		"go_version": "1.27",
 		"env": map[string]string{
-			"GOVERSION": "go1.27.9", "GOTOOLCHAIN": "auto", "GOMOD": filepath.Join(resolved, "go.mod"),
-			"CGO_ENABLED": "0", "GOFLAGS": "-tags=example",
+			"GOVERSION":   "go1.27.9",
+			"GOTOOLCHAIN": "auto",
+			"GOMOD":       filepath.Join(resolved, "go.mod"),
+			"CGO_ENABLED": "0",
+			"GOFLAGS":     "-tags=example",
 		},
 	}
+
 	if !reflect.DeepEqual(data, want) {
 		t.Fatalf("Collect() = %+v, want %+v", data, want)
 	}
@@ -115,15 +125,36 @@ func TestGoCollectorEffectiveEnvironment(t *testing.T) {
 func TestGoCollectorModuleWithoutGo(t *testing.T) {
 	t.Setenv("PATH", "")
 	for _, tt := range []struct{ name, content, want string }{
-		{"missing", "", ""},
-		{"requirement", "module example\ngo 1.27\n", "1.27"},
-		{"patch and comment", "module example\n\tgo\t1.27.2 // requirement\ntoolchain go1.28.1\n", "1.27.2"},
-		{"toolchain only", "module example\ntoolchain go1.28.1\n", ""},
-		{"invalid", "module example\ngo invalid\n", ""},
+		{
+			"missing",
+			"",
+			"",
+		},
+		{
+			"requirement",
+			"module example\ngo 1.27\n",
+			"1.27",
+		},
+		{
+			"patch and comment",
+			"module example\n\tgo\t1.27.2 // requirement\ntoolchain go1.28.1\n",
+			"1.27.2",
+		},
+		{
+			"toolchain only",
+			"module example\ntoolchain go1.28.1\n",
+			"",
+		},
+		{
+			"invalid",
+			"module example\ngo invalid\n",
+			"",
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			root := t.TempDir()
-			if tt.content != "" {
+
+			if len(tt.content) > 0 {
 				if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte(tt.content), 0600); err != nil {
 					t.Fatal(err)
 				}
@@ -133,7 +164,8 @@ func TestGoCollectorModuleWithoutGo(t *testing.T) {
 				t.Fatalf("Collect() error = %v, want missing Go", err)
 			}
 			want := make(map[string]any)
-			if tt.want != "" {
+
+			if len(tt.want) > 0 {
 				want["go_version"] = tt.want
 			}
 			if !reflect.DeepEqual(data, want) {
@@ -157,6 +189,7 @@ func TestGoCollectorCommandFailures(t *testing.T) {
 			}
 			c := NewGoCollector(root, nil)
 			ctx := t.Context()
+
 			if mode == "wait" {
 				c.timeout = 200 * time.Millisecond
 			}
@@ -191,7 +224,7 @@ func TestGoCollectorKeepsEnvWhenModuleUnreadable(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "read project go.mod") || data["go_version"] != nil {
 		t.Fatalf("Collect() = %+v, %v; want module read error", data, err)
 	}
-	if env, ok := data["env"].(map[string]string); !ok || env["GOVERSION"] != "go1.27.9" || env["GOFLAGS"] != "" {
+	if env, ok := data["env"].(map[string]string); !ok || env["GOVERSION"] != "go1.27.9" || len(env["GOFLAGS"]) > 0 {
 		t.Fatalf("Collect() did not preserve requested environment: %+v", data)
 	}
 }
@@ -205,8 +238,13 @@ func TestGoCollectorWithInstalledGo(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, value := range map[string]string{
-		"GOTOOLCHAIN": "local", "GOENV": "off", "GOWORK": "off", "GOFLAGS": "-tags=example",
-		"GOPATH": filepath.Join(root, "gopath"), "GOCACHE": filepath.Join(root, "cache"), "CGO_ENABLED": "0",
+		"GOTOOLCHAIN": "local",
+		"GOENV":       "off",
+		"GOWORK":      "off",
+		"GOFLAGS":     "-tags=example",
+		"GOPATH":      filepath.Join(root, "gopath"),
+		"GOCACHE":     filepath.Join(root, "cache"),
+		"CGO_ENABLED": "0",
 	} {
 		t.Setenv(name, value)
 	}
@@ -216,7 +254,8 @@ func TestGoCollectorWithInstalledGo(t *testing.T) {
 		t.Fatal(err)
 	}
 	env := data["env"].(map[string]string)
-	if data["go_version"] != "1.18" || !strings.HasPrefix(env["GOVERSION"], "go") || env["GOROOT"] == "" {
+
+	if data["go_version"] != "1.18" || !strings.HasPrefix(env["GOVERSION"], "go") || len(env["GOROOT"]) == 0 {
 		t.Fatalf("missing module/toolchain context: %+v", data)
 	}
 	for _, key := range []string{"GOTOOLCHAIN", "GOWORK", "GOFLAGS", "GOPATH", "GOCACHE", "CGO_ENABLED"} {

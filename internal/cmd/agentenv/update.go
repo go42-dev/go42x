@@ -24,19 +24,23 @@ Run 'go42x agentenv generate' afterward to refresh generated agent files.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			settings := &agentenv.Settings{
-				BaseDir: viper.GetString("base"),
-				JSON:    viper.GetBool("json"),
+				BaseDir: viper.GetString(flagBase),
+				JSON:    viper.GetBool(flagJSON),
 			}
-			if cmdutil.ExplicitFlag(cmd, "base") && len(settings.BaseDir) == 0 {
+			if cmdutil.ExplicitFlag(cmd, flagBase) && len(settings.BaseDir) == 0 {
 				return cmdutil.UsageError(fmt.Errorf("base directory is required when --base is set"))
 			}
+
 			if err := settings.Validate(); err != nil {
 				return cmdutil.UsageError(err)
 			}
+
 			return runUpdateCommand(f, settings)
 		},
 	}
-	cmd.Flags().String("base", "", "previously exported original bundle to use as the merge base")
+	cmd.Flags().String(
+		flagBase, "",
+		"previously exported original bundle to use as the merge base")
 	return cmd
 }
 
@@ -45,6 +49,7 @@ func runUpdateCommand(f *cmdutil.Factory, settings *agentenv.Settings) error {
 	if err != nil {
 		return cli.ReportUpdate(f.Output(), settings, nil, fmt.Errorf("initialize agentenv service: %w", err))
 	}
+
 	result, err := service.Update(f.Context())
 	return cli.ReportUpdate(f.Output(), settings, result, err)
 }

@@ -25,8 +25,9 @@ func GetVersion() string {
 	if xBuildVersion != "dev" {
 		return xBuildVersion
 	}
+
 	if info, ok := debug.ReadBuildInfo(); ok {
-		if info.Main.Version != "(devel)" && info.Main.Version != "" {
+		if info.Main.Version != "(devel)" && len(info.Main.Version) > 0 {
 			return info.Main.Version
 		}
 	}
@@ -37,6 +38,7 @@ func GetCommit() string {
 	if xBuildCommit != "dev" {
 		return xBuildCommit
 	}
+
 	if info, ok := debug.ReadBuildInfo(); ok {
 		for _, setting := range info.Settings {
 			if setting.Key == "vcs.revision" {
@@ -51,7 +53,7 @@ func GetCommit() string {
 // Missing revision metadata falls back to a version tag, then the master branch.
 func SourceURL(path string) string {
 	ref := GetCommit()
-	if ref == "" || ref == "dev" {
+	if len(ref) == 0 || ref == "dev" {
 		ref = GetVersion()
 		if !strings.HasPrefix(ref, "v") {
 			ref = "master"

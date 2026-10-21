@@ -15,24 +15,72 @@ import (
 func TestTemplateProcessing(t *testing.T) {
 	e := newTemplateEngine(t.TempDir())
 	for _, tt := range []struct{ name, template, want string }{
-		{"context", "Hello {{ .name }}", "Hello World"},
-		{"functions", `{{ lower .name }} {{ upper "go" }} {{ trim " x " }} {{ join .items "," }}`, "world GO x a,b"},
-		{"MCP unknown", `{{ mcpTool "unknown" "example" "tool" }}`, "tool"},
-		{"MCP Codex", `{{ mcpTool "codex" "go42x" "kwb_search" }}`, "mcp__go42x__kwb_search"},
-		{"MCP gh-aw", `{{ mcpTool "gh-aw" "go42x" "kwb_search" }}`, "kwb_search"},
-		{"MCP Claude", `{{ mcpTool "claude" "go42x" "kwb_search" }}`, "mcp__go42x__kwb_search"},
-		{"MCP Antigravity", `{{ mcpTool "antigravity" "go42x" "kwb_search" }}`, "go42x/kwb_search"},
-		{"MCP Crush", `{{ mcpTool "crush" "go42x" "kwb_search" }}`, "mcp_go42x_kwb_search"},
-		{"MCP Copilot", `{{ mcpTool "copilot" "go42x" "kwb_search" }}`, "go42x/kwb_search"},
+		{
+			"context",
+			"Hello {{ .name }}",
+			"Hello World",
+		},
+		{
+			"functions",
+			`{{ lower .name }} {{ upper "go" }} {{ trim " x " }} {{ join .items "," }}`,
+			"world GO x a,b",
+		},
+		{
+			"MCP unknown",
+			`{{ mcpTool "unknown" "example" "tool" }}`,
+			"tool",
+		},
+		{
+			"MCP Codex",
+			`{{ mcpTool "codex" "go42x" "kwb_search" }}`,
+			"mcp__go42x__kwb_search",
+		},
+		{
+			"MCP gh-aw",
+			`{{ mcpTool "gh-aw" "go42x" "kwb_search" }}`,
+			"kwb_search",
+		},
+		{
+			"MCP Claude",
+			`{{ mcpTool "claude" "go42x" "kwb_search" }}`,
+			"mcp__go42x__kwb_search",
+		},
+		{
+			"MCP Antigravity",
+			`{{ mcpTool "antigravity" "go42x" "kwb_search" }}`,
+			"go42x/kwb_search",
+		},
+		{
+			"MCP Crush",
+			`{{ mcpTool "crush" "go42x" "kwb_search" }}`,
+			"mcp_go42x_kwb_search",
+		},
+		{
+			"MCP Copilot",
+			`{{ mcpTool "copilot" "go42x" "kwb_search" }}`,
+			"go42x/kwb_search",
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := e.Process(tt.template, map[string]any{"name": "World", "items": []string{"a", "b"}})
+			got, err := e.Process(tt.template, map[string]any{
+				"name":  "World",
+				"items": []string{"a", "b"},
+			})
 			if err != nil || got != tt.want {
 				t.Fatalf("Process() = %q, %v; want %q", got, err, tt.want)
 			}
 		})
 	}
-	for _, tt := range []struct{ template, want string }{{"{{", "failed to parse template"}, {"{{ missingFunction }}", "failed to parse template"}, {"{{ upper .items }}", "failed to execute template"}} {
+	for _, tt := range []struct{ template, want string }{{
+		"{{",
+		"failed to parse template",
+	}, {
+		"{{ missingFunction }}",
+		"failed to parse template",
+	}, {
+		"{{ upper .items }}",
+		"failed to execute template",
+	}} {
 		if _, err := e.Process(
 			tt.template,
 			map[string]any{"items": []string{"a"}},
@@ -47,13 +95,14 @@ func TestTemplateInjection(t *testing.T) {
 	e := newTemplateEngine("")
 	content := "before {{ .chunks }} after"
 	content = e.InjectChunks(content, "chunk")
+
 	if content != "before chunk after" {
 		t.Fatalf("injected = %q", content)
 	}
 	if got := e.InjectChunks("no placeholder", "chunk"); got != "no placeholder" {
 		t.Fatalf("unexpected injection: %q", got)
 	}
-	if got := e.InjectChunks("{{ .chunks }}", ""); got != "" {
+	if got := e.InjectChunks("{{ .chunks }}", ""); len(got) > 0 {
 		t.Fatalf("empty injection: %q", got)
 	}
 }
@@ -65,6 +114,7 @@ func TestContextMapsAreIndependent(t *testing.T) {
 	a["name"] = "changed"
 	a["provider"] = "claude"
 	b := ctx.ToMap()
+
 	if b["name"] != "first" || b["provider"] != nil {
 		t.Fatalf("provider mutated shared context: %v", b)
 	}
@@ -91,7 +141,7 @@ func TestTemplateFiles(t *testing.T) {
 	if got := mergeStrings(contents); got != "alpha\n\nbeta" {
 		t.Fatalf("merge = %q", got)
 	}
-	if got := mergeStrings(nil); got != "" {
+	if got := mergeStrings(nil); len(got) > 0 {
 		t.Fatalf("empty merge = %q", got)
 	}
 	if _, err := e.loadTemplates("missing"); !errors.Is(err, os.ErrNotExist) {

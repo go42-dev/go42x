@@ -17,6 +17,7 @@ import (
 
 	"github.com/go42-dev/go42x/assets"
 	"github.com/go42-dev/go42x/internal/fspatch"
+	"github.com/go42-dev/go42x/internal/vendoring"
 )
 
 func TestGeneratedDirectoriesArePrivate(t *testing.T) {
@@ -61,7 +62,7 @@ func TestAgentEnvExport(t *testing.T) {
 	if err := json.Unmarshal([]byte(result.stdout), &report); err != nil || report.Directory != output {
 		t.Fatalf("export report = %s, %v", result.stdout, err)
 	}
-	if result.stderr != "" {
+	if len(result.stderr) > 0 {
 		t.Fatalf("unexpected export stderr: %s", result.stderr)
 	}
 	if !strings.Contains(p.read(t, output+"/go42x.yaml"), "providers:") ||
@@ -77,7 +78,7 @@ func TestAgentEnvExport(t *testing.T) {
 	var failure struct {
 		Error string `json:"error"`
 	}
-	if err := json.Unmarshal([]byte(result.stdout), &failure); err != nil || failure.Error == "" {
+	if err := json.Unmarshal([]byte(result.stdout), &failure); err != nil || len(failure.Error) == 0 {
 		t.Fatalf("export failure = %s, %v", result.stdout, err)
 	}
 	p.assertUnchanged(t, before)
@@ -124,7 +125,7 @@ func TestAgentEnvUpdateMergesOriginalBundle(t *testing.T) {
 	p.write(t, ".go42x/chunks/090-retired.tpl.md", "Removed upstream\n")
 	p.write(t, ".go42x/chunks/300-codestyle.tpl.md", "Customized style\n")
 	p.write(t, ".go42x/upstream/go/package-names.md", "Customized reference\n")
-	p.write(t, ".go42x/.vendor.lock.yaml", "Customized lock\n")
+	p.write(t, ".go42x/"+vendoring.LockFile, "Customized lock\n")
 	for _, path := range []string{
 		".go42x/chunks/100-operation.tpl.md",
 		".go42x/chunks/200-search.tpl.md",
@@ -142,7 +143,7 @@ func TestAgentEnvUpdateMergesOriginalBundle(t *testing.T) {
 		[]byte(result.stdout),
 		&report,
 	); err != nil || report.Applied == 0 ||
-		report.BackupDir == "" {
+		len(report.BackupDir) == 0 {
 		t.Fatalf("update result = %s, %v", result.stdout, err)
 	}
 	wantConfig := strings.Replace(incoming, "name: go42", "name: project-custom", 1)
@@ -169,7 +170,7 @@ func TestAgentEnvUpdateMergesOriginalBundle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{"chunks/200-search.tpl.md", "upstream/go/package-names.md", ".vendor.lock.yaml"} {
+	for _, path := range []string{"chunks/200-search.tpl.md", "upstream/go/package-names.md", vendoring.LockFile} {
 		want, err := fs.ReadFile(bundle, path)
 		if err != nil {
 			t.Fatal(err)
@@ -195,6 +196,7 @@ func TestAgentEnvUpdateMergeConflictsPreserveSources(t *testing.T) {
 			t.Parallel()
 			p := newMergeProject(t)
 			path := "agents.tpl.md"
+
 			if conflict == "modify-delete" {
 				path = "chunks/090-retired.tpl.md"
 			}
@@ -233,7 +235,7 @@ func TestAgentEnvUpdateMergeConflictsPreserveSources(t *testing.T) {
 			if err := json.Unmarshal(
 				[]byte(result.stdout),
 				&failure,
-			); err != nil || failure.Error == "" ||
+			); err != nil || len(failure.Error) == 0 ||
 				failure.Result.Applied != 0 {
 				t.Fatalf("merge failure = %s, %v", result.stdout, err)
 			}
@@ -324,26 +326,28 @@ func TestAgentEnvUpstream(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := p.read(t, ".go42x/"+path); got == "" || got != string(want) {
+		if got := p.read(t, ".go42x/"+path); len(got) == 0 || got != string(want) {
 			t.Errorf("init did not install the bundled reference %s", path)
 		}
 	}
-	lock, err := fs.ReadFile(templates, ".vendor.lock.yaml")
+	lock, err := fs.ReadFile(templates, vendoring.LockFile)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := p.read(t, ".go42x/.vendor.lock.yaml"); got != string(lock) {
+	if got := p.read(t, ".go42x/"+vendoring.LockFile); got != string(lock) {
 		t.Fatal("init did not install the bundled upstream lock")
 	}
 	p.run(t, 0, "vendor", "touch", ".build/schema-reference")
-	schemaHeader := strings.SplitN(p.read(t, ".build/schema-reference/.vendor.yaml"), "\n", 2)[0]
-	manifest := p.read(t, ".go42x/.vendor.yaml")
+	schemaHeader, _, _ := strings.Cut(p.read(t, ".build/schema-reference/"+vendoring.ManifestFile), "\n")
+	manifest := p.read(t, ".go42x/"+vendoring.ManifestFile)
+
 	if !strings.Contains(manifest, schemaHeader+"\n") {
 		t.Fatalf("bundled manifest schema differs from this binary's schema reference: %s", manifest)
 	}
-	p.run(t, 0, "vendor", "check", "--manifest", ".go42x/.vendor.yaml")
+	p.run(t, 0, "vendor", "check", "--manifest", ".go42x/"+vendoring.ManifestFile)
 	p.run(t, 0, "agentenv", "generate")
 	instructions := p.read(t, "AGENTS.md")
+
 	if !strings.Contains(instructions, "# Go Code Style\n") {
 		t.Fatal("generation omitted the Go style chunk")
 	}
@@ -359,10 +363,10 @@ func TestAgentEnvUpstream(t *testing.T) {
 	const custom = ".go42x/upstream/custom.md"
 	p.write(t, reference, "Customized reference\n")
 	p.write(t, custom, "Additional project reference\n")
-	p.write(t, ".go42x/.vendor.yaml", "Customized upstream manifest\n")
-	p.write(t, ".go42x/.vendor.lock.yaml", "Customized upstream lock\n")
+	p.write(t, ".go42x/"+vendoring.ManifestFile, "Customized upstream manifest\n")
+	p.write(t, ".go42x/"+vendoring.LockFile, "Customized upstream lock\n")
 	const projectManifest = "version: \"1.0\"\ndependencies: {}\n"
-	p.write(t, ".vendor.yaml", projectManifest)
+	p.write(t, vendoring.ManifestFile, projectManifest)
 	beforeInit := p.snapshot(t)
 	p.run(t, 0, "agentenv", "init")
 	p.assertUnchanged(t, beforeInit)
@@ -377,13 +381,13 @@ func TestAgentEnvUpstream(t *testing.T) {
 	if got := p.read(t, custom); got != "Additional project reference\n" {
 		t.Error("update changed an additional project reference")
 	}
-	if got := p.read(t, ".vendor.yaml"); got != projectManifest {
+	if got := p.read(t, vendoring.ManifestFile); got != projectManifest {
 		t.Fatal("update changed the project's own vendoring manifest")
 	}
-	if got := p.read(t, ".go42x/.vendor.yaml"); got != manifest {
+	if got := p.read(t, ".go42x/"+vendoring.ManifestFile); got != manifest {
 		t.Fatal("update did not restore the bundled upstream manifest")
 	}
-	if got := p.read(t, ".go42x/.vendor.lock.yaml"); got != string(lock) {
+	if got := p.read(t, ".go42x/"+vendoring.LockFile); got != string(lock) {
 		t.Fatal("update did not restore the bundled upstream lock")
 	}
 	backups, err := filepath.Glob(
@@ -400,8 +404,8 @@ func TestAgentEnvUpstream(t *testing.T) {
 		t.Error("update regenerated instructions")
 	}
 	for path, want := range map[string]string{
-		".go42x/.vendor.yaml":      "Customized upstream manifest\n",
-		".go42x/.vendor.lock.yaml": "Customized upstream lock\n",
+		".go42x/" + vendoring.ManifestFile: "Customized upstream manifest\n",
+		".go42x/" + vendoring.LockFile:     "Customized upstream lock\n",
 	} {
 		metadataBackups, err := filepath.Glob(
 			filepath.Join(p.root, ".go42x/backups/updates/*/files", filepath.FromSlash(path)),
@@ -417,7 +421,7 @@ func TestAgentEnvUpstream(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(p.root, ".go42x/.vendor.schema.yaml")); !os.IsNotExist(err) {
 		t.Fatalf("installed a local vendor schema: %v", err)
 	}
-	p.run(t, 0, "vendor", "check", "--manifest", ".go42x/.vendor.yaml")
+	p.run(t, 0, "vendor", "check", "--manifest", ".go42x/"+vendoring.ManifestFile)
 }
 
 func TestAgentEnvLifecycle(t *testing.T) {
@@ -469,12 +473,15 @@ func TestAgentEnvLifecycle(t *testing.T) {
 	for path := range settings {
 		var values map[string]any
 		content := []byte(p.read(t, path))
+
 		if strings.HasSuffix(path, ".toml") {
 			if err := toml.Unmarshal(content, &values); err != nil {
 				t.Fatal(err)
 			}
 			for key, want := range map[string]string{
-				"model": "custom-model", "sandbox_mode": "read-only", "approval_policy": "on-request",
+				"model":           "custom-model",
+				"sandbox_mode":    "read-only",
+				"approval_policy": "on-request",
 			} {
 				assertSetting(t, values, key, want)
 			}
@@ -564,8 +571,9 @@ func TestAgentEnvLifecycle(t *testing.T) {
 func assertSetting(t *testing.T, settings map[string]any, path string, want any) {
 	t.Helper()
 	var value any = settings
-	for _, key := range strings.Split(path, ".") {
+	for key := range strings.SplitSeq(path, ".") {
 		object, ok := value.(map[string]any)
+
 		if !ok {
 			t.Fatalf("%s does not contain an object at %s", path, key)
 		}
@@ -635,36 +643,74 @@ func TestGenerationFailurePreservesProject(t *testing.T) {
 	for _, tc := range []struct {
 		name, path, content string
 	}{
-		{"invalid YAML", ".go42x/go42x.yaml", "version: ["},
 		{
-			"unsupported configuration version", ".go42x/go42x.yaml",
+			"invalid YAML",
+			".go42x/go42x.yaml",
+			"version: [",
+		},
+		{
+			"unsupported configuration version",
+			".go42x/go42x.yaml",
 			strings.Replace(validConfig, `version: "1.0"`, `version: "99.0"`, 1),
 		},
-		{"multiple YAML documents", ".go42x/go42x.yaml", validConfig + "\n---\nproject: {name: ignored}\n"},
-		{"malformed trailing YAML", ".go42x/go42x.yaml", validConfig + "\n---\nversion: [\n"},
-		{"invalid JSON", ".claude/settings.local.json", `{"permissions":`},
-		{"invalid Antigravity manifest", ".agents/plugins/project-tools/plugin.json", `{"name":`},
-		{"invalid Antigravity MCP config", ".agents/plugins/project-tools/mcp_config.json", `{"mcpServers":`},
 		{
-			"missing Antigravity header variable", ".go42x/go42x.local.yaml",
+			"multiple YAML documents",
+			".go42x/go42x.yaml",
+			validConfig + "\n---\nproject: {name: ignored}\n",
+		},
+		{
+			"malformed trailing YAML",
+			".go42x/go42x.yaml",
+			validConfig + "\n---\nversion: [\n",
+		},
+		{
+			"invalid JSON",
+			".claude/settings.local.json",
+			`{"permissions":`,
+		},
+		{
+			"invalid Antigravity manifest",
+			".agents/plugins/project-tools/plugin.json",
+			`{"name":`,
+		},
+		{
+			"invalid Antigravity MCP config",
+			".agents/plugins/project-tools/mcp_config.json",
+			`{"mcpServers":`,
+		},
+		{
+			"missing Antigravity header variable",
+			".go42x/go42x.local.yaml",
 			`mcp: {remote: {enabled: true, name: remote, type: http, url: "https://example.com/mcp", headers: {Authorization: "Bearer private-header-prefix ${AGY_TEST_MISSING_TOKEN}"}}}`,
 		},
 		{
-			"unsupported Antigravity header reference", ".go42x/go42x.local.yaml",
+			"unsupported Antigravity header reference",
+			".go42x/go42x.local.yaml",
 			`mcp: {remote: {enabled: true, name: remote, type: http, url: "https://example.com/mcp", headers: {Authorization: "Bearer ${AGY_TEST_TOKEN:-private-header-prefix}"}}}`,
 		},
-		{"invalid TOML", ".codex/config.toml", "model = ["},
-		{"invalid template", ".go42x/agents.tpl.md", "{{ if }}"},
 		{
-			"invalid generated YAML", ".go42x/agents.tpl.md",
+			"invalid TOML",
+			".codex/config.toml",
+			"model = [",
+		},
+		{
+			"invalid template",
+			".go42x/agents.tpl.md",
+			"{{ if }}",
+		},
+		{
+			"invalid generated YAML",
+			".go42x/agents.tpl.md",
 			`{{ define "context" }}value: [{{ end }}{{ yamlBlock "context" . }}`,
 		},
 		{
-			"duplicate generated YAML keys", ".go42x/agents.tpl.md",
+			"duplicate generated YAML keys",
+			".go42x/agents.tpl.md",
 			"{{ define \"context\" }}value: a\nvalue: b\n{{ end }}{{ yamlBlock \"context\" . }}",
 		},
 		{
-			"multiple generated YAML documents", ".go42x/agents.tpl.md",
+			"multiple generated YAML documents",
+			".go42x/agents.tpl.md",
 			"{{ define \"context\" }}value: a\n---\nvalue: b\n{{ end }}{{ yamlBlock \"context\" . }}",
 		},
 	} {
@@ -762,6 +808,7 @@ func TestAgentEnvUpdate(t *testing.T) {
 		t.Fatal("project configuration was not replaced")
 	}
 	gitignore := p.read(t, ".gitignore")
+
 	if !strings.HasPrefix(gitignore, "before\n# go42x -- START\n") ||
 		!strings.HasSuffix(gitignore, "# go42x -- END\nafter\n") ||
 		strings.Contains(gitignore, "obsolete") || !strings.Contains(gitignore, ".go42x/backups/\n") {
@@ -790,6 +837,7 @@ func TestAgentEnvUpdate(t *testing.T) {
 	}
 	p.run(t, 0, "agentenv", "generate", "--providers=claude")
 	instructions := p.read(t, "AGENTS.md")
+
 	if !strings.Contains(instructions, "local-project") ||
 		!strings.Contains(instructions, "Additional project instructions") {
 		t.Fatalf("explicit generation did not use the updated sources: %s", instructions)
@@ -799,13 +847,36 @@ func TestAgentEnvUpdate(t *testing.T) {
 func TestAgentEnvUpdateFailureBeforeApplication(t *testing.T) {
 	t.Parallel()
 	for _, scenario := range []struct{ name, path, content string }{
-		{"invalid local configuration", ".go42x/go42x.local.yaml", "version: ["},
-		{"unknown local field", ".go42x/go42x.local.yaml", "providers: {claude: {enable: true}}"},
-		{"invalid effective configuration", ".go42x/go42x.local.yaml", "context: {template: null}"},
-		{"incompatible configuration", ".go42x/go42x.local.yaml",
-			"providers: {claude: {enabled: true}}\nmcp: {gopls: {cwd: src}}\n"},
-		{"malformed gitignore block", ".gitignore", "# go42x -- START\nuser rules\n"},
-		{"backup failure", ".go42x/backups/updates", "blocked"},
+		{
+			"invalid local configuration",
+			".go42x/go42x.local.yaml",
+			"version: [",
+		},
+		{
+			"unknown local field",
+			".go42x/go42x.local.yaml",
+			"providers: {claude: {enable: true}}",
+		},
+		{
+			"invalid effective configuration",
+			".go42x/go42x.local.yaml",
+			"context: {template: null}",
+		},
+		{
+			"incompatible configuration",
+			".go42x/go42x.local.yaml",
+			"providers: {claude: {enabled: true}}\nmcp: {gopls: {cwd: src}}\n",
+		},
+		{
+			"malformed gitignore block",
+			".gitignore",
+			"# go42x -- START\nuser rules\n",
+		},
+		{
+			"backup failure",
+			".go42x/backups/updates",
+			"blocked",
+		},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
 			p := newProject(t)

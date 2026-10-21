@@ -21,12 +21,15 @@ func newGenerateCommand(f *cmdutil.Factory) *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			settings := &agentenv.Settings{
-				Clean: viper.GetBool("clean"),
-				JSON:  viper.GetBool("json"),
+				Clean: viper.GetBool(flagClean),
+				JSON:  viper.GetBool(flagJSON),
 			}
-			if cmdutil.ExplicitFlag(cmd, "providers") {
+			if cmdutil.ExplicitFlag(cmd, flagProviders) {
 				var err error
-				settings.Providers, err = provider.ParseProviders(viper.GetString("providers"), config.ProviderNames())
+				settings.Providers, err = provider.ParseProviders(
+					viper.GetString(flagProviders),
+					config.ProviderNames(),
+				)
 				if err != nil {
 					return cmdutil.UsageError(err)
 				}
@@ -34,15 +37,16 @@ func newGenerateCommand(f *cmdutil.Factory) *cobra.Command {
 			if err := settings.Validate(); err != nil {
 				return cmdutil.UsageError(err)
 			}
+
 			return runGenerateCommand(f, settings)
 		},
 	}
 
 	cmd.Flags().Bool(
-		"clean", false,
+		flagClean, false,
 		"rewrite generated instructions even when unchanged")
 	cmd.Flags().String(
-		"providers", "",
+		flagProviders, "",
 		"exact comma-separated provider list (empty selects none); overrides GO42X_PROVIDERS")
 
 	return cmd
@@ -61,6 +65,7 @@ func runGenerateCommand(f *cmdutil.Factory, settings *agentenv.Settings) error {
 			fmt.Errorf("failed to initialize agentenv service: %w", err),
 		)
 	}
+
 	result, err := service.Generate(f.Context())
 	return cli.ReportGenerate(f.Output(), settings, result, err)
 }

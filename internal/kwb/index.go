@@ -17,6 +17,7 @@ import (
 	"github.com/blevesearch/bleve/v2/analysis/analyzer/custom"
 	"github.com/blevesearch/bleve/v2/analysis/token/lowercase"
 	"github.com/blevesearch/bleve/v2/analysis/tokenizer/unicode"
+	"github.com/blevesearch/bleve/v2/index/scorch"
 	"github.com/blevesearch/bleve/v2/index/upsidedown"
 	"github.com/blevesearch/bleve/v2/index/upsidedown/store/boltdb"
 	"github.com/blevesearch/bleve/v2/mapping"
@@ -50,13 +51,17 @@ type snapshot struct {
 	lease      *flock.Flock
 }
 
-func (s *snapshot) close() error { return errors.Join(s.index.Close(), s.lease.Unlock()) }
+func (s *snapshot) close() error {
+	return errors.Join(s.index.Close(), s.lease.Unlock())
+}
 
 type indexManager struct {
-	logger   *slog.Logger
+	logger *slog.Logger
+
 	settings *Settings
-	mu       sync.RWMutex
-	current  *snapshot
+
+	mu      sync.RWMutex
+	current *snapshot
 }
 
 func newIndexManager(settings *Settings, logger *slog.Logger) *indexManager {
@@ -74,12 +79,14 @@ func acquireLock(ctx context.Context, lock *flock.Flock, shared bool) error {
 	} else {
 		ok, err = lock.TryLockContext(ctx, 10*time.Millisecond)
 	}
+
 	if err != nil {
 		return err
 	}
 	if !ok {
 		return ctx.Err()
 	}
+
 	return nil
 }
 
@@ -96,10 +103,12 @@ func (m *indexManager) generation() (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	name := strings.TrimSpace(string(data))
 	if !strings.HasPrefix(name, "gen-") || filepath.Base(name) != name {
 		return "", fmt.Errorf("invalid index generation %q", name)
 	}
+
 	return name, nil
 }
 
@@ -109,13 +118,15 @@ func readManifest(path string) (*manifest, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	var result manifest
 	if err := json.Unmarshal(data, &result); err != nil {
 		return nil, err
 	}
-	if result.Files == nil || result.Root == "" {
+	if result.Files == nil || len(result.Root) == 0 {
 		return nil, fmt.Errorf("invalid index manifest")
 	}
+
 	return &result, nil
 }
 
@@ -126,10 +137,12 @@ func (m *indexManager) withSnapshot(ctx context.Context, fn func(*snapshot) erro
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+
 		generation, err := m.generation()
 		if err != nil {
 			return err
 		}
+
 		m.mu.RLock()
 		if m.current != nil && m.current.generation == generation {
 			err := ctx.Err()
@@ -139,6 +152,7 @@ func (m *indexManager) withSnapshot(ctx context.Context, fn func(*snapshot) erro
 			m.mu.RUnlock()
 			return err
 		}
+
 		m.mu.RUnlock()
 		if err := m.refresh(ctx); err != nil {
 			return err
@@ -149,6 +163,7 @@ func (m *indexManager) withSnapshot(ctx context.Context, fn func(*snapshot) erro
 func (m *indexManager) refresh(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
 	catalog := flock.New(filepath.Join(m.settings.IndexPath, "catalog.lock"), flock.SetFlag(os.O_RDONLY))
 	if err := acquireLock(ctx, catalog, true); err != nil {
 		return err
@@ -161,11 +176,13 @@ func (m *indexManager) refresh(ctx context.Context) error {
 	if m.current != nil && m.current.generation == generation {
 		return nil
 	}
+
 	directory := filepath.Join(m.settings.IndexPath, generation)
 	lease := flock.New(filepath.Join(directory, "LEASE"), flock.SetFlag(os.O_RDONLY))
 	if err := acquireLock(ctx, lease, true); err != nil {
 		return err
 	}
+
 	meta, err := readManifest(directory)
 	if err != nil {
 		_ = lease.Unlock()
@@ -179,14 +196,19 @@ func (m *indexManager) refresh(ctx context.Context) error {
 		_ = lease.Unlock()
 		return fmt.Errorf("index format changed; run 'go42x kwb build --rebuild' first")
 	}
+
 	index, err := bleve.OpenUsing(
 		filepath.Join(directory, "data"),
-		map[string]any{"read_only": true, "bolt_timeout": "1s"},
+		map[string]any{
+			"read_only":    true,
+			"bolt_timeout": "1s",
+		},
 	)
 	if err != nil {
 		_ = lease.Unlock()
 		return fmt.Errorf("opening index: %w", err)
 	}
+
 	old := m.current
 	m.current = &snapshot{
 		generation,
@@ -196,7 +218,7 @@ func (m *indexManager) refresh(ctx context.Context) error {
 	}
 	if old != nil {
 		if err := old.close(); err != nil {
-			m.logger.Warn("closing previous index", "error", err)
+			m.logger.WarnContext(ctx, "closing previous index", slog.Any("error", err))
 		}
 	}
 	return nil
@@ -205,9 +227,11 @@ func (m *indexManager) refresh(ctx context.Context) error {
 func (m *indexManager) CloseIndex() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
 	if m.current == nil {
 		return nil
 	}
+
 	err := m.current.close()
 	m.current = nil
 	return err
@@ -216,10 +240,13 @@ func (m *indexManager) CloseIndex() error {
 func createMapping() (mapping.IndexMapping, error) {
 	result := bleve.NewIndexMapping()
 	if err := result.AddCustomAnalyzer("identifier", map[string]any{
-		"type": custom.Name, "tokenizer": unicode.Name, "token_filters": []string{lowercase.Name},
+		"type":          custom.Name,
+		"tokenizer":     unicode.Name,
+		"token_filters": []string{lowercase.Name},
 	}); err != nil {
 		return nil, err
 	}
+
 	result.IndexDynamic, result.StoreDynamic = false, false
 	doc := bleve.NewDocumentMapping()
 	doc.Dynamic = false
@@ -228,7 +255,13 @@ func createMapping() (mapping.IndexMapping, error) {
 		field.Store, field.IncludeInAll, field.IncludeTermVectors = true, false, false
 		doc.AddFieldMappingsAt(name, field)
 	}
-	for name, analyzer := range map[string]string{"title": "standard", "names": "identifier", "filename": "identifier", "code": "identifier", "prose": "standard"} {
+	for name, analyzer := range map[string]string{
+		"title":    "standard",
+		"names":    "identifier",
+		"filename": "identifier",
+		"code":     "identifier",
+		"prose":    "standard",
+	} {
 		field := bleve.NewTextFieldMapping()
 		field.Analyzer, field.Store, field.IncludeInAll, field.IncludeTermVectors = analyzer, name == "title", false, false
 		doc.AddFieldMappingsAt(name, field)
@@ -255,6 +288,7 @@ func (m *indexManager) ProjectRoot() (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	meta, err := readManifest(filepath.Join(m.settings.IndexPath, generation))
 	if err != nil {
 		return "", err
@@ -262,6 +296,7 @@ func (m *indexManager) ProjectRoot() (string, error) {
 	if m.settings.RequireRootMatch && meta.Root != m.settings.RootPath {
 		return "", fmt.Errorf("%w: index %q, requested %q", ErrRootMismatch, meta.Root, m.settings.RootPath)
 	}
+
 	return meta.Root, nil
 }
 
@@ -279,15 +314,20 @@ type BuildResult struct {
 
 func (m *indexManager) BuildIndex(ctx context.Context, root string) (report BuildResult, retErr error) {
 	started := time.Now()
-	defer func() { report.Duration = time.Since(started) }()
+	defer func() {
+		report.Duration = time.Since(started)
+	}()
+
 	root, err := filepath.Abs(root)
 	if err != nil {
 		return report, err
 	}
+
 	root, err = filepath.EvalSymlinks(root)
 	if err != nil {
 		return report, err
 	}
+
 	info, err := os.Stat(root)
 	if err != nil {
 		return report, err
@@ -298,22 +338,28 @@ func (m *indexManager) BuildIndex(ctx context.Context, root string) (report Buil
 	if root == m.settings.IndexPath {
 		return report, fmt.Errorf("index path must differ from source root")
 	}
+
 	if err := ctx.Err(); err != nil {
 		return report, err
 	}
+
 	if err := os.MkdirAll(m.settings.IndexPath, 0700); err != nil {
 		return report, err
 	}
+
 	writer := flock.New(filepath.Join(m.settings.IndexPath, "build.lock"))
 	if err := acquireLock(ctx, writer, false); err != nil {
 		return report, err
 	}
-	defer func() { retErr = errors.Join(retErr, writer.Unlock()) }()
+	defer func() {
+		retErr = errors.Join(retErr, writer.Unlock())
+	}()
 
 	generation, err := m.generation()
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return report, err
 	}
+
 	var previous *manifest
 	if err == nil {
 		previous, err = readManifest(filepath.Join(m.settings.IndexPath, generation))
@@ -325,6 +371,7 @@ func (m *indexManager) BuildIndex(ctx context.Context, root string) (report Buil
 	if err != nil {
 		return report, fmt.Errorf("refresh source exclusions: %w", err)
 	}
+
 	report.Rebuilt = m.settings.Rebuild || previous == nil || previous.Version != schemaVersion ||
 		previous.Root != root ||
 		previous.IndexType != m.settings.IndexType
@@ -345,14 +392,16 @@ func (m *indexManager) BuildIndex(ctx context.Context, root string) (report Buil
 		if index != nil {
 			retErr = errors.Join(retErr, index.Close())
 		}
-		if directory != "" {
+		if len(directory) > 0 {
 			retErr = errors.Join(retErr, os.RemoveAll(directory))
 		}
 	}()
+
 	prepare := func() (bleve.Index, error) {
 		if index != nil {
 			return index, nil
 		}
+
 		directory, err = os.MkdirTemp(m.settings.IndexPath, "gen-")
 		if err != nil {
 			return nil, err
@@ -361,24 +410,27 @@ func (m *indexManager) BuildIndex(ctx context.Context, root string) (report Buil
 		if err := os.WriteFile(filepath.Join(directory, "LEASE"), nil, 0600); err != nil {
 			return nil, err
 		}
+
 		dataPath := filepath.Join(directory, "data")
 		if previous != nil {
 			if err := cloneIndex(
 				ctx,
 				filepath.Join(m.settings.IndexPath, generation, "data"),
 				dataPath,
-				m.settings.IndexType == "scorch",
+				m.settings.IndexType == scorch.Name,
 			); err != nil {
 				return nil, err
 			}
+
 			index, err = bleve.OpenUsing(dataPath, map[string]any{"bolt_timeout": "1s"})
 		} else {
 			indexMapping, mappingErr := createMapping()
 			if mappingErr != nil {
 				return nil, mappingErr
 			}
+
 			backend := m.settings.IndexType
-			if backend == "upsidedown" {
+			if backend == indexTypeUpsideDown {
 				backend = upsidedown.Name
 			}
 			index, err = bleve.NewUsing(
@@ -389,10 +441,12 @@ func (m *indexManager) BuildIndex(ctx context.Context, root string) (report Buil
 				nil,
 			)
 		}
+
 		if err != nil {
 			index = nil
 			return nil, err
 		}
+
 		batch = index.NewBatch()
 		return index, nil
 	}
@@ -400,12 +454,15 @@ func (m *indexManager) BuildIndex(ctx context.Context, root string) (report Buil
 		if batch.Size() == 0 || (!force && batch.Size() < m.settings.BatchSize) {
 			return nil
 		}
+
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+
 		if err := index.Batch(batch); err != nil {
 			return err
 		}
+
 		batch = index.NewBatch()
 		return nil
 	}
@@ -420,9 +477,11 @@ func (m *indexManager) BuildIndex(ctx context.Context, root string) (report Buil
 			report.Unchanged++
 			return nil
 		}
+
 		if _, err := prepare(); err != nil {
 			return err
 		}
+
 		docs := chunkFile(path, data)
 		for i := len(docs); i < old.Chunks; i++ {
 			batch.Delete(chunkID(path, i))
@@ -434,9 +493,11 @@ func (m *indexManager) BuildIndex(ctx context.Context, root string) (report Buil
 			if err := ctx.Err(); err != nil {
 				return err
 			}
+
 			if err := batch.Index(chunkID(path, i), doc); err != nil {
 				return err
 			}
+
 			if err := flush(false); err != nil {
 				return err
 			}
@@ -461,9 +522,11 @@ func (m *indexManager) BuildIndex(ctx context.Context, root string) (report Buil
 			if _, exists := meta.Files[path]; exists {
 				continue
 			}
+
 			if _, err := prepare(); err != nil {
 				return report, err
 			}
+
 			for i := 0; i < record.Chunks; i++ {
 				batch.Delete(chunkID(path, i))
 				if err := flush(false); err != nil {
@@ -481,50 +544,61 @@ func (m *indexManager) BuildIndex(ctx context.Context, root string) (report Buil
 		previous.Selection.equal(meta.Selection) {
 		return report, ctx.Err()
 	}
+
 	preparedIndex, err := prepare()
 	if err != nil {
 		return report, err
 	}
+
 	if err := flush(true); err != nil {
 		return report, err
 	}
+
 	if err := preparedIndex.Close(); err != nil {
 		index = nil
 		return report, err
 	}
+
 	index = nil
 	meta.BuiltAt = time.Now().UTC()
 	data, err := json.Marshal(meta)
 	if err != nil {
 		return report, err
 	}
+
 	if err := writeSynced(filepath.Join(directory, "manifest.json"), data); err != nil {
 		return report, err
 	}
+
 	if err := ctx.Err(); err != nil {
 		return report, err
 	}
+
 	if err := m.publish(ctx, filepath.Base(directory)); err != nil {
 		return report, err
 	}
+
 	directory = "" // Published generations are owned by the catalog.
 	return report, nil
 }
 
-// Scorch's .zap segments are immutable. Hard-linking them avoids copying the
-// corpus on small updates; mutable metadata is always copied independently.
+// cloneIndex copies mutable metadata and hard-links Scorch's immutable .zap
+// segments to avoid copying the corpus on small updates.
 func cloneIndex(ctx context.Context, source, destination string, scorch bool) error {
 	return filepath.WalkDir(source, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
+
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+
 		relative, err := filepath.Rel(source, path)
 		if err != nil {
 			return err
 		}
+
 		target := filepath.Join(destination, relative)
 		if entry.IsDir() {
 			return os.MkdirAll(target, 0700)
@@ -551,19 +625,23 @@ func copyFile(ctx context.Context, source, target string) (retErr error) {
 	if err != nil {
 		return err
 	}
-	defer func() { retErr = errors.Join(retErr, output.Close()) }()
+	defer func() {
+		retErr = errors.Join(retErr, output.Close())
+	}()
+
 	buffer := make([]byte, 128*1024)
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+
 		n, err := input.Read(buffer)
 		if n > 0 {
 			if _, err := output.Write(buffer[:n]); err != nil {
 				return err
 			}
 		}
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			return output.Sync()
 		}
 		if err != nil {
@@ -578,10 +656,14 @@ func writeSynced(path string, data []byte) (retErr error) {
 	if err != nil {
 		return err
 	}
-	defer func() { retErr = errors.Join(retErr, file.Close()) }()
+	defer func() {
+		retErr = errors.Join(retErr, file.Close())
+	}()
+
 	if _, err := file.Write(data); err != nil {
 		return err
 	}
+
 	return file.Sync()
 }
 
@@ -595,35 +677,42 @@ func (m *indexManager) publish(ctx context.Context, generation string) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = os.Remove(temporary.Name()) }()
+	defer func() {
+		_ = os.Remove(temporary.Name())
+	}()
+
 	_, writeErr := temporary.WriteString(generation + "\n")
 	err = errors.Join(writeErr, temporary.Sync(), temporary.Close())
 	if err != nil {
 		return err
 	}
+
 	if err := os.Rename(temporary.Name(), filepath.Join(m.settings.IndexPath, "CURRENT")); err != nil {
 		return err
 	}
 	// Publication succeeded. Cleanup failures cannot invalidate the new generation.
 	entries, err := os.ReadDir(m.settings.IndexPath)
 	if err != nil {
-		m.logger.Warn("listing obsolete generations", "error", err)
+		m.logger.WarnContext(ctx, "listing obsolete generations", slog.Any("error", err))
 		return nil
 	}
+
 	for _, entry := range entries {
 		if !entry.IsDir() || entry.Name() == generation || !strings.HasPrefix(entry.Name(), "gen-") {
 			continue
 		}
+
 		directory := filepath.Join(m.settings.IndexPath, entry.Name())
 		lease := flock.New(filepath.Join(directory, "LEASE"))
 		locked, err := lease.TryLock()
 		if err != nil || !locked {
 			continue
 		}
+
 		removeErr := os.RemoveAll(directory)
 		unlockErr := lease.Unlock()
 		if err := errors.Join(removeErr, unlockErr); err != nil {
-			m.logger.Warn("removing obsolete generation", "error", err)
+			m.logger.WarnContext(ctx, "removing obsolete generation", slog.Any("error", err))
 		}
 	}
 	return nil

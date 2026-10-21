@@ -16,9 +16,20 @@ func TestMCPStdioSession(t *testing.T) {
 	t.Parallel()
 	for _, tt := range []mcpSessionConfig{
 		{name: "default without configuration"},
-		{name: "project configuration", entrypoint: "handbook/start.md"},
-		{name: "local override", entrypoint: "handbook/shared.md", localEntrypoint: "team/start.markdown"},
-		{name: "indexed project root", entrypoint: "handbook/start.md", indexedRoot: true},
+		{
+			name:       "project configuration",
+			entrypoint: "handbook/start.md",
+		},
+		{
+			name:            "local override",
+			entrypoint:      "handbook/shared.md",
+			localEntrypoint: "team/start.markdown",
+		},
+		{
+			name:        "indexed project root",
+			entrypoint:  "handbook/start.md",
+			indexedRoot: true,
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
@@ -57,12 +68,13 @@ providers: {codex: {enabled: false}}
 `
 	entrypoint := "docs/README.md"
 	wantFiles := 4
-	if config.entrypoint != "" {
+
+	if len(config.entrypoint) > 0 {
 		p.write(t, ".go42x/go42x.yaml", fmt.Sprintf(projectConfig, config.entrypoint))
 		entrypoint = config.entrypoint
 		wantFiles++
 	}
-	if config.localEntrypoint != "" {
+	if len(config.localEntrypoint) > 0 {
 		p.write(t, ".go42x/go42x.local.yaml", "project: {documentation-entrypoint: "+config.localEntrypoint+"}\n")
 		entrypoint = config.localEntrypoint
 	}
@@ -72,14 +84,18 @@ providers: {codex: {enabled: false}}
 	p.run(t, 0, "kwb", "build")
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 	defer cancel()
+
 	args := []string{"mcp", "--log-level=debug"}
+
 	if config.indexedRoot {
 		args = append(args, "--index", filepath.Join(p.root, ".go42x/kwb/index"))
 	} else {
 		args = append(args, "--root", p.root)
 	}
+
 	p.env = append(p.env, "GO42X_CONTEXT_DOC=missing-env-guidance", "GO42X_DOCS_ENTRYPOINT=ignored.md")
 	args = append(args, "--context-doc=overview")
+
 	if expectTimeout {
 		args = append(args, "--search-timeout=1ns")
 	}
@@ -92,11 +108,13 @@ providers: {codex: {enabled: false}}
 		t.Fatal(err)
 	}
 	defer stdin.Close()
+
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer stdout.Close()
+
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
@@ -118,7 +136,10 @@ providers: {codex: {enabled: false}}
 	request := func(id int, method string, params any, result any) {
 		t.Helper()
 		if err := encoder.Encode(map[string]any{
-			"jsonrpc": "2.0", "id": id, "method": method, "params": params,
+			"jsonrpc": "2.0",
+			"id":      id,
+			"method":  method,
+			"params":  params,
 		}); err != nil {
 			t.Fatalf("send %s: %v", method, err)
 		}
@@ -148,13 +169,19 @@ providers: {codex: {enabled: false}}
 	request(1, "initialize", map[string]any{
 		"protocolVersion": "2024-11-05",
 		"capabilities":    map[string]any{},
-		"clientInfo":      map[string]string{"name": "e2e", "version": "1"},
+		"clientInfo": map[string]string{
+			"name":    "e2e",
+			"version": "1",
+		},
 	}, &initialized)
 	if initialized.ProtocolVersion != "2024-11-05" || initialized.ServerInfo.Name != "go42x" ||
 		initialized.ServerInfo.Version != binaryVersion {
 		t.Fatalf("unexpected server initialization: %+v", initialized)
 	}
-	if err := encoder.Encode(map[string]any{"jsonrpc": "2.0", "method": "notifications/initialized"}); err != nil {
+	if err := encoder.Encode(map[string]any{
+		"jsonrpc": "2.0",
+		"method":  "notifications/initialized",
+	}); err != nil {
 		t.Fatal(err)
 	}
 	var listed struct {
@@ -186,23 +213,50 @@ providers: {codex: {enabled: false}}
 			name string
 			args map[string]any
 		}{
-			{"kwb_search", map[string]any{"query": "project"}},
-			{"kwb_get_file", map[string]any{"path": "README.md"}},
-			{"kwb_list_files", map[string]any{}},
-			{"kwb_stats", map[string]any{}},
-			{"docs_get", map[string]any{"id": "overview"}},
-			{"docs_impact", map[string]any{"paths": []string{"README.md"}}},
-			{"project_context", map[string]any{}},
+			{
+				"kwb_search",
+				map[string]any{"query": "project"},
+			},
+			{
+				"kwb_get_file",
+				map[string]any{"path": "README.md"},
+			},
+			{
+				"kwb_list_files",
+				map[string]any{},
+			},
+			{
+				"kwb_stats",
+				map[string]any{},
+			},
+			{
+				"docs_get",
+				map[string]any{"id": "overview"},
+			},
+			{
+				"docs_impact",
+				map[string]any{"paths": []string{"README.md"}},
+			},
+			{
+				"project_context",
+				map[string]any{},
+			},
 		} {
 			called.IsError, called.Content = false, nil
-			request(i+3, "tools/call", map[string]any{"name": tool.name, "arguments": tool.args}, &called)
+			request(i+3, "tools/call", map[string]any{
+				"name":      tool.name,
+				"arguments": tool.args,
+			}, &called)
 			if !called.IsError || len(called.Content) != 1 || called.Content[0].Type != "text" ||
 				!strings.Contains(called.Content[0].Text, "context deadline exceeded") {
 				t.Errorf("%s did not report its read timeout: %+v", tool.name, called)
 			}
 		}
 	} else {
-		request(3, "tools/call", map[string]any{"name": "kwb_stats", "arguments": map[string]any{}}, &called)
+		request(3, "tools/call", map[string]any{
+			"name":      "kwb_stats",
+			"arguments": map[string]any{},
+		}, &called)
 		if called.IsError || len(called.Content) != 1 || called.Content[0].Type != "text" ||
 			!json.Valid([]byte(called.Content[0].Text)) {
 			t.Fatalf("kwb_stats did not return a successful JSON result: %+v", called)
@@ -215,13 +269,16 @@ providers: {codex: {enabled: false}}
 		if err := json.Unmarshal([]byte(called.Content[0].Text), &stats); err != nil {
 			t.Fatal(err)
 		}
-		if stats.DocumentCount != wantFiles || stats.ChunkCount < wantFiles || stats.Generation == "" {
+		if stats.DocumentCount != wantFiles || stats.ChunkCount < wantFiles || len(stats.Generation) == 0 {
 			t.Fatalf("kwb_stats does not describe the indexed project: %+v", stats)
 		}
 		request(
 			4,
 			"tools/call",
-			map[string]any{"name": "project_context", "arguments": map[string]any{}},
+			map[string]any{
+				"name":      "project_context",
+				"arguments": map[string]any{},
+			},
 			&called,
 		)
 		if called.IsError || len(called.Content) != 1 ||
@@ -245,6 +302,7 @@ providers: {codex: {enabled: false}}
 			}
 		}
 	}
+
 	if err := stdin.Close(); err != nil {
 		t.Fatal(err)
 	}

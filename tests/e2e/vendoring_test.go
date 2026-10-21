@@ -45,10 +45,11 @@ func TestVendorTouch(t *testing.T) {
 	// Initialization does not require valid agentenv configuration.
 	p.write(t, ".go42x/go42x.yaml", "invalid: [")
 	r := vendorReport(t, p.run(t, 0, "vendor", "touch", "third_party", "--json"))
+
 	if !r.Valid || r.Operation != "touch" || r.Applied != 1 {
 		t.Fatalf("touch: %+v", r)
 	}
-	manifestPath, schemaPath := "third_party/.vendor.yaml", "third_party/.vendor.schema.yaml"
+	manifestPath, schemaPath := "third_party/"+vendoring.ManifestFile, "third_party/.vendor.schema.yaml"
 	data := p.read(t, manifestPath)
 	m, err := vendoring.ParseManifest([]byte(data))
 	if err != nil || len(m.Dependencies) != 0 ||
@@ -65,6 +66,7 @@ func TestVendorTouch(t *testing.T) {
 	}
 	before := p.snapshot(t)
 	r = vendorReport(t, p.run(t, 0, "vendor", "touch", "third_party", "--json"))
+
 	if r.Applied != 0 || len(r.Changes) != 0 {
 		t.Fatalf("unchanged touch: %+v", r)
 	}
@@ -80,6 +82,7 @@ func TestVendorTouch(t *testing.T) {
 	}
 	original := p.snapshot(t)[manifestPath]
 	r = vendorReport(t, p.run(t, 0, "vendor", "touch", "third_party", "--json"))
+
 	if r.Applied != 0 || p.snapshot(t)[manifestPath] != original || p.read(t, schemaPath) != "stale schema\n" {
 		t.Fatalf("touch changed an existing manifest or editor schema: %+v", r)
 	}
@@ -100,10 +103,26 @@ func TestVendorTouchDirectorySelection(t *testing.T) {
 		args []string
 		dir  string
 	}{
-		{"default", nil, "."},
-		{"nested spaces", []string{"vendor assets/nested"}, "vendor assets/nested"},
-		{"absolute", []string{"absolute"}, "absolute"},
-		{"selected root", []string{"selected-root"}, "selected-root"},
+		{
+			"default",
+			nil,
+			".",
+		},
+		{
+			"nested spaces",
+			[]string{"vendor assets/nested"},
+			"vendor assets/nested",
+		},
+		{
+			"absolute",
+			[]string{"absolute"},
+			"absolute",
+		},
+		{
+			"selected root",
+			[]string{"selected-root"},
+			"selected-root",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p := newProject(t)
@@ -118,7 +137,9 @@ func TestVendorTouchDirectorySelection(t *testing.T) {
 			if _, err := os.Stat(filepath.Join(p.root, tc.dir, ".vendor.schema.yaml")); !os.IsNotExist(err) {
 				t.Fatalf("touch installed a sibling schema: %v", err)
 			}
-			if _, err := vendoring.ParseManifest([]byte(p.read(t, filepath.Join(tc.dir, ".vendor.yaml")))); err != nil {
+			if _, err := vendoring.ParseManifest(
+				[]byte(p.read(t, filepath.Join(tc.dir, vendoring.ManifestFile))),
+			); err != nil {
 				t.Fatal(err)
 			}
 		})
@@ -127,10 +148,11 @@ func TestVendorTouchDirectorySelection(t *testing.T) {
 
 func TestVendorTouchRejectsInvalidDestinations(t *testing.T) {
 	t.Parallel()
-	for _, name := range []string{".vendor.yaml"} {
+	for _, name := range []string{vendoring.ManifestFile} {
 		for _, kind := range []string{"directory", "symlink"} {
 			t.Run(name+"/"+kind, func(t *testing.T) {
 				p, external := newProject(t), newProject(t)
+
 				if kind == "directory" {
 					p.write(t, "third_party/"+name+"/sentinel", "preserve")
 				} else {
@@ -143,8 +165,10 @@ func TestVendorTouchRejectsInvalidDestinations(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
+
 				before, outside := p.snapshot(t), external.snapshot(t)
 				r := vendorReport(t, p.run(t, 1, "vendor", "touch", "third_party", "--json"))
+
 				if r.Valid || r.Applied != 0 {
 					t.Fatalf("invalid touch destination was accepted: %+v", r)
 				}
@@ -166,12 +190,14 @@ func TestVendorValidatesBeforeFetching(t *testing.T) {
 				_, _ = w.Write([]byte("{}"))
 			}))
 			defer server.Close()
+
 			data := "# yaml-language-server: $schema=" + server.URL + "/schema.yaml\n" + vendorManifest(server.URL)
 			data = strings.Replace(data, "      type: http\n", "      type: http\n      ref: main\n", 1)
-			p.write(t, ".vendor.yaml", data)
+			p.write(t, vendoring.ManifestFile, data)
 			p.write(t, ".vendor.schema.yaml", "{}")
 			before := p.snapshot(t)
 			r := vendorReport(t, p.run(t, 1, "vendor", operation, "--json"))
+
 			if r.Valid || len(r.Issues) == 0 || !strings.Contains(r.Issues[0].Reason, "unrelated fields") ||
 				requests.Load() != 0 {
 				t.Fatalf("Go validation was not enforced before fetching: %+v; requests=%d", r, requests.Load())
@@ -192,12 +218,14 @@ func TestVendorIgnoresEditorSchemas(t *testing.T) {
 		_, _ = w.Write([]byte("upstream"))
 	}))
 	defer server.Close()
+
 	data := "# yaml-language-server: $schema=" + server.URL + "/schema.yaml\n" + vendorManifest(server.URL)
 	data = strings.Replace(data, "      type: http\n", "      type: http\n      ref: ''\n", 1)
-	p.write(t, ".vendor.yaml", data)
+	p.write(t, vendoring.ManifestFile, data)
 	p.write(t, ".vendor.schema.yaml", "invalid: [YAML\n")
 	for _, operation := range []string{"update", "check", "sync"} {
 		r := vendorReport(t, p.run(t, 0, "vendor", operation, "--json"))
+
 		if !r.Valid || schemaRequests.Load() != 0 || p.read(t, ".vendor.schema.yaml") != "invalid: [YAML\n" {
 			t.Fatalf("%s relied on an editor schema: %+v; requests=%d", operation, r, schemaRequests.Load())
 		}
@@ -215,42 +243,49 @@ func TestVendorLifecycleAndJSON(t *testing.T) {
 		_, _ = fmt.Fprint(w, body.Load().(string))
 	}))
 	defer server.Close()
-	p.write(t, ".vendor.yaml", vendorManifest(server.URL))
+
+	p.write(t, vendoring.ManifestFile, vendorManifest(server.URL))
 	before := p.snapshot(t)
 	r := vendorReport(t, p.run(t, 1, "vendor", "check", "--json"))
+
 	if r.Valid || requests.Load() != 0 {
 		t.Fatalf("missing-lock check: %+v", r)
 	}
 	p.assertUnchanged(t, before)
 	r = vendorReport(t, p.run(t, 0, "vendor", "update", "--dry-run", "--json"))
+
 	if !r.Valid || !r.DryRun || r.Applied != 0 || len(r.Changes) != 2 {
 		t.Fatalf("dry-run: %+v", r)
 	}
-	for _, name := range []string{"assets", ".vendor.lock.yaml", ".go42x/backups"} {
+	for _, name := range []string{"assets", vendoring.LockFile, ".go42x/backups"} {
 		if _, err := os.Stat(filepath.Join(p.root, name)); !os.IsNotExist(err) {
 			t.Fatalf("dry-run created %s: %v", name, err)
 		}
 	}
 	r = vendorReport(t, p.run(t, 0, "vendor", "update", "--json", "--log-level=debug"))
+
 	if !r.Valid || r.Applied != 2 || p.read(t, "assets/file.txt") != "upstream" {
 		t.Fatalf("bootstrap: %+v", r)
 	}
-	locked := p.read(t, ".vendor.lock.yaml")
+	locked := p.read(t, vendoring.LockFile)
 	before = p.snapshot(t)
 	r = vendorReport(t, p.run(t, 0, "vendor", "update", "--json"))
-	if r.Applied != 0 || r.BackupDir != "" {
+
+	if r.Applied != 0 || len(r.BackupDir) > 0 {
 		t.Fatalf("no-op: %+v", r)
 	}
 	p.assertUnchanged(t, before)
 	p.write(t, "assets/file.txt", "local edit")
 	before = p.snapshot(t)
 	r = vendorReport(t, p.run(t, 1, "vendor", "sync", "--json"))
+
 	if r.Valid || len(r.Issues) == 0 {
 		t.Fatalf("conflict: %+v", r)
 	}
 	p.assertUnchanged(t, before)
 	r = vendorReport(t, p.run(t, 0, "vendor", "sync", "--force", "--json"))
-	if r.Applied != 1 || p.read(t, ".vendor.lock.yaml") != locked {
+
+	if r.Applied != 1 || p.read(t, vendoring.LockFile) != locked {
 		t.Fatalf("forced sync: %+v", r)
 	}
 	backup, err := os.ReadFile(filepath.Join(r.BackupDir, "files", "assets", "file.txt"))
@@ -262,6 +297,7 @@ func TestVendorLifecycleAndJSON(t *testing.T) {
 	vendorReport(t, p.run(t, 1, "vendor", "sync", "--json"))
 	p.assertUnchanged(t, before)
 	r = vendorReport(t, p.run(t, 0, "vendor", "update", "--json"))
+
 	if r.Applied != 2 || p.read(t, "assets/file.txt") != "new upstream" {
 		t.Fatalf("update: %+v", r)
 	}
@@ -269,6 +305,7 @@ func TestVendorLifecycleAndJSON(t *testing.T) {
 	count := requests.Load()
 	before = p.snapshot(t)
 	r = vendorReport(t, p.run(t, 0, "vendor", "check", "--json"))
+
 	if !r.Valid || requests.Load() != count {
 		t.Fatalf("offline check: %+v", r)
 	}
@@ -278,50 +315,83 @@ func TestVendorLifecycleAndJSON(t *testing.T) {
 func TestVendorNestedManifestAndTempConfiguration(t *testing.T) {
 	t.Parallel()
 	server := httptest.NewServer(
-		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("data")) }),
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte("data"))
+		}),
 	)
 	defer server.Close()
+
 	for _, tc := range []struct {
 		name, temp, local, want string
 		config                  bool
 	}{
-		{name: "missing configuration", want: ".build"},
-		{name: "omitted temp", config: true, want: ".build"},
-		{name: "empty temp", temp: `""`, config: true, want: ".build"},
-		{name: "relative temp", temp: ".scratch", config: true, want: ".scratch"},
-		{name: "local override", temp: ".base", local: ".local-scratch", config: true, want: ".local-scratch"},
-		{name: "absolute temp", temp: "absolute", config: true},
+		{
+			name: "missing configuration",
+			want: ".build",
+		},
+		{
+			name:   "omitted temp",
+			config: true,
+			want:   ".build",
+		},
+		{
+			name:   "empty temp",
+			temp:   `""`,
+			config: true,
+			want:   ".build",
+		},
+		{
+			name:   "relative temp",
+			temp:   ".scratch",
+			config: true,
+			want:   ".scratch",
+		},
+		{
+			name:   "local override",
+			temp:   ".base",
+			local:  ".local-scratch",
+			config: true,
+			want:   ".local-scratch",
+		},
+		{
+			name:   "absolute temp",
+			temp:   "absolute",
+			config: true,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p := newProject(t)
 			temp, want := tc.temp, filepath.Join(p.root, tc.want)
+
 			if temp == "absolute" {
 				want = filepath.Dir(p.root)
 				temp = fmt.Sprintf("%q", want)
 			}
 			if tc.config {
 				cfg := "version: \"1.0\"\nproject:\n  name: example\nproviders:\n  codex: {}\ncontext:\n  template: agents.tpl.md\n"
-				if temp != "" {
+
+				if len(temp) > 0 {
 					cfg += "  temp-dir: " + temp + "\n"
 				}
 				p.write(t, ".go42x/go42x.yaml", cfg)
 			}
-			if tc.local != "" {
+			if len(tc.local) > 0 {
 				p.write(t, ".go42x/go42x.local.yaml", "context:\n  temp-dir: "+tc.local+"\n")
 			}
-			p.write(t, "third_party/.vendor.yaml", vendorManifest(server.URL))
+			p.write(t, "third_party/"+vendoring.ManifestFile, vendorManifest(server.URL))
 			caller := newProject(t)
 			caller.env = append(
 				caller.env,
 				"GO42X_ROOT="+p.root,
-				"GO42X_MANIFEST=third_party/.vendor.yaml",
+				"GO42X_MANIFEST=third_party/"+vendoring.ManifestFile,
 				"GO42X_JSON=true",
 			)
 			r := vendorReport(t, caller.run(t, 0, "vendor", "update"))
+
 			if !r.Valid || p.read(t, "third_party/assets/file.txt") != "data" {
 				t.Fatalf("nested update: %+v", r)
 			}
-			if !strings.Contains(p.read(t, "third_party/.vendor.lock.yaml"), "manifest: .vendor.yaml") {
+			if !strings.Contains(p.read(t, "third_party/"+vendoring.LockFile), "manifest: "+vendoring.ManifestFile) {
 				t.Fatal("lock is not beside the selected manifest")
 			}
 			entries, err := os.ReadDir(filepath.Join(want, "vendoring"))
@@ -343,11 +413,12 @@ func TestVendorNestedManifestAndTempConfiguration(t *testing.T) {
 func TestVendorInvalidConfigurationAndUsage(t *testing.T) {
 	t.Parallel()
 	p := newProject(t)
-	p.write(t, ".vendor.yaml", "version: \"1.0\"\ndependencies: {}\n")
+	p.write(t, vendoring.ManifestFile, "version: \"1.0\"\ndependencies: {}\n")
 	p.write(t, ".go42x/go42x.yaml", "version: [\n")
 	before := p.snapshot(t)
 	for _, operation := range []string{"check", "sync", "update"} {
 		r := vendorReport(t, p.run(t, 1, "vendor", operation, "--json"))
+
 		if r.Valid || r.Operation != operation || len(r.Issues) != 1 {
 			t.Fatalf("%s accepted invalid config: %+v", operation, r)
 		}
@@ -370,24 +441,41 @@ func TestVendorRejectsInvalidPathsBeforeFetching(t *testing.T) {
 		_, _ = w.Write([]byte("data"))
 	}))
 	defer server.Close()
+
 	p := newProject(t)
-	p.write(t, ".vendor.yaml", vendorManifest(server.URL))
+	p.write(t, vendoring.ManifestFile, vendorManifest(server.URL))
 	p.write(t, "root-file", "not a directory\n")
 	before := p.snapshot(t)
 	for _, tc := range []struct {
 		name string
 		args []string
 	}{
-		{"missing root", []string{"--root", filepath.Join(p.root, "missing")}},
-		{"root file", []string{"--root", filepath.Join(p.root, "root-file")}},
-		{"manifest outside root", []string{"--manifest", "../outside.yaml"}},
-		{"lock outside root", []string{"--lock", "../outside.lock.yaml"}},
-		{"colliding metadata", []string{"--lock", ".vendor.yaml"}},
+		{
+			"missing root",
+			[]string{"--root", filepath.Join(p.root, "missing")},
+		},
+		{
+			"root file",
+			[]string{"--root", filepath.Join(p.root, "root-file")},
+		},
+		{
+			"manifest outside root",
+			[]string{"--manifest", "../outside.yaml"},
+		},
+		{
+			"lock outside root",
+			[]string{"--lock", "../outside.lock.yaml"},
+		},
+		{
+			"colliding metadata",
+			[]string{"--lock", vendoring.ManifestFile},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			for _, operation := range []string{"check", "sync", "update"} {
 				args := append([]string{"vendor", operation, "--json"}, tc.args...)
 				r := vendorReport(t, p.run(t, 1, args...))
+
 				if r.Valid || r.Operation != operation || len(r.Issues) != 1 {
 					t.Fatalf("%s accepted invalid paths: %+v", operation, r)
 				}

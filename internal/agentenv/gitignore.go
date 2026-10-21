@@ -5,14 +5,16 @@ import (
 	"path/filepath"
 
 	"github.com/go42-dev/go42x/assets"
+	"github.com/go42-dev/go42x/internal/config"
 	"github.com/go42-dev/go42x/internal/fspatch"
 )
 
 func updateGitIgnore(root string) error {
-	plan := fspatch.NewPlan(slog.New(slog.DiscardHandler), root, filepath.Join(root, agentEnvDir, "backups"))
+	plan := fspatch.NewPlan(slog.New(slog.DiscardHandler), root, filepath.Join(root, config.Directory, "backups"))
 	if err := prepareGitIgnore(plan, root); err != nil {
 		return err
 	}
+
 	return plan.Apply()
 }
 

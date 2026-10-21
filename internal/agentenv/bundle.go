@@ -15,7 +15,9 @@ import (
 
 	"github.com/go42-dev/go42x/assets"
 	"github.com/go42-dev/go42x/internal/buildinfo"
+	"github.com/go42-dev/go42x/internal/config"
 	"github.com/go42-dev/go42x/internal/fspatch"
+	"github.com/go42-dev/go42x/internal/vendoring"
 )
 
 const (
@@ -39,9 +41,9 @@ type bundleMerge struct {
 func pinBundledSchemaURL(path string, data []byte) []byte {
 	var schemaPath string
 	switch path {
-	case configFile:
+	case config.ProjectConfigFile:
 		schemaPath = "assets/schemas/go42x.schema.yaml"
-	case ".vendor.yaml":
+	case vendoring.ManifestFile:
 		schemaPath = "assets/schemas/vendor.schema.yaml"
 	default:
 		return data
@@ -64,6 +66,7 @@ func extractBundle(ctx context.Context, targetDir string) error {
 		if err != nil {
 			return err
 		}
+
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -79,6 +82,7 @@ func extractBundle(ctx context.Context, targetDir string) error {
 		if err != nil {
 			return fmt.Errorf("failed to read embedded file %s: %w", path, err)
 		}
+
 		data = pinBundledSchemaURL(path, data)
 
 		// #nosec G301 -- This directory contains public embedded templates, not user credentials.
@@ -94,6 +98,7 @@ func extractBundle(ctx context.Context, targetDir string) error {
 		if err != nil {
 			return fmt.Errorf("failed to create file %s: %w", targetPath, err)
 		}
+
 		_, writeErr := file.Write(data)
 		if err := errors.Join(writeErr, file.Close()); err != nil {
 			return fmt.Errorf("failed to write file %s: %w", targetPath, err)
@@ -116,17 +121,21 @@ func (s *Service) prepareMergedBundle(
 	if !info.IsDir() {
 		return nil, fmt.Errorf("base must be a directory: %s", s.settings.BaseDir)
 	}
+
 	base, err := readBundle(ctx, os.DirFS(s.settings.BaseDir))
 	if err != nil {
 		return nil, fmt.Errorf("read base bundle: %w", err)
 	}
-	if _, exists := base[configFile]; !exists {
-		return nil, fmt.Errorf("base bundle must contain %s", configFile)
+
+	if _, exists := base[config.ProjectConfigFile]; !exists {
+		return nil, fmt.Errorf("base bundle must contain %s", config.ProjectConfigFile)
 	}
+
 	incoming, err := readBundle(ctx, bundle)
 	if err != nil {
 		return nil, fmt.Errorf("read incoming bundle: %w", err)
 	}
+
 	for path, data := range incoming {
 		incoming[path] = pinBundledSchemaURL(path, data)
 	}
@@ -134,6 +143,7 @@ func (s *Service) prepareMergedBundle(
 	if err := os.MkdirAll(filepath.Join(root, ".build"), 0700); err != nil {
 		return nil, fmt.Errorf("create merge parent: %w", err)
 	}
+
 	workspace, err := os.MkdirTemp(filepath.Join(root, ".build"), "agentenv-update-*")
 	if err != nil {
 		return nil, fmt.Errorf("create merge workspace: %w", err)
@@ -155,16 +165,27 @@ func (s *Service) prepareMergedBundle(
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		target := filepath.Join(root, agentEnvDir, filepath.FromSlash(path))
+
+		target := filepath.Join(root, config.Directory, filepath.FromSlash(path))
 		currentData, currentExists, err := plan.Read(target)
 		if err != nil {
 			return nil, err
 		}
+
 		baseData, baseExists := base[path]
 		incomingData, incomingExists := incoming[path]
-		current := bundleFile{data: currentData, exists: currentExists}
-		previous := bundleFile{data: baseData, exists: baseExists}
-		next := bundleFile{data: incomingData, exists: incomingExists}
+		current := bundleFile{
+			data:   currentData,
+			exists: currentExists,
+		}
+		previous := bundleFile{
+			data:   baseData,
+			exists: baseExists,
+		}
+		next := bundleFile{
+			data:   incomingData,
+			exists: incomingExists,
+		}
 		merged, err := mergeBundleFile(ctx, workspace, path, previous, current, next)
 		if err != nil {
 			return nil, fmt.Errorf("merge %s (workspace %s): %w", path, workspace, err)
@@ -179,7 +200,7 @@ func (s *Service) prepareMergedBundle(
 			continue
 		}
 
-		if path == configFile {
+		if path == config.ProjectConfigFile {
 			updatedConfig = merged.file.data
 		}
 		if merged.file.exists {
@@ -187,6 +208,7 @@ func (s *Service) prepareMergedBundle(
 		} else {
 			err = plan.Remove(target, fspatch.Sources)
 		}
+
 		if err != nil {
 			return nil, err
 		}
@@ -199,11 +221,13 @@ func (s *Service) prepareMergedBundle(
 		)
 	}
 	if updatedConfig == nil {
-		return nil, fmt.Errorf("merged bundle must retain %s", configFile)
+		return nil, fmt.Errorf("merged bundle must retain %s", config.ProjectConfigFile)
 	}
+
 	if err := os.RemoveAll(workspace); err != nil {
 		return nil, fmt.Errorf("remove merge workspace %s: %w", workspace, err)
 	}
+
 	return updatedConfig, nil
 }
 
@@ -213,6 +237,7 @@ func readBundle(ctx context.Context, source fs.FS) (map[string][]byte, error) {
 		if err != nil {
 			return err
 		}
+
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -222,10 +247,12 @@ func readBundle(ctx context.Context, source fs.FS) (map[string][]byte, error) {
 		if !entry.Type().IsRegular() {
 			return fmt.Errorf("bundle source must be a regular file: %s", path)
 		}
+
 		data, err := fs.ReadFile(source, path)
 		if err != nil {
 			return err
 		}
+
 		files[path] = data
 		return nil
 	})
@@ -237,13 +264,17 @@ func mergeBundleFile(
 	workspace, path string,
 	base, current, incoming bundleFile,
 ) (bundleMerge, error) {
-	if strings.HasPrefix(path, "upstream/") || path == ".vendor.yaml" || path == ".vendor.lock.yaml" {
+	if strings.HasPrefix(path, "upstream/") || path == vendoring.ManifestFile || path == vendoring.LockFile {
 		return bundleMerge{file: incoming}, nil
 	}
 	if !incoming.exists {
 		if current.exists && !bytes.Equal(current.data, base.data) {
-			return bundleMerge{file: current, conflict: true}, nil
+			return bundleMerge{
+				file:     current,
+				conflict: true,
+			}, nil
 		}
+
 		return bundleMerge{}, nil
 	}
 	if !current.exists {
@@ -251,8 +282,12 @@ func mergeBundleFile(
 			return bundleMerge{file: incoming}, nil
 		}
 		if !bytes.Equal(base.data, incoming.data) {
-			return bundleMerge{file: incoming, conflict: true}, nil
+			return bundleMerge{
+				file:     incoming,
+				conflict: true,
+			}, nil
 		}
+
 		return bundleMerge{}, nil
 	}
 	if (base.exists && bytes.Equal(base.data, current.data)) || bytes.Equal(current.data, incoming.data) {
@@ -304,12 +339,17 @@ func mergeBundleFile(
 	if ctx.Err() != nil {
 		return bundleMerge{}, ctx.Err()
 	}
+
 	var exit *exec.ExitError
 	if err != nil && (!errors.As(err, &exit) || exit.ExitCode() < 1 || exit.ExitCode() > 127) {
 		return bundleMerge{}, fmt.Errorf("git merge-file: %w: %s", err, strings.TrimSpace(diagnostics.String()))
 	}
+
 	return bundleMerge{
-		file:     bundleFile{data: output.Bytes(), exists: true},
+		file: bundleFile{
+			data:   output.Bytes(),
+			exists: true,
+		},
 		conflict: err != nil,
 	}, nil
 }
@@ -319,8 +359,10 @@ func writeBundleFile(root, path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
 		return fmt.Errorf("create merge directory: %w", err)
 	}
+
 	if err := os.WriteFile(target, data, 0600); err != nil {
 		return fmt.Errorf("write merge candidate: %w", err)
 	}
+
 	return nil
 }

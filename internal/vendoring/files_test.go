@@ -10,7 +10,9 @@ import (
 
 type converterFunc func([]byte) ([]byte, error)
 
-func (f converterFunc) Convert(data []byte) ([]byte, error) { return f(data) }
+func (f converterFunc) Convert(data []byte) ([]byte, error) {
+	return f(data)
+}
 
 func TestSelectFileConverter(t *testing.T) {
 	root := t.TempDir()
@@ -24,9 +26,20 @@ func TestSelectFileConverter(t *testing.T) {
 		want            []byte
 		err             error
 	}{
-		{name: "copy", want: original},
-		{name: "registered converter", converter: "fixture", want: []byte("custom conversion")},
-		{name: "conversion error", converter: "fixture", err: conversionError},
+		{
+			name: "copy",
+			want: original,
+		},
+		{
+			name:      "registered converter",
+			converter: "fixture",
+			want:      []byte("custom conversion"),
+		},
+		{
+			name:      "conversion error",
+			converter: "fixture",
+			err:       conversionError,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			calls := 0
@@ -39,7 +52,10 @@ func TestSelectFileConverter(t *testing.T) {
 					return tc.want, tc.err
 				}),
 			}}
-			data, err := s.selectFile(root, FileMapping{From: "source.html", Converter: tc.converter})
+			data, err := s.selectFile(root, FileMapping{
+				From:      "source.html",
+				Converter: tc.converter,
+			})
 			if !errors.Is(err, tc.err) {
 				t.Fatalf("selectFile() error = %v, want %v", err, tc.err)
 			}
@@ -47,7 +63,8 @@ func TestSelectFileConverter(t *testing.T) {
 				t.Fatalf("selectFile() = %q, want %q", data, tc.want)
 			}
 			wantCalls := 1
-			if tc.converter == "" {
+
+			if len(tc.converter) == 0 {
 				wantCalls = 0
 			}
 			if calls != wantCalls {

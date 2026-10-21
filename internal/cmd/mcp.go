@@ -17,6 +17,8 @@ import (
 )
 
 func NewMCPCommand(f *cmdutil.Factory) *cobra.Command {
+	defaults := kwb.NewSettings()
+
 	cmd := &cobra.Command{
 		Use:   "mcp",
 		Short: "Start the go42x MCP server over stdio",
@@ -25,30 +27,35 @@ Run 'go42x kwb build' to create or refresh the search index.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			settings := &mcpserver.Settings{
-				IndexPath:     viper.GetString("index"),
-				RootPath:      viper.GetString("root"),
-				ExplicitRoot:  cmdutil.ExplicitFlag(cmd, "root"),
-				SearchTimeout: viper.GetDuration("search-timeout"),
-				ContextDocs:   viper.GetStringSlice("context-doc"),
+				IndexPath:     viper.GetString(flagIndex),
+				RootPath:      viper.GetString(flagRoot),
+				ExplicitRoot:  cmdutil.ExplicitFlag(cmd, flagRoot),
+				SearchTimeout: viper.GetDuration(flagSearchTimeout),
+				ContextDocs:   viper.GetStringSlice(flagContextDoc),
 			}
-			if settings.ExplicitRoot && !cmdutil.ExplicitFlag(cmd, "index") {
-				settings.IndexPath = filepath.Join(settings.RootPath, kwb.NewSettings().IndexPath)
+			if settings.ExplicitRoot && !cmdutil.ExplicitFlag(cmd, flagIndex) {
+				settings.IndexPath = filepath.Join(settings.RootPath, defaults.IndexPath)
 			}
 			if err := settings.Validate(); err != nil {
 				return cmdutil.UsageError(err)
 			}
+
 			return runMCPCommand(f, settings)
 		},
 	}
 
-	cmd.Flags().
-		String("root", ".", "project root (default indexed project root, or current directory without an index)")
-	cmd.Flags().
-		String("index", kwb.NewSettings().IndexPath, "knowledge-base index path")
-	cmd.Flags().
-		Duration("search-timeout", kwb.NewSettings().SearchTimeout, "maximum duration of knowledge-base reads")
-	cmd.Flags().
-		StringSlice("context-doc", nil, "authored document IDs to include as project guidance (at most 8)")
+	cmd.Flags().String(
+		flagRoot, ".",
+		"project root (default indexed project root, or current directory without an index)")
+	cmd.Flags().String(
+		flagIndex, defaults.IndexPath,
+		"knowledge-base index path")
+	cmd.Flags().Duration(
+		flagSearchTimeout, defaults.SearchTimeout,
+		"maximum duration of knowledge-base reads")
+	cmd.Flags().StringSlice(
+		flagContextDoc, nil,
+		"authored document IDs to include as project guidance (at most 8)")
 
 	return cmd
 }
@@ -57,7 +64,7 @@ func runMCPCommand(f *cmdutil.Factory, settings *mcpserver.Settings) (retErr err
 	kwbSettings := settings.KnowledgeBaseSettings()
 
 	service, err := kwb.NewService(kwbSettings,
-		kwb.WithLogger(slog.Default().With("component", "kwb-service")))
+		kwb.WithLogger(slog.Default()))
 	if err != nil {
 		return fmt.Errorf("creating knowledge-base service: %w", err)
 	}
@@ -66,7 +73,7 @@ func runMCPCommand(f *cmdutil.Factory, settings *mcpserver.Settings) (retErr err
 	}()
 
 	runtime, err := mcpserver.New(
-		mcpserver.WithLogger(slog.Default().With("component", "mcp-server")),
+		mcpserver.WithLogger(slog.Default()),
 		mcpserver.WithVersion(buildinfo.GetVersion()),
 	)
 	if err != nil {

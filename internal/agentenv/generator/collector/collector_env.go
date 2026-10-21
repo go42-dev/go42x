@@ -35,7 +35,7 @@ func (c *EnvironmentCollector) Collect(_ context.Context) (map[string]any, error
 	result["arch"] = runtime.GOARCH
 
 	root := c.root
-	if root == "" {
+	if len(root) == 0 {
 		root = "."
 	}
 	if wd, err := filepath.Abs(root); err == nil {
@@ -44,7 +44,7 @@ func (c *EnvironmentCollector) Collect(_ context.Context) (map[string]any, error
 
 	variables := make(map[string]string)
 	for _, key := range c.envVars {
-		if value := os.Getenv(key); value != "" {
+		if value := os.Getenv(key); len(value) > 0 {
 			variables[key] = value
 		}
 	}

@@ -24,16 +24,31 @@ func TestProjectCollector(t *testing.T) {
 			Tags:                    []string{"cli"},
 			Metadata:                map[string]string{"custom": "value"},
 		},
-		Providers: map[string]config.Provider{"claude": {}, "antigravity": {}},
+		Providers: map[string]config.Provider{
+			"claude":      {},
+			"antigravity": {},
+		},
 		MCP: map[string]provider.MCPServer{
-			"enabled": {Enabled: true, Command: "go42x"}, "disabled": {Command: "hidden"},
+			"enabled": {
+				Enabled: true,
+				Command: "go42x",
+			},
+			"disabled": {Command: "hidden"},
 		},
 	}
 	data, err = NewProjectCollector(cfg).Collect(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
-	for key, want := range map[string]any{"name": "example", "language": "go", "description": "description", "repository": "github.com/example/repo", "documentation-entrypoint": "team/index.md", "tags": []string{"cli"}, "metadata": map[string]string{"custom": "value"}} {
+	for key, want := range map[string]any{
+		"name":                     "example",
+		"language":                 "go",
+		"description":              "description",
+		"repository":               "github.com/example/repo",
+		"documentation-entrypoint": "team/index.md",
+		"tags":                     []string{"cli"},
+		"metadata":                 map[string]string{"custom": "value"},
+	} {
 		if !reflect.DeepEqual(data[key], want) {
 			t.Errorf("%s = %v, want %v", key, data[key], want)
 		}

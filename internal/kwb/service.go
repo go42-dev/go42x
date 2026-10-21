@@ -13,19 +13,29 @@ import (
 	"unicode/utf8"
 )
 
+// Impact maps explicit Markdown links and related/superseded_by edges. It makes
+// no inference that unmapped code is unrelated to documentation.
+const (
+	DefaultContentBytes = 16 * 1024
+	MaxContentBytes     = 48 * 1024
+	MaxItems            = 40
+)
+
 var ErrRootMismatch = errors.New("index root differs from requested project root")
 
 type Service struct {
-	logger   *slog.Logger
+	logger  *slog.Logger
+	index   indexAccessor
+	catalog catalogAccessor
+
 	settings *Settings
-	index    indexAccessor
-	catalog  catalogAccessor
 }
 
 func NewService(settings *Settings, opts ...Option) (*Service, error) {
 	if err := settings.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid settings: %w", err)
 	}
+
 	copy := *settings
 	copy.ExtraExtensions = slices.Clone(settings.ExtraExtensions)
 	copy.ExcludeDirs = slices.Clone(settings.ExcludeDirs)
@@ -36,10 +46,12 @@ func NewService(settings *Settings, opts ...Option) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	copy.IndexPath, err = canonicalPath(copy.IndexPath)
 	if err != nil {
 		return nil, err
 	}
+
 	svc := &Service{
 		settings: &copy,
 	}
@@ -49,8 +61,11 @@ func NewService(settings *Settings, opts ...Option) (*Service, error) {
 	if svc.logger == nil {
 		svc.logger = slog.New(slog.DiscardHandler)
 	}
-	svc.index = newIndexManager(svc.settings, svc.logger.With("component", "index_manager"))
+	svc.logger = svc.logger.With(slog.String("component", "kwb"))
+
+	svc.index = newIndexManager(svc.settings, svc.logger.With(slog.String("subsystem", "index_manager")))
 	svc.catalog = newDocumentCatalog()
+
 	return svc, nil
 }
 
@@ -59,44 +74,58 @@ func (s *Service) BuildIndex(ctx context.Context, rootPath string) (BuildResult,
 	if err != nil {
 		return report, fmt.Errorf("building index: %w", err)
 	}
-	s.logger.DebugContext(ctx, "Knowledge base updated", "indexed", report.Indexed, "unchanged", report.Unchanged,
-		"deleted", report.Deleted, "files", report.Files, "chunks", report.Chunks, "duration", report.Duration)
+
+	s.logger.DebugContext(ctx, "Knowledge base updated",
+		slog.Int("indexed", report.Indexed),
+		slog.Int("unchanged", report.Unchanged),
+		slog.Int("deleted", report.Deleted),
+		slog.Int("files", report.Files),
+		slog.Int("chunks", report.Chunks),
+		slog.Duration("duration", report.Duration),
+	)
 	return report, nil
 }
 
 func (s *Service) Search(ctx context.Context, options SearchOptions) (*SearchResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.settings.SearchTimeout)
 	defer cancel()
+
 	return s.index.Search(ctx, options)
 }
 
 func (s *Service) GetFile(ctx context.Context, path string, startLine, endLine int) (*FileContent, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.settings.SearchTimeout)
 	defer cancel()
+
 	return s.index.GetFile(ctx, path, startLine, endLine)
 }
 
 func (s *Service) ListFiles(ctx context.Context, options ListOptions) (*FilesResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.settings.SearchTimeout)
 	defer cancel()
+
 	return s.index.ListFiles(ctx, options)
 }
 
 func (s *Service) GetStats(ctx context.Context) (*Stats, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.settings.SearchTimeout)
 	defer cancel()
+
 	return s.index.GetStats(ctx)
 }
 
-func (s *Service) Close() error { return s.index.CloseIndex() }
+func (s *Service) Close() error {
+	return s.index.CloseIndex()
+}
 
-// Resolve existing symlinked ancestors even when the final index path does not
+// canonicalPath resolves existing symlinked ancestors even when the final index path does not
 // exist yet, so source walking and index exclusion use the same absolute paths.
 func canonicalPath(path string) (string, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return "", err
 	}
+
 	resolved, err := filepath.EvalSymlinks(abs)
 	if err == nil {
 		return resolved, nil
@@ -104,14 +133,17 @@ func canonicalPath(path string) (string, error) {
 	if !os.IsNotExist(err) {
 		return "", err
 	}
+
 	parent := filepath.Dir(abs)
 	if parent == abs {
 		return "", err
 	}
+
 	parent, err = canonicalPath(parent)
 	if err != nil {
 		return "", err
 	}
+
 	return filepath.Join(parent, filepath.Base(abs)), nil
 }
 
@@ -123,6 +155,7 @@ func (s *Service) ProjectRoot() (string, error) {
 	if err != nil && s.settings.RequireRootMatch && !errors.Is(err, ErrRootMismatch) {
 		return s.settings.RootPath, nil
 	}
+
 	return root, err
 }
 
@@ -130,34 +163,42 @@ func (s *Service) ProjectRoot() (string, error) {
 func (s *Service) Catalog(ctx context.Context) (*Catalog, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.settings.SearchTimeout)
 	defer cancel()
+
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+
 	root, err := s.ProjectRoot()
 	if err != nil {
 		return nil, err
 	}
+
 	return s.catalog.Load(ctx, root)
 }
 
 func (s *Service) GetDocument(ctx context.Context, id string, start, end int) (*DocumentResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.settings.SearchTimeout)
 	defer cancel()
-	if strings.TrimSpace(id) == "" || len(id) > 128 {
+
+	if len(strings.TrimSpace(id)) == 0 || len(id) > 128 {
 		return nil, fmt.Errorf("id must contain 1 to 128 bytes")
 	}
+
 	catalog, err := s.Catalog(ctx)
 	if err != nil {
 		return nil, err
 	}
+
 	doc, err := catalog.ByID(id)
 	if err != nil {
 		return nil, err
 	}
+
 	source, err := ReadLines(doc.Content, start, end)
 	if err != nil {
 		return nil, err
 	}
+
 	replacements, _ := catalog.Replacements(doc)
 	result := &DocumentResult{
 		Document:      *doc,
@@ -191,6 +232,7 @@ func (s *Service) GetDocument(ctx context.Context, id string, start, end int) (*
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
+
 		data, err := json.Marshal(result)
 		if err != nil {
 			return nil, err
@@ -221,6 +263,7 @@ func (s *Service) GetDocument(ctx context.Context, id string, start, end int) (*
 func (s *Service) Impact(ctx context.Context, paths []string) (*ImpactResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.settings.SearchTimeout)
 	defer cancel()
+
 	normalized, err := NormalizePaths(paths)
 	if err != nil {
 		return nil, err
@@ -228,27 +271,23 @@ func (s *Service) Impact(ctx context.Context, paths []string) (*ImpactResult, er
 	if len(normalized) == 0 {
 		return nil, fmt.Errorf("at least one path is required")
 	}
+
 	catalog, err := s.Catalog(ctx)
 	if err != nil {
 		return nil, err
 	}
+
 	result, err := catalog.impact(ctx, normalized)
 	if err != nil {
 		return nil, err
 	}
+
 	if err := boundImpact(result); err != nil {
 		return nil, err
 	}
+
 	return result, ctx.Err()
 }
-
-// Impact maps explicit Markdown links and related/superseded_by edges. It makes
-// no inference that unmapped code is unrelated to documentation.
-const (
-	DefaultContentBytes = 16 * 1024
-	MaxContentBytes     = 48 * 1024
-	MaxItems            = 40
-)
 
 type ContextOptions struct {
 	Paths    []string
@@ -282,6 +321,7 @@ func readCandidate(ctx context.Context, root *os.Root, path string) ([]byte, err
 		return nil, err
 	}
 	defer file.Close()
+
 	info, err := file.Stat()
 	if err != nil {
 		return nil, err
@@ -289,6 +329,7 @@ func readCandidate(ctx context.Context, root *os.Root, path string) ([]byte, err
 	if !info.Mode().IsRegular() {
 		return nil, fmt.Errorf("not a regular file")
 	}
+
 	data, err := readBounded(ctx, file, MaxFileBytes)
 	if err != nil {
 		return nil, err
@@ -296,6 +337,7 @@ func readCandidate(ctx context.Context, root *os.Root, path string) ([]byte, err
 	if !utf8.Valid(data) || strings.IndexByte(string(data), 0) >= 0 {
 		return nil, fmt.Errorf("source exceeds size limit or is not UTF-8")
 	}
+
 	return data, nil
 }
 
@@ -303,12 +345,14 @@ func fitSource(source Source, budget int) (Source, bool) {
 	if len(source.Content) <= budget {
 		return source, false
 	}
+
 	prefix := source.Content[:budget]
 	last := strings.LastIndexByte(prefix, '\n')
 	if last < 0 {
 		source.Content = ""
 		return source, true
 	}
+
 	source.Content = prefix[:last+1]
 	source.EndLine = source.StartLine + strings.Count(source.Content, "\n") - 1
 	next := source.EndLine + 1

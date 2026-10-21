@@ -22,6 +22,7 @@ func TestApplyUsesSelectedBackupDirectory(t *testing.T) {
 			} else {
 				err = plan.Write(path, []byte("replacement"), Settings, false)
 			}
+
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -42,6 +43,7 @@ func TestApplyUsesSelectedBackupDirectory(t *testing.T) {
 				}
 				return
 			}
+
 			data, err = os.ReadFile(path)
 			if err != nil || string(data) != "replacement" {
 				t.Fatalf("destination = %q, %v", data, err)

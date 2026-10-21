@@ -18,6 +18,7 @@ import (
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider"
 	"github.com/go42-dev/go42x/internal/buildinfo"
 	"github.com/go42-dev/go42x/internal/config"
+	"github.com/go42-dev/go42x/internal/vendoring"
 )
 
 func testService(t *testing.T, dir string, clean bool) *Service {
@@ -53,11 +54,24 @@ func TestServiceSettingsAndLogger(t *testing.T) {
 	if _, err := NewAgentEnvService(nil); err == nil {
 		t.Fatal("nil settings accepted")
 	}
-	logger := slog.New(slog.DiscardHandler)
+
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, nil))
 	s, err := NewAgentEnvService(&Settings{}, WithLogger(logger))
-	if err != nil || s.logger != logger {
-		t.Fatalf("custom logger = %v, %v", s, err)
+	if err != nil {
+		t.Fatal(err)
 	}
+
+	t.Chdir(t.TempDir())
+	if _, err := s.Init(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(logs.String(), "Initializing agentenv") ||
+		!strings.Contains(logs.String(), "component=agentenv") {
+		t.Fatalf("custom logger did not receive component logs: %s", logs.String())
+	}
+
 	s, err = NewAgentEnvService(&Settings{}, WithLogger(nil))
 	if err != nil || s.logger == nil {
 		t.Fatalf("default logger = %v, %v", s, err)
@@ -84,11 +98,14 @@ func TestExportIsIndependentOfProjectConfiguration(t *testing.T) {
 		if err != nil || entry.IsDir() {
 			return err
 		}
+
 		data, err := fs.ReadFile(bundle, path)
 		if err != nil {
 			return err
 		}
+
 		got := readFile(t, filepath.Join(output, filepath.FromSlash(path)))
+
 		if !bytes.Equal(got, pinBundledSchemaURL(path, data)) {
 			t.Errorf("exported asset differs: %s", path)
 		}
@@ -178,16 +195,21 @@ func TestInitExtractsTemplatesAndPreservesCustomFiles(t *testing.T) {
 		if entry.IsDir() {
 			return nil
 		}
+
 		relative := filepath.FromSlash(path)
 		target := filepath.Join(dir, ".go42x", relative)
+
 		if target == custom {
 			return nil
 		}
+
 		want, err := fs.ReadFile(templateFS, path)
 		if err != nil {
 			return err
 		}
+
 		want = pinBundledSchemaURL(path, want)
+
 		if !bytes.Equal(readFile(t, target), want) {
 			t.Errorf("embedded template differs: %s", relative)
 		}
@@ -197,6 +219,7 @@ func TestInitExtractsTemplatesAndPreservesCustomFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := readFile(t, filepath.Join(dir, ".gitignore"))
+
 	if !bytes.HasPrefix(before, []byte("existing-entry\n")) {
 		t.Fatal("existing gitignore changed")
 	}
@@ -212,8 +235,8 @@ func TestInitExtractsTemplatesAndPreservesCustomFiles(t *testing.T) {
 	customTemplate := filepath.Join(dir, ".go42x/agents.tpl.md")
 	writeFile(t, customTemplate, "custom instructions")
 	writeFile(t, schemaPath, "outdated schema")
-	manifestPath := filepath.Join(dir, ".go42x/.vendor.yaml")
-	lockPath := filepath.Join(dir, ".go42x/.vendor.lock.yaml")
+	manifestPath := filepath.Join(dir, ".go42x/"+vendoring.ManifestFile)
+	lockPath := filepath.Join(dir, ".go42x/"+vendoring.LockFile)
 	writeFile(t, manifestPath, "custom upstream manifest")
 	writeFile(t, lockPath, "custom upstream lock")
 	if _, err := s.Init(t.Context()); err != nil {
@@ -317,6 +340,7 @@ func TestGenerateAndCleanPreserveSources(t *testing.T) {
 		t.Fatal(err)
 	}
 	instructionsPath := filepath.Join(dir, "AGENTS.md")
+
 	if len(readFile(t, instructionsPath)) == 0 {
 		t.Error("empty shared instructions")
 	}
@@ -373,8 +397,20 @@ func TestGenerateErrors(t *testing.T) {
 		name, output, template, want string
 		clean                        bool
 	}{
-		{"missing template", "AGENTS.md", "missing", "generation failed", false},
-		{"clean blocked", "AGENTS.md", "agents.tpl.md", "prepare instructions AGENTS.md", true},
+		{
+			"missing template",
+			"AGENTS.md",
+			"missing",
+			"generation failed",
+			false,
+		},
+		{
+			"clean blocked",
+			"AGENTS.md",
+			"agents.tpl.md",
+			"prepare instructions AGENTS.md",
+			true,
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := config.Config{
@@ -419,8 +455,8 @@ func TestUpdateReplacesOnlyBundledSources(t *testing.T) {
 		".go42x/go42x.yaml":                  "invalid old configuration: [",
 		".go42x/agents.tpl.md":               "{{ if }}",
 		".go42x/chunks/100-operation.tpl.md": "old operation instructions",
-		".go42x/.vendor.yaml":                "old upstream manifest",
-		".go42x/.vendor.lock.yaml":           "old upstream lock",
+		".go42x/" + vendoring.ManifestFile:   "old upstream manifest",
+		".go42x/" + vendoring.LockFile:       "old upstream lock",
 	}
 	preserved := map[string]string{
 		".go42x/kwb.ignore":                         "# go42x -- START\ncustom/\n",
@@ -447,6 +483,7 @@ func TestUpdateReplacesOnlyBundledSources(t *testing.T) {
 	}
 	for path, want := range originals {
 		got := string(readFile(t, filepath.Join(result.BackupDir, "files", filepath.FromSlash(path))))
+
 		if got != want {
 			t.Errorf("backup %s = %q, want %q", path, got, want)
 		}
@@ -460,11 +497,13 @@ func TestUpdateReplacesOnlyBundledSources(t *testing.T) {
 		if err != nil || entry.IsDir() {
 			return err
 		}
+
 		wantSources++
 		want, err := fs.ReadFile(bundle, path)
 		if err != nil {
 			return err
 		}
+
 		want = pinBundledSchemaURL(path, want)
 		if got := readFile(t, filepath.Join(dir, ".go42x", filepath.FromSlash(path))); string(got) != string(want) {
 			t.Errorf("bundled source was not replaced: %s", path)

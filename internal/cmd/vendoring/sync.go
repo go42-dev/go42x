@@ -22,27 +22,29 @@ The manifest must match the lockfile. Sources may be downloaded.`,
 		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			settings := &vendoring.Settings{
-				RootPath:     viper.GetString("root"),
-				ManifestPath: viper.GetString("manifest"),
-				LockPath:     viper.GetString("lock"),
+				RootPath:     viper.GetString(flagRoot),
+				ManifestPath: viper.GetString(flagManifest),
+				LockPath:     viper.GetString(flagLock),
 				TempDir:      defaults.TempDir,
 				Timeout:      defaults.Timeout,
-				DryRun:       viper.GetBool("dry-run"),
-				Force:        viper.GetBool("force"),
-				JSON:         viper.GetBool("json"),
+				DryRun:       viper.GetBool(flagDryRun),
+				Force:        viper.GetBool(flagForce),
+				JSON:         viper.GetBool(flagJSON),
 			}
+
 			if err := settings.Validate(); err != nil {
 				return cmdutil.UsageError(err)
 			}
+
 			return runSyncCommand(f, settings)
 		},
 	}
 
 	cmd.Flags().Bool(
-		"dry-run", false,
+		flagDryRun, false,
 		"preview changes without modifying destinations, lock or backups")
 	cmd.Flags().Bool(
-		"force", false,
+		flagForce, false,
 		"back up and replace locally modified or conflicting targets")
 
 	return cmd
@@ -50,22 +52,26 @@ The manifest must match the lockfile. Sources may be downloaded.`,
 
 func runSyncCommand(f *cmdutil.Factory, settings *vendoring.Settings) error {
 	if err := settings.LoadProject(); err != nil {
-		return cli.Report(f.Output(), settings, "sync", nil, err)
+		return cli.Report(f.Output(), settings, vendoring.OperationSync, nil, err)
 	}
+
 	if err := settings.Validate(); err != nil {
-		return cli.Report(f.Output(), settings, "sync", nil, err)
+		return cli.Report(f.Output(), settings, vendoring.OperationSync, nil, err)
 	}
+
 	if err := settings.Resolve(); err != nil {
-		return cli.Report(f.Output(), settings, "sync", nil, err)
+		return cli.Report(f.Output(), settings, vendoring.OperationSync, nil, err)
 	}
+
 	service, err := vendoring.NewService(
 		settings,
 		vendoring.WithLogger(slog.Default()),
 		vendoring.WithVersion(buildinfo.GetVersion()),
 	)
 	if err != nil {
-		return cli.Report(f.Output(), settings, "sync", nil, err)
+		return cli.Report(f.Output(), settings, vendoring.OperationSync, nil, err)
 	}
+
 	result, err := service.Sync(f.Context())
-	return cli.Report(f.Output(), settings, "sync", result, err)
+	return cli.Report(f.Output(), settings, vendoring.OperationSync, result, err)
 }

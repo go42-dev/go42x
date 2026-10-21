@@ -19,6 +19,7 @@ func Report(output io.Writer, settings *doctor.Settings, result *check.Report, r
 			if result == nil {
 				return nil
 			}
+
 			return printChecks(w, result.Checks, "")
 		}
 	}
@@ -30,7 +31,7 @@ func printChecks(output io.Writer, checks []check.Result, indent string) error {
 		if _, err := fmt.Fprintf(output, "%s%s %s: %s\n", indent, item.Status, item.ID, item.Message); err != nil {
 			return err
 		}
-		if item.Remediation != "" {
+		if len(item.Remediation) > 0 {
 			if _, err := fmt.Fprintf(output, "%s  %s\n", indent, item.Remediation); err != nil {
 				return err
 			}

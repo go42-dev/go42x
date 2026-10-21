@@ -36,9 +36,24 @@ func TestDoctorIndexCheck(t *testing.T) {
 		indexPath string
 		status    check.Status
 	}{
-		{"default index", root, "", check.Pass},
-		{"explicit index", root, settings.IndexPath, check.Pass},
-		{"other checkout", t.TempDir(), settings.IndexPath, check.Fail},
+		{
+			"default index",
+			root,
+			"",
+			check.Pass,
+		},
+		{
+			"explicit index",
+			root,
+			settings.IndexPath,
+			check.Pass,
+		},
+		{
+			"other checkout",
+			t.TempDir(),
+			settings.IndexPath,
+			check.Fail,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			report, err := check.Run(t.Context(), DoctorChecks(test.root, test.indexPath)...)

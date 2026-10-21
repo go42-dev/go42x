@@ -47,13 +47,13 @@ func TestSchemaDefaultManifest(t *testing.T) {
 	if _, err := Touch(t.Context(), dir); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(filepath.Join(dir, manifestFile))
+	data, err := os.ReadFile(filepath.Join(dir, ManifestFile))
 	if err != nil {
 		t.Fatal(err)
 	}
 	compiled := compileVendorSchema(t)
 	assertVendorSchema(t, compiled, string(data), true)
-	bundled, err := os.ReadFile(filepath.Join("..", "..", "assets", "agentenv", manifestFile))
+	bundled, err := os.ReadFile(filepath.Join("..", "..", "assets", "agentenv", ManifestFile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,11 +66,31 @@ func TestSchemaSourceVariants(t *testing.T) {
 		name, source string
 		valid        bool
 	}{
-		{"HTTP", "{type: http, url: https://example.com/file}", true},
-		{"Git", "{type: git, url: https://example.com/repository.git, ref: main}", true},
-		{"npm", "{type: npm, package: '@fixture/assets', version: latest}", true},
-		{"Git requires ref", "{type: git, url: https://example.com/repository.git}", false},
-		{"unsupported source", "{type: ftp, url: https://example.com/file}", false},
+		{
+			"HTTP",
+			"{type: http, url: https://example.com/file}",
+			true,
+		},
+		{
+			"Git",
+			"{type: git, url: https://example.com/repository.git, ref: main}",
+			true,
+		},
+		{
+			"npm",
+			"{type: npm, package: '@fixture/assets', version: latest}",
+			true,
+		},
+		{
+			"Git requires ref",
+			"{type: git, url: https://example.com/repository.git}",
+			false,
+		},
+		{
+			"unsupported source",
+			"{type: ftp, url: https://example.com/file}",
+			false,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			data := fmt.Sprintf(

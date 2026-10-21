@@ -61,8 +61,16 @@ context: {template: agents.tpl.md}
 		name, content string
 		valid         bool
 	}{
-		{"disabled provider", "providers: {codex: {enabled: false}}", true},
-		{"workflow provider", "providers: {gh-aw: {enabled: true}}", true},
+		{
+			"disabled provider",
+			"providers: {codex: {enabled: false}}",
+			true,
+		},
+		{
+			"workflow provider",
+			"providers: {gh-aw: {enabled: true}}",
+			true,
+		},
 		{
 			name:    "workflow bindings",
 			content: "providers: {gh-aw: {bindings: {TOKEN: '${{ github.token }}'}}}",
@@ -93,19 +101,51 @@ context: {template: agents.tpl.md}
 			name:    "bindings on another provider",
 			content: "providers: {codex: {bindings: {TOKEN: value}}}",
 		},
-		{"workflow provider cannot select engine", "providers: {gh-aw: {engine: codex}}", false},
-		{"provider enabled must be boolean", "providers: {codex: {enabled: 'false'}}", false},
-		{"HTTP server", `providers: {codex: {}}
-mcp: {remote: {name: remote, type: http, url: https://example.com/mcp}}`, true},
-		{"MCP container", `providers: {codex: {}}
-mcp: {local: {name: local, command: task, container: {image: example/tools, command: go42x}}}`, true},
-		{"incomplete MCP container", `providers: {gh-aw: {}}
-mcp: {local: {name: local, command: task, container: {image: example/tools}}}`, false},
-		{"HTTP container", `providers: {gh-aw: {}}
-mcp: {remote: {name: remote, type: http, url: https://example.com/mcp, container: {image: example/tools, command: go42x}}}`, false},
-		{"provider containers removed", `providers: {gh-aw: {containers: {local: {image: example/tools, command: go42x}}}}`, false},
-		{"tools must be an array", `providers: {codex: {}}
-mcp: {local: {name: local, command: example, tools: search}}`, false},
+		{
+			"workflow provider cannot select engine",
+			"providers: {gh-aw: {engine: codex}}",
+			false,
+		},
+		{
+			"provider enabled must be boolean",
+			"providers: {codex: {enabled: 'false'}}",
+			false,
+		},
+		{
+			"HTTP server",
+			`providers: {codex: {}}
+mcp: {remote: {name: remote, type: http, url: https://example.com/mcp}}`,
+			true,
+		},
+		{
+			"MCP container",
+			`providers: {codex: {}}
+mcp: {local: {name: local, command: task, container: {image: example/tools, command: go42x}}}`,
+			true,
+		},
+		{
+			"incomplete MCP container",
+			`providers: {gh-aw: {}}
+mcp: {local: {name: local, command: task, container: {image: example/tools}}}`,
+			false,
+		},
+		{
+			"HTTP container",
+			`providers: {gh-aw: {}}
+mcp: {remote: {name: remote, type: http, url: https://example.com/mcp, container: {image: example/tools, command: go42x}}}`,
+			false,
+		},
+		{
+			"provider containers removed",
+			`providers: {gh-aw: {containers: {local: {image: example/tools, command: go42x}}}}`,
+			false,
+		},
+		{
+			"tools must be an array",
+			`providers: {codex: {}}
+mcp: {local: {name: local, command: example, tools: search}}`,
+			false,
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			var document map[string]any

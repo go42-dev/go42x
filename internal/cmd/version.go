@@ -15,7 +15,7 @@ func NewVersionCommand(f *cmdutil.Factory) *cobra.Command {
 		Use:   "version",
 		Short: "Show version and runtime information",
 		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			return runVersionCommand(f)
 		},
 	}

@@ -2,6 +2,7 @@ package config
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -23,18 +24,20 @@ import (
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/ghaw"
 )
 
+const (
+	SupportedVersion               = "1.0"
+	Directory                      = ".go42x"
+	ProjectConfigFile              = "go42x.yaml"
+	LocalConfigFile                = "go42x.local.yaml"
+	DefaultTempDir                 = ".build"
+	DefaultDocumentationEntrypoint = "docs/README.md"
+)
+
 var (
 	goEnvNamePattern      = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
 	bindingNamePattern    = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 	mcpToolNamePattern    = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,128}$`)
 	mcpCWDVariablePattern = regexp.MustCompile(`\$(?:[A-Za-z_]|\{|\()|%[A-Za-z_][A-Za-z0-9_]*%|^~`)
-)
-
-const (
-	SupportedVersion               = "1.0"
-	LocalConfigFile                = "go42x.local.yaml"
-	DefaultTempDir                 = ".build"
-	DefaultDocumentationEntrypoint = "docs/README.md"
 )
 
 type Config struct {
@@ -58,7 +61,7 @@ type Project struct {
 
 // WithDefaults returns a copy with the documentation entrypoint default applied.
 func (p Project) WithDefaults() Project {
-	if p.DocumentationEntrypoint == "" {
+	if len(p.DocumentationEntrypoint) == 0 {
 		p.DocumentationEntrypoint = DefaultDocumentationEntrypoint
 	}
 	p.DocumentationEntrypoint = path.Clean(p.DocumentationEntrypoint)
@@ -75,7 +78,7 @@ type Context struct {
 
 // WithDefaults returns a copy with defaults applied to unset context settings.
 func (c Context) WithDefaults() Context {
-	if c.TempDir == "" {
+	if len(c.TempDir) == 0 {
 		c.TempDir = DefaultTempDir
 	}
 	return c
@@ -102,13 +105,16 @@ func LoadConfig(path string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	cfg, err := decodeConfig(data)
 	if err != nil {
 		return nil, err
 	}
+
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid config: %w", err)
 	}
+
 	return cfg, nil
 }
 
@@ -118,6 +124,7 @@ func readConfig(path string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
+
 	return data, nil
 }
 
@@ -127,14 +134,16 @@ func decodeConfig(data []byte) (*Config, error) {
 	var config Config
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)
-	if err := decoder.Decode(&config); err != nil && err != io.EOF {
+	if err := decoder.Decode(&config); err != nil && !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("failed to parse YAML: %w", err)
 	}
+
 	var extra yaml.Node
-	if err := decoder.Decode(&extra); err != io.EOF {
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse YAML: %w", err)
 		}
+
 		return nil, fmt.Errorf("configuration must contain exactly one YAML document")
 	}
 
@@ -146,22 +155,24 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("config is nil")
 	}
 
-	if c.Version == "" {
+	if len(c.Version) == 0 {
 		return fmt.Errorf("version is required")
 	}
 	if c.Version != SupportedVersion {
 		return fmt.Errorf("unsupported configuration version %q; supported version is %q", c.Version, SupportedVersion)
 	}
 
-	if c.Project.Name == "" {
+	if len(c.Project.Name) == 0 {
 		return fmt.Errorf("project name is required")
 	}
-	if entrypoint := c.Project.DocumentationEntrypoint; entrypoint != "" {
+
+	if entrypoint := c.Project.DocumentationEntrypoint; len(entrypoint) > 0 {
 		cleaned := path.Clean(entrypoint)
-		if strings.TrimSpace(entrypoint) == "" || strings.ContainsAny(entrypoint, "\\\x00:") ||
+		if len(strings.TrimSpace(entrypoint)) == 0 || strings.ContainsAny(entrypoint, "\\\x00:") ||
 			path.IsAbs(entrypoint) || cleaned == ".." || strings.HasPrefix(cleaned, "../") || len(entrypoint) > 4096 {
 			return fmt.Errorf("project.documentation-entrypoint must be a path inside the project root")
 		}
+
 		if ext := strings.ToLower(path.Ext(cleaned)); ext != ".md" && ext != ".markdown" {
 			return fmt.Errorf("project.documentation-entrypoint must be a Markdown file")
 		}
@@ -171,13 +182,14 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("at least one provider is required")
 	}
 
-	if strings.TrimSpace(c.Context.Template) == "" {
+	if len(strings.TrimSpace(c.Context.Template)) == 0 {
 		return fmt.Errorf("context.template is required; move shared instructions from providers into context")
 	}
-	if c.Context.TempDir != "" &&
-		(strings.TrimSpace(c.Context.TempDir) == "" || strings.ContainsRune(c.Context.TempDir, '\x00')) {
+	if len(c.Context.TempDir) > 0 &&
+		(len(strings.TrimSpace(c.Context.TempDir)) == 0 || strings.ContainsRune(c.Context.TempDir, '\x00')) {
 		return fmt.Errorf("context.temp-dir must be a nonblank path without NUL characters")
 	}
+
 	for _, name := range c.Context.GoEnv {
 		if !goEnvNamePattern.MatchString(name) {
 			return fmt.Errorf("context.go-env: invalid Go environment variable name %q", name)
@@ -188,6 +200,7 @@ func (c *Config) Validate() error {
 	if err := provider.ValidateProviders(providers, ProviderNames()); err != nil {
 		return err
 	}
+
 	for _, name := range providers {
 		if err := validateProvider(c.Providers[name], name); err != nil {
 			return fmt.Errorf("providers.%s: %w", name, err)
@@ -196,9 +209,10 @@ func (c *Config) Validate() error {
 
 	for _, name := range slices.Sorted(maps.Keys(c.MCP)) {
 		server := c.MCP[name]
-		if server.Name == "" {
+		if len(server.Name) == 0 {
 			return fmt.Errorf("MCP server %s: name is required", name)
 		}
+
 		if err := validateMCPServer(server); err != nil {
 			return fmt.Errorf("MCP server %s: %w", name, err)
 		}
@@ -220,30 +234,30 @@ func validateMCPServer(s provider.MCPServer) error {
 		if s.Transport() != provider.MCPServerTypeStdio {
 			return fmt.Errorf("container is only supported for stdio transport")
 		}
-		if strings.TrimSpace(s.Container.Image) == "" || strings.TrimSpace(s.Container.Command) == "" {
+		if len(strings.TrimSpace(s.Container.Image)) == 0 || len(strings.TrimSpace(s.Container.Command)) == 0 {
 			return fmt.Errorf("container: image and command are required")
 		}
 	}
 
 	switch s.Transport() {
 	case provider.MCPServerTypeStdio:
-		if strings.TrimSpace(s.Command) == "" {
+		if len(strings.TrimSpace(s.Command)) == 0 {
 			return fmt.Errorf("command is required for stdio transport")
 		}
 	case provider.MCPServerTypeHTTP, provider.MCPServerTypeSSE:
 		u, err := url.Parse(s.URL)
-		if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		if err != nil || len(u.Host) == 0 || (u.Scheme != "http" && u.Scheme != "https") {
 			return fmt.Errorf("a valid HTTP(S) URL is required for %s transport", s.Type)
 		}
 	default:
 		return fmt.Errorf("invalid type %s", s.Type)
 	}
 
-	if s.CWD != "" {
+	if len(s.CWD) > 0 {
 		if s.Transport() != provider.MCPServerTypeStdio {
 			return fmt.Errorf("cwd is only supported for stdio transport")
 		}
-		if strings.TrimSpace(s.CWD) == "" || strings.ContainsRune(s.CWD, '\x00') {
+		if len(strings.TrimSpace(s.CWD)) == 0 || strings.ContainsRune(s.CWD, '\x00') {
 			return fmt.Errorf("cwd must be a nonblank path without NUL characters")
 		}
 		if mcpCWDVariablePattern.MatchString(s.CWD) {
@@ -259,6 +273,7 @@ func validateMCPServer(s provider.MCPServer) error {
 		if seen[tool] {
 			return fmt.Errorf("duplicate tool %q", tool)
 		}
+
 		seen[tool] = true
 	}
 	return nil
@@ -280,6 +295,7 @@ func validateProvider(p Provider, name string) error {
 	if p.Bindings != nil && name != ghaw.Name {
 		return fmt.Errorf("bindings is only supported by gh-aw")
 	}
+
 	for _, reference := range slices.Sorted(maps.Keys(p.Bindings)) {
 		if !bindingNamePattern.MatchString(reference) {
 			return fmt.Errorf("bindings: invalid reference name %q", reference)
@@ -295,6 +311,7 @@ func validateProvider(p Provider, name string) error {
 	if p.AutoApproveTools != nil && name != claude.Name && name != crush.Name {
 		return fmt.Errorf("auto-approve-tools is only supported by claude and crush")
 	}
+
 	for i, tool := range p.AutoApproveTools {
 		if len(strings.TrimSpace(tool)) == 0 {
 			return fmt.Errorf("auto-approve-tools[%d] must not be blank", i)
@@ -304,6 +321,7 @@ func validateProvider(p Provider, name string) error {
 		if name != codex.Name {
 			return fmt.Errorf("approval-policy is only supported by codex")
 		}
+
 		switch *p.ApprovalPolicy {
 		case "on-request", "never":
 		default:
@@ -314,6 +332,7 @@ func validateProvider(p Provider, name string) error {
 		if name != codex.Name {
 			return fmt.Errorf("mcp-approval is only supported by codex")
 		}
+
 		switch *p.MCPApproval {
 		case "auto", "prompt", "writes", "approve":
 		default:

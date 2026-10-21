@@ -39,6 +39,7 @@ func makeProvider(
 	case claude.Name:
 		return claude.New(
 			logger,
+			engine,
 			claude.Settings{
 				OutputDir:        out,
 				MCPServers:       cfg.MCP,
@@ -46,47 +47,61 @@ func makeProvider(
 				AutoApproveTools: cfg.Providers[name].AutoApproveTools,
 				WriteMCPFile:     !cfg.ProviderEnabled(copilot.Name),
 			},
-			engine,
 			dir,
 		)
 	case codex.Name:
 		return codex.New(
 			logger,
+			engine,
 			codex.Settings{
 				OutputDir:      out,
 				MCPServers:     cfg.MCP,
 				ApprovalPolicy: cfg.Providers[name].ApprovalPolicy,
 				MCPApproval:    cfg.Providers[name].MCPApproval,
 			},
-			engine,
 			dir,
 		)
 	case antigravity.Name:
-		return antigravity.New(logger, antigravity.Settings{
-			OutputDir:  out,
-			MCPServers: cfg.MCP,
-		}, engine, dir)
+		return antigravity.New(
+			logger,
+			engine,
+			antigravity.Settings{
+				OutputDir:  out,
+				MCPServers: cfg.MCP,
+			},
+			dir,
+		)
 	case crush.Name:
 		return crush.New(
 			logger,
+			engine,
 			crush.Settings{
 				OutputDir:        out,
 				MCPServers:       cfg.MCP,
 				AutoApproveTools: cfg.Providers[name].AutoApproveTools,
 			},
-			engine,
 			dir,
 		)
 	case copilot.Name:
-		return copilot.New(logger, copilot.Settings{
-			OutputDir:  out,
-			MCPServers: cfg.MCP,
-		}, engine, dir)
+		return copilot.New(
+			logger,
+			engine,
+			copilot.Settings{
+				OutputDir:  out,
+				MCPServers: cfg.MCP,
+			},
+			dir,
+		)
 	case ghaw.Name:
-		return ghaw.New(logger, ghaw.Settings{
-			OutputDir:  out,
-			MCPServers: cfg.MCP,
-		}, engine, dir)
+		return ghaw.New(
+			logger,
+			engine,
+			ghaw.Settings{
+				OutputDir:  out,
+				MCPServers: cfg.MCP,
+			},
+			dir,
+		)
 	default:
 		t.Fatalf("unknown provider %s", name)
 		return nil
@@ -105,12 +120,30 @@ func writeTestFile(t *testing.T, path, content string) {
 
 func TestProviderMCPLifecycle(t *testing.T) {
 	for _, tt := range []struct{ name, output string }{
-		{claude.Name, ".mcp.json"},
-		{codex.Name, ".codex/config.toml"},
-		{antigravity.Name, ".agents/plugins/project-tools/mcp_config.json"},
-		{crush.Name, ".crush.json"},
-		{copilot.Name, ".mcp.json"},
-		{ghaw.Name, ghaw.MCPFile},
+		{
+			claude.Name,
+			".mcp.json",
+		},
+		{
+			codex.Name,
+			".codex/config.toml",
+		},
+		{
+			antigravity.Name,
+			".agents/plugins/project-tools/mcp_config.json",
+		},
+		{
+			crush.Name,
+			".crush.json",
+		},
+		{
+			copilot.Name,
+			".mcp.json",
+		},
+		{
+			ghaw.Name,
+			ghaw.MCPFile,
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			root := t.TempDir()
@@ -125,7 +158,10 @@ func TestProviderMCPLifecycle(t *testing.T) {
 						Command: "container-mcp",
 					},
 				},
-				"disabled-server": {Name: "disabled-server", Command: "npx"},
+				"disabled-server": {
+					Name:    "disabled-server",
+					Command: "npx",
+				},
 			}}
 			original, err := yaml.Marshal(cfg)
 			if err != nil {
@@ -190,7 +226,12 @@ func TestProviderGenerationErrors(t *testing.T) {
 	for _, name := range []string{claude.Name, antigravity.Name, crush.Name, copilot.Name} {
 		t.Run(name, func(t *testing.T) {
 			dir, out := t.TempDir(), t.TempDir()
-			path := map[string]string{claude.Name: ".claude/settings.local.json", antigravity.Name: ".agents/plugins/project-tools/mcp_config.json", crush.Name: ".crush.json", copilot.Name: ".mcp.json"}[name]
+			path := map[string]string{
+				claude.Name:      ".claude/settings.local.json",
+				antigravity.Name: ".agents/plugins/project-tools/mcp_config.json",
+				crush.Name:       ".crush.json",
+				copilot.Name:     ".mcp.json",
+			}[name]
 			if err := os.MkdirAll(filepath.Join(out, path), 0755); err != nil {
 				t.Fatal(err)
 			}
@@ -257,18 +298,66 @@ func TestParseProviders(t *testing.T) {
 		want    []string
 		invalid bool
 	}{
-		{"", []string{}, false},
-		{" \t ", []string{}, false},
-		{"codex", []string{"codex"}, false},
-		{ghaw.Name, []string{ghaw.Name}, false},
-		{" codex, antigravity ", []string{"codex", "antigravity"}, false},
-		{"codex,", nil, true},
-		{",codex", nil, true},
-		{"codex,,claude", nil, true},
-		{"codex,codex", nil, true},
-		{"Codex", nil, true},
-		{"typo", nil, true},
-		{"gemini", nil, true},
+		{
+			"",
+			[]string{},
+			false,
+		},
+		{
+			" \t ",
+			[]string{},
+			false,
+		},
+		{
+			"codex",
+			[]string{"codex"},
+			false,
+		},
+		{
+			ghaw.Name,
+			[]string{ghaw.Name},
+			false,
+		},
+		{
+			" codex, antigravity ",
+			[]string{"codex", "antigravity"},
+			false,
+		},
+		{
+			"codex,",
+			nil,
+			true,
+		},
+		{
+			",codex",
+			nil,
+			true,
+		},
+		{
+			"codex,,claude",
+			nil,
+			true,
+		},
+		{
+			"codex,codex",
+			nil,
+			true,
+		},
+		{
+			"Codex",
+			nil,
+			true,
+		},
+		{
+			"typo",
+			nil,
+			true,
+		},
+		{
+			"gemini",
+			nil,
+			true,
+		},
 	} {
 		t.Run(tt.value, func(t *testing.T) {
 			got, err := provider.ParseProviders(tt.value, config.ProviderNames())

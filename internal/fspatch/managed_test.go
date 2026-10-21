@@ -70,6 +70,7 @@ func TestWriteManagedBlock(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			root := t.TempDir()
 			path := filepath.Join(root, "ignore")
+
 			if len(tt.previous) > 0 {
 				if err := os.WriteFile(path, []byte(tt.previous), 0644); err != nil {
 					t.Fatal(err)
@@ -108,6 +109,7 @@ func TestWriteManagedBlockRejectsMalformedMarkers(t *testing.T) {
 					root, backups := t.TempDir(), t.TempDir()
 					path := filepath.Join(root, "ignore")
 					previous, template := malformed, testManagedBlock
+
 					if input == "template" {
 						previous, template = testManagedBlock, malformed
 					}

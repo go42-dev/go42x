@@ -44,8 +44,8 @@ type Provider struct {
 
 func New(
 	_ *slog.Logger,
-	settings Settings,
 	_ provider.TemplateEngineAccessor,
+	settings Settings,
 	_ string,
 ) *Provider {
 	return &Provider{settings: settings}

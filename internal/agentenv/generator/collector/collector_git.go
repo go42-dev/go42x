@@ -56,5 +56,6 @@ func (c *GitCollector) runGitCommand(ctx context.Context, args ...string) (strin
 	if err != nil {
 		return "", err
 	}
+
 	return string(output), nil
 }

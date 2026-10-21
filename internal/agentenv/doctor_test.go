@@ -23,14 +23,17 @@ func snapshotTree(t *testing.T, root string) map[string]string {
 		if entry.IsDir() {
 			return nil
 		}
+
 		info, err := entry.Info()
 		if err != nil {
 			return err
 		}
+
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return err
 		}
+
 		result[path] = fmt.Sprintf("%s %d %s", info.Mode(), info.ModTime().UnixNano(), data)
 		return nil
 	})

@@ -11,7 +11,10 @@ import (
 func TestReportJSONFailurePreservesPartialResult(t *testing.T) {
 	var output bytes.Buffer
 	failure := errors.New("update interrupted")
-	partial := map[string]any{"backup_dir": "recovery", "applied": 2}
+	partial := map[string]any{
+		"backup_dir": "recovery",
+		"applied":    2,
+	}
 	err := Report(&output, partial, failure, nil)
 	var exit *ExitError
 	if !errors.Is(err, failure) || !errors.As(err, &exit) || !exit.Reported || ExitCode(err) != 1 {
@@ -33,7 +36,10 @@ func TestReportJSONFailurePreservesPartialResult(t *testing.T) {
 func TestReportPreservesDiagnosticJSON(t *testing.T) {
 	var output bytes.Buffer
 	failure := ReportedError(errors.New("checks failed"))
-	result := map[string]any{"status": "fail", "checks": []string{"configuration"}}
+	result := map[string]any{
+		"status": "fail",
+		"checks": []string{"configuration"},
+	}
 	if err := Report(&output, result, failure, nil); err != failure {
 		t.Fatalf("unexpected failure: %v", err)
 	}
@@ -60,7 +66,9 @@ func TestReportTextFailureLeavesErrorForCobra(t *testing.T) {
 
 type failingWriter struct{ err error }
 
-func (w failingWriter) Write([]byte) (int, error) { return 0, w.err }
+func (w failingWriter) Write([]byte) (int, error) {
+	return 0, w.err
+}
 
 func TestReportWriteFailureRemainsUnreported(t *testing.T) {
 	failure := errors.New("output unavailable")

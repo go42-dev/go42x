@@ -37,6 +37,7 @@ func hasDiagnostic(result *ContextResult, code string) bool {
 	if result == nil {
 		return false
 	}
+
 	for _, d := range result.Diagnostics {
 		if d.Code == code {
 			return true
@@ -50,7 +51,9 @@ func TestServiceValidatesSettingsBeforeOptions(t *testing.T) {
 	oversized.DefaultContentBytes = MaxContentBytes + 1
 	for _, settings := range []*Settings{nil, {}, oversized} {
 		called := false
-		service, err := NewService(settings, func(*Service) { called = true })
+		service, err := NewService(settings, func(*Service) {
+			called = true
+		})
 		if err == nil || !strings.Contains(err.Error(), "invalid settings:") || service != nil || called {
 			t.Fatalf("invalid settings initialized service: service=%v err=%v options=%v", service, err, called)
 		}
@@ -99,6 +102,7 @@ func TestLiveDocumentationSurvivesUnavailableIndex(t *testing.T) {
 			root, service := contextFixture(t, func(settings *Settings) {
 				settings.RequireRootMatch = true
 			})
+
 			if state != "missing" {
 				if _, err := service.BuildIndex(t.Context(), root); err != nil {
 					t.Fatal(err)

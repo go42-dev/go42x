@@ -19,10 +19,12 @@ type toolsetAccessor interface {
 }
 
 type Server struct {
-	logger    *slog.Logger
-	server    *server.MCPServer
-	name      string
-	version   string
+	logger *slog.Logger
+	server *server.MCPServer
+
+	name    string
+	version string
+
 	toolsets  map[string]bool
 	toolNames map[string]string
 }
@@ -42,7 +44,8 @@ func New(opts ...Option) (*Server, error) {
 	if s.logger == nil {
 		s.logger = slog.New(slog.DiscardHandler)
 	}
-	if s.name == "" || s.version == "" {
+	s.logger = s.logger.With(slog.String("component", "mcp-server"))
+	if len(s.name) == 0 || len(s.version) == 0 {
 		return nil, fmt.Errorf("MCP server name and version are required")
 	}
 
@@ -61,8 +64,9 @@ func (s *Server) AddToolset(set toolsetAccessor) error {
 	if set == nil {
 		return fmt.Errorf("toolset name is required")
 	}
+
 	name := set.Name()
-	if name == "" {
+	if len(name) == 0 {
 		return fmt.Errorf("toolset name is required")
 	}
 	if s.toolsets[name] {
@@ -73,9 +77,10 @@ func (s *Server) AddToolset(set toolsetAccessor) error {
 
 	names := make(map[string]string, len(tools))
 	for _, tool := range tools {
-		if tool.Tool.Name == "" || tool.Handler == nil {
+		if len(tool.Tool.Name) == 0 || tool.Handler == nil {
 			return fmt.Errorf("toolset %q: tool name and handler are required", name)
 		}
+
 		previous, exists := s.toolNames[tool.Tool.Name]
 		if !exists {
 			previous, exists = names[tool.Tool.Name]
@@ -83,6 +88,7 @@ func (s *Server) AddToolset(set toolsetAccessor) error {
 		if exists {
 			return fmt.Errorf("duplicate tool %q in toolsets %q and %q", tool.Tool.Name, previous, name)
 		}
+
 		names[tool.Tool.Name] = name
 	}
 

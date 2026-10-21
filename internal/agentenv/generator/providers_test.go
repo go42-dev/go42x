@@ -114,13 +114,18 @@ func TestGenerateProviderToggles(t *testing.T) {
 				Context:   config.Context{Template: "main.tpl.md"},
 				Providers: make(map[string]config.Provider),
 				MCP: map[string]provider.MCPServer{
-					"example": {Enabled: true, Name: "example", Command: "example"},
+					"example": {
+						Enabled: true,
+						Name:    "example",
+						Command: "example",
+					},
 				},
 			}
 			for provider := range settingsFiles {
 				cfg.Providers[provider] = config.Provider{Enabled: &disabled}
 			}
 			cfg.Providers[name] = config.Provider{Enabled: &enabled}
+
 			if name == ghaw.Name {
 				server := cfg.MCP["example"]
 				server.Command = "npx"
@@ -140,6 +145,7 @@ func TestGenerateProviderToggles(t *testing.T) {
 				t.Fatal(err)
 			}
 			want := []string{"AGENTS.md", settingsFiles[name]}
+
 			if name == claude.Name {
 				want = append(want, ".mcp.json")
 			}
@@ -147,6 +153,7 @@ func TestGenerateProviderToggles(t *testing.T) {
 				want = append(want, ".agents/plugins/project-tools/plugin.json")
 				settings := readJSON[map[string]any](t, out, settingsFiles[name])
 				server := settings["mcpServers"].(map[string]any)["example"].(map[string]any)
+
 				if server["cwd"] != filepath.Join(out, "src") {
 					t.Errorf("Antigravity cwd = %v, want project-relative absolute path", server["cwd"])
 				}
@@ -156,6 +163,7 @@ func TestGenerateProviderToggles(t *testing.T) {
 				if err != nil || entry.IsDir() {
 					return err
 				}
+
 				rel, err := filepath.Rel(out, path)
 				files = append(files, filepath.ToSlash(rel))
 				return err
@@ -178,7 +186,10 @@ func TestGenerateProviderToggles(t *testing.T) {
 				preserved[path] = string(data)
 			}
 			cfg.Providers[name] = config.Provider{Enabled: &disabled}
-			cfg.Providers[claude.Name] = config.Provider{Enabled: &disabled, Agents: []string{"missing.tpl.md"}}
+			cfg.Providers[claude.Name] = config.Provider{
+				Enabled: &disabled,
+				Agents:  []string{"missing.tpl.md"},
+			}
 			cfg.MCP["example"] = provider.MCPServer{
 				Enabled: true,
 				Name:    "example",

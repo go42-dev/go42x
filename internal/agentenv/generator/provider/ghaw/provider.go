@@ -73,8 +73,8 @@ type Provider struct {
 
 func New(
 	_ *slog.Logger,
-	settings Settings,
 	_ provider.TemplateEngineAccessor,
+	settings Settings,
 	_ string,
 ) *Provider {
 	return &Provider{settings: settings}
@@ -96,12 +96,14 @@ func (p *Provider) Prepare(plan *fspatch.Plan, _ map[string]any) error {
 				name,
 			)
 		}
+
 		container := server.Container
 		// Adapt a copy; other providers keep the shared runner command and environment.
 		if container != nil {
 			if server.Transport() != provider.MCPServerTypeStdio {
 				return fmt.Errorf("MCP server %s: container requires a stdio server", name)
 			}
+
 			server.Command = ghAWCommandDocker
 			server.Args = nil
 			env := make(map[string]string, len(server.Env)+len(container.Env))
@@ -127,6 +129,7 @@ func (p *Provider) Prepare(plan *fspatch.Plan, _ map[string]any) error {
 		if err := p.resolveMCPBindings(&entry); err != nil {
 			return fmt.Errorf("MCP server %s: %w", name, err)
 		}
+
 		fragment.MCPServers[name] = entry
 	}
 
@@ -137,9 +140,11 @@ func (p *Provider) Prepare(plan *fspatch.Plan, _ map[string]any) error {
 	if err := encoder.Encode(fragment); err != nil {
 		return fmt.Errorf("failed to encode gh-aw MCP declarations: %w", err)
 	}
+
 	if err := encoder.Close(); err != nil {
 		return fmt.Errorf("failed to close gh-aw MCP declarations: %w", err)
 	}
+
 	content.WriteString(ghAWFrontmatter)
 
 	if err := plan.Write(
@@ -150,6 +155,7 @@ func (p *Provider) Prepare(plan *fspatch.Plan, _ map[string]any) error {
 	); err != nil {
 		return fmt.Errorf("failed to prepare %s: %w", MCPFile, err)
 	}
+
 	return nil
 }
 
@@ -180,6 +186,7 @@ func ghAWMCPServer(server provider.MCPServer) (MCPServer, error) {
 					"gh-aw requires environment variable names containing only uppercase letters, digits, or underscores",
 				)
 			}
+
 			entry.Env[name] = value
 		}
 	case provider.MCPServerTypeHTTP:
@@ -194,6 +201,7 @@ func ghAWMCPServer(server provider.MCPServer) (MCPServer, error) {
 					"gh-aw requires HTTP header names containing only letters, digits, underscores, or hyphens",
 				)
 			}
+
 			entry.Headers[name] = value
 		}
 	default:
@@ -220,6 +228,7 @@ func (p *Provider) resolveMCPBindings(server *MCPServer) error {
 		if err != nil {
 			return err
 		}
+
 		*value = resolved
 	}
 	for _, fields := range []map[string]string{server.Env, server.Headers} {
@@ -228,6 +237,7 @@ func (p *Provider) resolveMCPBindings(server *MCPServer) error {
 			if err != nil {
 				return err
 			}
+
 			fields[name] = resolved
 		}
 	}
@@ -248,11 +258,13 @@ func resolveBindingReferences(value string, bindings map[string]string) (string,
 			bindingErr = fmt.Errorf("missing binding for %q; configure providers.gh-aw.bindings.%s", name, name)
 			return reference
 		}
+
 		return binding
 	})
 	if bindingErr != nil {
 		return "", bindingErr
 	}
+
 	return resolved, nil
 }
 

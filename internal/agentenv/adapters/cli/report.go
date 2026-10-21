@@ -16,6 +16,7 @@ func ReportInit(output io.Writer, settings *agentenv.Settings, result *agentenv.
 			if runErr != nil {
 				return nil
 			}
+
 			_, err := fmt.Fprintf(w, "Initialized agentenv in %s.\n", result.Directory)
 			return err
 		}
@@ -36,6 +37,7 @@ func ReportExport(
 			if runErr != nil {
 				return nil
 			}
+
 			_, err := fmt.Fprintf(w, "Exported agentenv bundle to %s.\n", result.Directory)
 			return err
 		}
@@ -55,6 +57,7 @@ func ReportGenerate(
 			if runErr != nil {
 				return nil
 			}
+
 			_, err := fmt.Fprintf(w, "Generated agentenv; %d file changes applied.\n", len(result.Changes))
 			return err
 		}
@@ -66,7 +69,7 @@ func ReportUpdate(output io.Writer, settings *agentenv.Settings, result *fspatch
 	var text func(io.Writer) error
 	if !settings.JSON {
 		text = func(w io.Writer) error {
-			if result != nil && result.BackupDir != "" {
+			if result != nil && len(result.BackupDir) > 0 {
 				if _, err := fmt.Fprintf(w, "Backup: %s\n", result.BackupDir); err != nil {
 					return err
 				}
@@ -74,6 +77,7 @@ func ReportUpdate(output io.Writer, settings *agentenv.Settings, result *fspatch
 			if runErr != nil {
 				return nil
 			}
+
 			_, err := fmt.Fprintf(w,
 				"Updated %d source files. Run go42x agentenv generate to refresh generated outputs.\n", result.Sources)
 			return err

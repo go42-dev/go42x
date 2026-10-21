@@ -28,13 +28,14 @@ func TestResultOutputDoesNotDependOnLogLevel(t *testing.T) {
 					command = []string{"kwb", "build"}
 				}
 				result := p.run(t, 0, append(command, "--log-level="+level)...)
+
 				if strings.Count(result.stdout, "\n") != 1 {
 					t.Fatalf("expected one result line: %+v", result)
 				}
-				if level == "error" && result.stderr != "" {
+				if level == "error" && len(result.stderr) > 0 {
 					t.Fatalf("unexpected error log on success: %s", result.stderr)
 				}
-				if level == "info" && operation != "build" && result.stderr == "" {
+				if level == "info" && operation != "build" && len(result.stderr) == 0 {
 					t.Fatal("progress logs did not reach stderr")
 				}
 				outputs = append(outputs, result.stdout)
@@ -90,7 +91,7 @@ func TestAgentEnvAndBuildJSONResults(t *testing.T) {
 	if err := json.Unmarshal(
 		[]byte(updated.stdout),
 		&update,
-	); err != nil || update.BackupDir == "" || update.Sources == 0 ||
+	); err != nil || len(update.BackupDir) == 0 || update.Sources == 0 ||
 		update.Applied == 0 {
 		t.Fatalf("invalid update result: %+v, %v", updated, err)
 	}
@@ -115,14 +116,14 @@ func TestRuntimeErrorsFollowSelectedFormat(t *testing.T) {
 			var failure struct {
 				Error string `json:"error"`
 			}
-			if err := json.Unmarshal([]byte(result.stdout), &failure); err != nil || failure.Error == "" {
+			if err := json.Unmarshal([]byte(result.stdout), &failure); err != nil || len(failure.Error) == 0 {
 				t.Fatalf("invalid JSON failure: %+v, %v", result, err)
 			}
-			if result.stderr != "" {
+			if len(result.stderr) > 0 {
 				t.Fatalf("JSON failure was repeated on stderr: %s", result.stderr)
 			}
 			text := p.run(t, 1, append(args, "--log-level=error")...)
-			if text.stdout != "" || strings.Count(text.stderr, "Error:") != 1 {
+			if len(text.stdout) > 0 || strings.Count(text.stderr, "Error:") != 1 {
 				t.Fatalf("text failure must appear once on stderr: %+v", text)
 			}
 		})

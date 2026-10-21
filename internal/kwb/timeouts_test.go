@@ -30,6 +30,7 @@ func TestReadDeadlinesAndCancellation(t *testing.T) {
 
 					ctx, cancel := context.WithCancel(t.Context())
 					defer cancel()
+
 					started := time.Now()
 					wantElapsed := settings.SearchTimeout
 					wantDeadline := started.Add(settings.SearchTimeout)
@@ -53,10 +54,12 @@ func TestReadDeadlinesAndCancellation(t *testing.T) {
 					}
 					wait := func(ctx context.Context) error {
 						deadline, ok := ctx.Deadline()
+
 						if !ok || !deadline.Equal(wantDeadline) {
 							t.Errorf("read deadline = %v (present %v), want %v", deadline, ok, wantDeadline)
 							return errors.New("incorrect read deadline")
 						}
+
 						<-ctx.Done()
 						return ctx.Err()
 					}
@@ -64,24 +67,34 @@ func TestReadDeadlinesAndCancellation(t *testing.T) {
 					switch operation {
 					case "search":
 						index.EXPECT().Search(gomock.Any(), gomock.Any()).DoAndReturn(
-							func(ctx context.Context, _ kwb.SearchOptions) (*kwb.SearchResponse, error) { return nil, wait(ctx) })
+							func(ctx context.Context, _ kwb.SearchOptions) (*kwb.SearchResponse, error) {
+								return nil, wait(ctx)
+							})
 						_, err = service.Search(ctx, kwb.SearchOptions{Query: "example"})
 					case "file":
 						index.EXPECT().GetFile(gomock.Any(), "README.md", 0, 0).DoAndReturn(
-							func(ctx context.Context, _ string, _, _ int) (*kwb.FileContent, error) { return nil, wait(ctx) })
+							func(ctx context.Context, _ string, _, _ int) (*kwb.FileContent, error) {
+								return nil, wait(ctx)
+							})
 						_, err = service.GetFile(ctx, "README.md", 0, 0)
 					case "list":
 						index.EXPECT().ListFiles(gomock.Any(), gomock.Any()).DoAndReturn(
-							func(ctx context.Context, _ kwb.ListOptions) (*kwb.FilesResponse, error) { return nil, wait(ctx) })
+							func(ctx context.Context, _ kwb.ListOptions) (*kwb.FilesResponse, error) {
+								return nil, wait(ctx)
+							})
 						_, err = service.ListFiles(ctx, kwb.ListOptions{})
 					case "stats":
 						index.EXPECT().GetStats(gomock.Any()).DoAndReturn(
-							func(ctx context.Context) (*kwb.Stats, error) { return nil, wait(ctx) })
+							func(ctx context.Context) (*kwb.Stats, error) {
+								return nil, wait(ctx)
+							})
 						_, err = service.GetStats(ctx)
 					default:
 						index.EXPECT().ProjectRoot().Return(settings.RootPath, nil)
 						catalog.EXPECT().Load(gomock.Any(), settings.RootPath).DoAndReturn(
-							func(ctx context.Context, _ string) (*kwb.Catalog, error) { return nil, wait(ctx) })
+							func(ctx context.Context, _ string) (*kwb.Catalog, error) {
+								return nil, wait(ctx)
+							})
 						switch operation {
 						case "catalog":
 							_, err = service.Catalog(ctx)

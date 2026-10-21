@@ -23,36 +23,39 @@ func TestGHAWMCPFragment(t *testing.T) {
 	workflowPath := filepath.Join(root, ".github/workflows/910-aw-description.md")
 	workflow := "---\non: pull_request\nengine: codex\nimports: [900-aw-mcp.md]\n---\nDescribe the PR.\n"
 	writeTestFile(t, workflowPath, workflow)
-	cfg := Settings{OutputDir: root, MCPServers: map[string]provider.MCPServer{
-		"local": {
-			Enabled: true,
-			Name:    "local",
-			Command: "npx",
-			Args:    []string{"tool", "--", "gopls", "mcp"},
-			Env: map[string]string{
-				"API_KEY": "$API_KEY",
-				"LABEL":   "literal",
+	cfg := Settings{
+		OutputDir: root,
+		MCPServers: map[string]provider.MCPServer{
+			"local": {
+				Enabled: true,
+				Name:    "local",
+				Command: "npx",
+				Args:    []string{"tool", "--", "gopls", "mcp"},
+				Env: map[string]string{
+					"API_KEY": "$API_KEY",
+					"LABEL":   "literal",
+				},
+				Tools: []string{"go_diagnostics"},
 			},
-			Tools: []string{"go_diagnostics"},
-		},
-		"remote": {
-			Enabled: true,
-			Name:    "remote",
-			Type:    provider.MCPServerTypeHTTP,
-			URL:     "https://api.example.com/mcp?key=${API_KEY}",
-			Headers: map[string]string{
-				"Authorization": "Bearer ${GITHUB_TOKEN}",
-				"X-API-Key":     "$API_KEY",
-				"X-Label":       "${{ vars.LABEL }}",
+			"remote": {
+				Enabled: true,
+				Name:    "remote",
+				Type:    provider.MCPServerTypeHTTP,
+				URL:     "https://api.example.com/mcp?key=${API_KEY}",
+				Headers: map[string]string{
+					"Authorization": "Bearer ${GITHUB_TOKEN}",
+					"X-API-Key":     "$API_KEY",
+					"X-Label":       "${{ vars.LABEL }}",
+				},
+			},
+			"disabled.invalid": {
+				Name: "disabled",
+				Type: provider.MCPServerTypeSSE,
+				CWD:  "unused",
+				Env:  map[string]string{"TOKEN": "$DISABLED"},
 			},
 		},
-		"disabled.invalid": {
-			Name: "disabled",
-			Type: provider.MCPServerTypeSSE,
-			CWD:  "unused",
-			Env:  map[string]string{"TOKEN": "$DISABLED"},
-		},
-	}}
+	}
 	cfg.Bindings = map[string]string{
 		"API_KEY":      "${{ secrets.API_KEY }}",
 		"GITHUB_TOKEN": "${{ github.token }}",
@@ -62,7 +65,7 @@ func TestGHAWMCPFragment(t *testing.T) {
 		t.Fatal(err)
 	}
 	logger := slog.New(slog.DiscardHandler)
-	p := New(logger, cfg, nil, "")
+	p := New(logger, nil, cfg, "")
 	plan := fspatch.NewPlan(logger, root, filepath.Join(root, ".go42x/backups"))
 
 	if err := p.Prepare(plan, nil); err != nil {
@@ -108,6 +111,7 @@ func TestGHAWMCPFragment(t *testing.T) {
 			Allowed: []string{"*"},
 		},
 	}
+
 	if fragment.Description != ghAWMCPDescription || !reflect.DeepEqual(fragment.MCPServers, want) {
 		t.Fatalf("fragment = %+v; want servers %+v", fragment, want)
 	}
@@ -129,7 +133,7 @@ func TestGHAWMCPFragment(t *testing.T) {
 	}
 
 	cfg.MCPServers = nil
-	p = New(logger, cfg, nil, "")
+	p = New(logger, nil, cfg, "")
 	plan = fspatch.NewPlan(logger, root, filepath.Join(root, ".go42x/backups"))
 	if err := p.Prepare(plan, nil); err != nil {
 		t.Fatal(err)
@@ -149,24 +153,48 @@ func TestGHAWUnsupportedMCPSettings(t *testing.T) {
 		server provider.MCPServer
 		want   string
 	}{
-		{"SSE", provider.MCPServer{Type: provider.MCPServerTypeSSE}, "only stdio and HTTP"},
-		{"runner command", provider.MCPServer{Command: "task"}, "cannot run this stdio command directly"},
-		{"cwd", provider.MCPServer{
-			Command: "task",
-			CWD:     "src",
-		}, "does not support cwd"},
-		{"HTTP env", provider.MCPServer{
-			Type: provider.MCPServerTypeHTTP,
-			Env:  map[string]string{"KEY": "value"},
-		}, "does not support env"},
-		{"environment name", provider.MCPServer{
-			Command: "npx",
-			Env:     map[string]string{"bad-name": "value"},
-		}, "environment variable names"},
-		{"header name", provider.MCPServer{
-			Type:    provider.MCPServerTypeHTTP,
-			Headers: map[string]string{"Bad Header": "value"},
-		}, "HTTP header names"},
+		{
+			"SSE",
+			provider.MCPServer{Type: provider.MCPServerTypeSSE},
+			"only stdio and HTTP",
+		},
+		{
+			"runner command",
+			provider.MCPServer{Command: "task"},
+			"cannot run this stdio command directly",
+		},
+		{
+			"cwd",
+			provider.MCPServer{
+				Command: "task",
+				CWD:     "src",
+			},
+			"does not support cwd",
+		},
+		{
+			"HTTP env",
+			provider.MCPServer{
+				Type: provider.MCPServerTypeHTTP,
+				Env:  map[string]string{"KEY": "value"},
+			},
+			"does not support env",
+		},
+		{
+			"environment name",
+			provider.MCPServer{
+				Command: "npx",
+				Env:     map[string]string{"bad-name": "value"},
+			},
+			"environment variable names",
+		},
+		{
+			"header name",
+			provider.MCPServer{
+				Type:    provider.MCPServerTypeHTTP,
+				Headers: map[string]string{"Bad Header": "value"},
+			},
+			"HTTP header names",
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			if _, err := ghAWMCPServer(tt.server); err == nil || !strings.Contains(err.Error(), tt.want) {
@@ -177,9 +205,20 @@ func TestGHAWUnsupportedMCPSettings(t *testing.T) {
 	root := t.TempDir()
 	logger := slog.New(slog.DiscardHandler)
 	for _, name := range []string{"invalid.name", ""} {
-		p := New(logger, Settings{OutputDir: root, MCPServers: map[string]provider.MCPServer{
-			name: {Enabled: true, Command: "task"},
-		}}, nil, "")
+		p := New(
+			logger,
+			nil,
+			Settings{
+				OutputDir: root,
+				MCPServers: map[string]provider.MCPServer{
+					name: {
+						Enabled: true,
+						Command: "task",
+					},
+				},
+			},
+			"",
+		)
 		plan := fspatch.NewPlan(logger, root, filepath.Join(root, ".go42x/backups"))
 		if err := p.Prepare(
 			plan,
@@ -314,10 +353,15 @@ func TestGHAWMissingBindings(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			root := t.TempDir()
 			server.Enabled = true
-			p := New(nil, Settings{
-				OutputDir:  root,
-				MCPServers: map[string]provider.MCPServer{"example": server},
-			}, nil, "")
+			p := New(
+				nil,
+				nil,
+				Settings{
+					OutputDir:  root,
+					MCPServers: map[string]provider.MCPServer{"example": server},
+				},
+				"",
+			)
 			plan := fspatch.NewPlan(slog.New(slog.DiscardHandler), root, filepath.Join(root, ".build/backups"))
 
 			err := p.Prepare(plan, nil)
@@ -339,7 +383,10 @@ func TestGHAWContainerPreservesSharedCommand(t *testing.T) {
 		Name:    "local",
 		Command: "task",
 		Args:    []string{"x", "--", "$LOCAL_ONLY"},
-		Env:     map[string]string{"KEY": "$KEY", "SHARED": "$SHARED"},
+		Env: map[string]string{
+			"KEY":    "$KEY",
+			"SHARED": "$SHARED",
+		},
 		Container: &provider.MCPContainer{
 			Image:   "ghcr.io/example/tools",
 			Version: "$IMAGE_VERSION",
@@ -371,7 +418,7 @@ func TestGHAWContainerPreservesSharedCommand(t *testing.T) {
 	}
 	logger := slog.New(slog.DiscardHandler)
 	plan := fspatch.NewPlan(logger, root, filepath.Join(root, ".build/backups"))
-	p := New(logger, cfg, nil, "")
+	p := New(logger, nil, cfg, "")
 	if err := p.Prepare(plan, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -394,9 +441,10 @@ func TestGHAWContainerPreservesSharedCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	entry := fragment.MCPServers["local"]
+
 	if entry.Type != provider.MCPServerTypeStdio || entry.Container != "ghcr.io/example/tools" ||
 		entry.Version != "${{ env.GO42X_MCP_IMAGE_VERSION }}" ||
-		entry.Entrypoint != "go42x" || entry.Command != "" ||
+		entry.Entrypoint != "go42x" || len(entry.Command) > 0 ||
 		!slices.Equal(entry.EntrypointArgs, []string{"mcp"}) ||
 		!slices.Equal(entry.Args, []string{"--workdir", "${{ github.workspace }}"}) ||
 		!slices.Equal(entry.Mounts, []string{"${{ github.workspace }}:${{ github.workspace }}:rw"}) ||

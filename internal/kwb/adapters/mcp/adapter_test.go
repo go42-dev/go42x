@@ -42,9 +42,20 @@ func TestStructuredToolResponses(t *testing.T) {
 		t.Fatal(err)
 	}
 	arguments := map[string]map[string]any{
-		"kwb_search":      {"query": "http server", "kind": "code", "offset": 0},
-		"kwb_get_file":    {"path": "server.go", "start_line": 2, "end_line": 3},
-		"kwb_list_files":  {"limit": 1, "offset": 0.0},
+		"kwb_search": {
+			"query":  "http server",
+			"kind":   "code",
+			"offset": 0,
+		},
+		"kwb_get_file": {
+			"path":       "server.go",
+			"start_line": 2,
+			"end_line":   3,
+		},
+		"kwb_list_files": {
+			"limit":  1,
+			"offset": 0.0,
+		},
 		"kwb_stats":       {},
 		"docs_get":        {"id": "server"},
 		"docs_impact":     {"paths": []string{"server.go"}},
@@ -88,7 +99,10 @@ func TestStructuredToolResponses(t *testing.T) {
 	}
 	for _, limit := range []any{0, -1, 1.5, "invalid", 1e30, kwb.MaxSearchLimit + 1} {
 		request := mcp.CallToolRequest{}
-		request.Params.Arguments = map[string]any{"query": "server", "limit": limit}
+		request.Params.Arguments = map[string]any{
+			"query": "server",
+			"limit": limit,
+		}
 		result, err := New(service).searchHandler(t.Context(), request)
 		if err != nil || !result.IsError {
 			t.Fatalf("invalid limit %v accepted: %+v %v", limit, result, err)
@@ -98,9 +112,13 @@ func TestStructuredToolResponses(t *testing.T) {
 		if tool.Tool.Name != "kwb_search" && tool.Tool.Name != "kwb_list_files" {
 			continue
 		}
+
 		for _, offset := range []any{-1, 0.5, "invalid", 1e30} {
 			request := mcp.CallToolRequest{}
-			request.Params.Arguments = map[string]any{"query": "server", "offset": offset}
+			request.Params.Arguments = map[string]any{
+				"query":  "server",
+				"offset": offset,
+			}
 			result, err := tool.Handler(t.Context(), request)
 			if err != nil || !result.IsError {
 				t.Fatalf("%s accepted invalid offset %v: %+v %v", tool.Tool.Name, offset, result, err)

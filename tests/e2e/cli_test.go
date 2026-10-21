@@ -25,7 +25,7 @@ func TestHelpVersionAndUsage(t *testing.T) {
 			t.Errorf("version output %q does not contain %q", version.stdout, want)
 		}
 	}
-	if version.stderr != "" || help.stderr != "" {
+	if len(version.stderr) > 0 || len(help.stderr) > 0 {
 		t.Errorf("help/version wrote unexpected stderr: %q, %q", help.stderr, version.stderr)
 	}
 	for _, args := range [][]string{
@@ -36,7 +36,7 @@ func TestHelpVersionAndUsage(t *testing.T) {
 		{"mcp", "--search-timeout=0"},
 	} {
 		result := p.run(t, 2, args...)
-		if result.stdout != "" || !strings.Contains(result.stderr, "Error:") {
+		if len(result.stdout) > 0 || !strings.Contains(result.stderr, "Error:") {
 			t.Errorf("invalid usage %v: stdout=%q stderr=%q", args, result.stdout, result.stderr)
 		}
 	}
@@ -64,9 +64,27 @@ func TestDoctorReportsAndExitCodes(t *testing.T) {
 		name, status, configStatus, indexStatus string
 		exit                                    int
 	}{
-		{"healthy", "pass", "pass", "pass", 0},
-		{"outdated instructions", "warn", "pass", "warn", 0},
-		{"invalid configuration", "fail", "fail", "warn", 1},
+		{
+			"healthy",
+			"pass",
+			"pass",
+			"pass",
+			0,
+		},
+		{
+			"outdated instructions",
+			"warn",
+			"pass",
+			"warn",
+			0,
+		},
+		{
+			"invalid configuration",
+			"fail",
+			"fail",
+			"warn",
+			1,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			switch tc.name {
@@ -95,6 +113,7 @@ func TestDoctorReportsAndExitCodes(t *testing.T) {
 				t.Errorf("doctor printed a duplicate error after its report: %q", result.stderr)
 			}
 			text := caller.run(t, tc.exit, "doctor", "--root", p.root)
+
 			if !strings.Contains(text.stdout, tc.configStatus+" agentenv.config:") {
 				t.Errorf("missing diagnostic in text output: %s", text.stdout)
 			}

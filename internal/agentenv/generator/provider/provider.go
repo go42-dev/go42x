@@ -3,6 +3,7 @@ package provider
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -37,6 +38,7 @@ func (s MCPServer) Transport() string {
 	if len(s.Type) == 0 {
 		return MCPServerTypeStdio
 	}
+
 	return s.Type
 }
 
@@ -65,6 +67,7 @@ func ParseProviders(value string, supported []string) ([]string, error) {
 	if err := ValidateProviders(providers, supported); err != nil {
 		return nil, err
 	}
+
 	return providers, nil
 }
 
@@ -81,6 +84,7 @@ func ValidateProviders(selected, supported []string) error {
 		if seen[name] {
 			return fmt.Errorf("duplicate provider %q", name)
 		}
+
 		seen[name] = true
 	}
 	return nil
@@ -106,14 +110,17 @@ func PrepareJSONSettings(
 	if err != nil {
 		return fmt.Errorf("failed to encode settings: %w", err)
 	}
+
 	generated, err := decodeJSONSettings(content)
 	if err != nil {
 		return fmt.Errorf("invalid generated settings: %w", err)
 	}
+
 	previous, exists, err := plan.Read(path)
 	if err != nil {
 		return err
 	}
+
 	settings := make(map[string]any)
 	if exists {
 		settings, err = decodeJSONSettings(previous)
@@ -139,6 +146,7 @@ func PrepareJSONSettings(
 		if !present {
 			continue
 		}
+
 		if err := setJSONSetting(settings, field, value, true, true); err != nil {
 			return fmt.Errorf("failed to update %s: %w", path, err)
 		}
@@ -150,10 +158,12 @@ func PrepareJSONSettings(
 	if exists && bytes.Equal(before, after) {
 		return plan.Write(path, previous, fspatch.Settings, false)
 	}
+
 	var formatted bytes.Buffer
 	if err := json.Indent(&formatted, after, "", "  "); err != nil {
 		return fmt.Errorf("failed to format settings: %w", err)
 	}
+
 	return plan.Write(path, formatted.Bytes(), fspatch.Settings, false)
 }
 
@@ -168,13 +178,16 @@ func decodeJSONSettings(content []byte) (map[string]any, error) {
 	if settings == nil {
 		return nil, fmt.Errorf("settings must be a JSON object")
 	}
+
 	var trailing any
-	if err := decoder.Decode(&trailing); err != io.EOF {
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
 		if err != nil {
 			return nil, err
 		}
+
 		return nil, fmt.Errorf("settings must contain a single JSON object")
 	}
+
 	return settings, nil
 }
 
@@ -185,6 +198,7 @@ func jsonSetting(settings map[string]any, path string) (any, bool) {
 		if !present || i == len(parts)-1 {
 			return value, present
 		}
+
 		var ok bool
 		settings, ok = value.(map[string]any)
 		if !ok {
@@ -202,15 +216,18 @@ func setJSONSetting(settings map[string]any, path string, value any, present, on
 			if !present {
 				return nil
 			}
+
 			child := make(map[string]any)
 			settings[part] = child
 			settings = child
 			continue
 		}
+
 		child, ok := existing.(map[string]any)
 		if !ok {
 			return fmt.Errorf("setting %s must be an object", strings.Join(parts[:i+1], "."))
 		}
+
 		settings = child
 	}
 	key := parts[len(parts)-1]
@@ -222,5 +239,6 @@ func setJSONSetting(settings map[string]any, path string, value any, present, on
 	} else {
 		delete(settings, key)
 	}
+
 	return nil
 }
