@@ -92,7 +92,7 @@ func TestDoctorReportsAndExitCodes(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			switch tc.name {
 			case "outdated instructions":
-				p.write(t, ".go42x/agents.tpl.md", "Updated instructions\n")
+				p.write(t, ".go42x/agents.tpl.md", "# Updated instructions\n")
 			case "invalid configuration":
 				p.write(t, ".go42x/go42x.yaml", "version: [")
 			}

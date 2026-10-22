@@ -93,7 +93,7 @@ RUN apk add --no-cache \
     git=2.54.0-r0 \
     libcrypto3=3.5.9-r0 \
     libssl3=3.5.9-r0 \
-    musl-dev=1.2.6-r2 \
+    musl-dev=1.2.6-r3 \
     tini=0.19.0-r3 \
     tzdata=2026e-r0 \
     zlib=1.3.2-r1
