@@ -170,6 +170,10 @@ func TestTemplateFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if len(contents) != 2 {
+		t.Fatalf("loaded %d chunks, want 2", len(contents))
+	}
+
 	sources := newTemplateSources(instructionTemplate{content: chunksPlaceholder}, contents)
 	if got := sources.content; got != "alpha\n\nbeta" {
 		t.Fatalf("merge = %q", got)
