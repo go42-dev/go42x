@@ -1,4 +1,4 @@
-package collector
+package project
 
 import (
 	"reflect"
@@ -9,7 +9,7 @@ import (
 )
 
 func TestProjectCollector(t *testing.T) {
-	data, err := NewProjectCollector(nil).Collect(t.Context())
+	data, err := New(nil).Collect(t.Context())
 	if err != nil || len(data) != 0 {
 		t.Fatalf("nil project = %v, %v", data, err)
 	}
@@ -36,7 +36,7 @@ func TestProjectCollector(t *testing.T) {
 			"disabled": {Command: "hidden"},
 		},
 	}
-	data, err = NewProjectCollector(cfg).Collect(t.Context())
+	data, err = New(cfg).Collect(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +53,7 @@ func TestProjectCollector(t *testing.T) {
 			t.Errorf("%s = %v, want %v", key, data[key], want)
 		}
 	}
-	data, err = NewProjectCollector(&config.Config{}).Collect(t.Context())
+	data, err = New(&config.Config{}).Collect(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}

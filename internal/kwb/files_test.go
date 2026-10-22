@@ -45,7 +45,7 @@ func TestEnsureSourceIgnore(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			root := t.TempDir()
-			manager := newIndexManager(NewSettings(), slog.New(slog.DiscardHandler))
+			manager := newIndexManager(slog.New(slog.DiscardHandler), NewSettings())
 
 			if tt.exists {
 				writeFixture(t, root, sourceIgnorePath, tt.previous)
@@ -82,7 +82,7 @@ func TestEnsureSourceIgnoreCancellation(t *testing.T) {
 	root := t.TempDir()
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	manager := newIndexManager(NewSettings(), slog.New(slog.DiscardHandler))
+	manager := newIndexManager(slog.New(slog.DiscardHandler), NewSettings())
 
 	if _, err := manager.ensureSourceIgnore(ctx, root); !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled creation = %v", err)
@@ -94,7 +94,7 @@ func TestEnsureSourceIgnoreCancellation(t *testing.T) {
 
 func TestSourceExclusionsUsesBundledDefaultsAndCustomExceptions(t *testing.T) {
 	root := t.TempDir()
-	manager := newIndexManager(NewSettings(), slog.New(slog.DiscardHandler))
+	manager := newIndexManager(slog.New(slog.DiscardHandler), NewSettings())
 	if _, err := manager.ensureSourceIgnore(t.Context(), root); err != nil {
 		t.Fatal(err)
 	}

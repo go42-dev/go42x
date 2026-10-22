@@ -18,9 +18,9 @@ func TestApplyUsesSelectedBackupDirectory(t *testing.T) {
 			plan := NewPlan(slog.New(slog.DiscardHandler), dir, backupDir)
 			var err error
 			if operation == "remove" {
-				err = plan.Remove(path, Settings)
+				err = plan.Remove(path, KindSettings)
 			} else {
-				err = plan.Write(path, []byte("replacement"), Settings, false)
+				err = plan.Write(path, []byte("replacement"), KindSettings, false)
 			}
 
 			if err != nil {
@@ -29,7 +29,7 @@ func TestApplyUsesSelectedBackupDirectory(t *testing.T) {
 			if err := plan.Apply(); err != nil {
 				t.Fatal(err)
 			}
-			backups, err := filepath.Glob(filepath.Join(backupDir, string(Settings), "config.yaml.*.bak"))
+			backups, err := filepath.Glob(filepath.Join(backupDir, string(KindSettings), "config.yaml.*.bak"))
 			if err != nil || len(backups) != 1 {
 				t.Fatalf("backups = %v, %v", backups, err)
 			}
@@ -58,7 +58,7 @@ func TestPlanRejectsSymlinkParents(t *testing.T) {
 		t.Fatal(err)
 	}
 	plan := NewPlan(slog.New(slog.DiscardHandler), root, t.TempDir())
-	if err := plan.Write(filepath.Join(root, "link", "file"), []byte("escape"), Sources, false); err == nil {
+	if err := plan.Write(filepath.Join(root, "link", "file"), []byte("escape"), KindSources, false); err == nil {
 		t.Fatal("symlink parent accepted")
 	}
 }

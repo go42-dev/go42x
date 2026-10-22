@@ -11,7 +11,10 @@ const testManagedBlock = "# go42x -- START\nnew-rule/\n# go42x -- END\n"
 
 func TestWriteManagedBlock(t *testing.T) {
 	for _, tt := range []struct {
-		name, previous, template, want string
+		name     string
+		previous string
+		template string
+		want     string
 	}{
 		{
 			name:     "missing file",
@@ -79,7 +82,7 @@ func TestWriteManagedBlock(t *testing.T) {
 
 			for range 2 {
 				plan := NewPlan(slog.New(slog.DiscardHandler), root, t.TempDir())
-				if err := plan.WriteManagedBlock(path, tt.template, Sources); err != nil {
+				if err := plan.WriteManagedBlock(path, tt.template, KindSources); err != nil {
 					t.Fatal(err)
 				}
 				if err := plan.Apply(); err != nil {
@@ -118,7 +121,7 @@ func TestWriteManagedBlockRejectsMalformedMarkers(t *testing.T) {
 					}
 					plan := NewPlan(slog.New(slog.DiscardHandler), root, backups)
 
-					if err := plan.WriteManagedBlock(path, template, Sources); err == nil {
+					if err := plan.WriteManagedBlock(path, template, KindSources); err == nil {
 						t.Fatal("malformed markers accepted")
 					}
 					if err := plan.Apply(); err != nil {
@@ -141,7 +144,7 @@ func TestWriteManagedBlockRejectsMalformedMarkers(t *testing.T) {
 func TestWriteManagedBlockRequiresTemplateMarkers(t *testing.T) {
 	root := t.TempDir()
 	plan := NewPlan(slog.New(slog.DiscardHandler), root, t.TempDir())
-	if err := plan.WriteManagedBlock(filepath.Join(root, "ignore"), "unmarked template\n", Sources); err == nil {
+	if err := plan.WriteManagedBlock(filepath.Join(root, "ignore"), "unmarked template\n", KindSources); err == nil {
 		t.Fatal("unmarked template accepted")
 	}
 }

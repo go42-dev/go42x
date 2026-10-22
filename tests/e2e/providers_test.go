@@ -24,10 +24,11 @@ providers:
 func TestProviderSelectionPrecedence(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
-		name        string
-		local       bool
-		env         *string
-		flags, want []string
+		name  string
+		local bool
+		env   *string
+		flags []string
+		want  []string
 	}{
 		{
 			name: "shared defaults",
@@ -120,7 +121,7 @@ func TestProviderSelectionPrecedence(t *testing.T) {
 						t.Errorf("doctor selected %v; generate selected %v", result.Evidence, tc.want)
 					}
 				}
-				if result.ID == "agentenv.outputs" && result.Status != check.Pass {
+				if result.ID == "agentenv.outputs" && result.Status != check.StatusPass {
 					t.Errorf("doctor disagrees with generation: %+v", result)
 				}
 			}
@@ -152,7 +153,11 @@ func TestProviderSelectionRejectsInvalidNamesWithoutWrites(t *testing.T) {
 
 func TestInvalidLocalConfigurationCannotPartiallyGenerate(t *testing.T) {
 	t.Parallel()
-	for _, tc := range []struct{ name, local, private string }{
+	for _, tc := range []struct {
+		name    string
+		local   string
+		private string
+	}{
 		{
 			name:    "invalid approval policy",
 			local:   "providers: {codex: {approval-policy: secret-invalid-policy}}\n",

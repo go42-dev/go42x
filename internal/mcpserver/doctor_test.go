@@ -41,13 +41,13 @@ func TestDoctorCheckUsesCurrentEnabledServers(t *testing.T) {
 		ids = append(ids, child.ID)
 		statuses = append(statuses, child.Status)
 	}
-	if result.Status != check.Pass || !reflect.DeepEqual(ids, []string{
+	if result.Status != check.StatusPass || !reflect.DeepEqual(ids, []string{
 		"mcp.alpha.configuration", "mcp.alpha.probe", "mcp.zeta.configuration", "mcp.zeta.probe",
-	}) || !reflect.DeepEqual(statuses, []check.Status{check.Pass, check.Skipped, check.Pass, check.Skipped}) {
+	}) || !reflect.DeepEqual(statuses, []check.Status{check.StatusPass, check.StatusSkipped, check.StatusPass, check.StatusSkipped}) {
 		t.Fatalf("server checks: %+v", result)
 	}
 	servers = nil
-	if result := group.Run(t.Context()); result.Status != check.Skipped || len(result.Children) != 0 {
+	if result := group.Run(t.Context()); result.Status != check.StatusSkipped || len(result.Children) != 0 {
 		t.Fatalf("removed servers still checked: %+v", result)
 	}
 }
@@ -66,7 +66,7 @@ func TestMCPProbe(t *testing.T) {
 	}
 	result := probeMCP(t.Context(), server, 3*time.Second)
 
-	if result.Status != check.Pass {
+	if result.Status != check.StatusPass {
 		t.Fatalf("healthy: %+v", result)
 	}
 	server.Tools = []string{"missing"}
@@ -74,7 +74,7 @@ func TestMCPProbe(t *testing.T) {
 		t.Context(),
 		server,
 		3*time.Second,
-	); result.Status != check.Fail ||
+	); result.Status != check.StatusFail ||
 		len(result.Evidence) != 1 {
 		t.Fatalf("missing tool: %+v", result)
 	}
@@ -82,12 +82,12 @@ func TestMCPProbe(t *testing.T) {
 	start := time.Now()
 	result = probeMCP(t.Context(), server, 100*time.Millisecond)
 
-	if result.Status != check.Fail || time.Since(start) > 3*time.Second {
+	if result.Status != check.StatusFail || time.Since(start) > 3*time.Second {
 		t.Fatalf("timeout: %+v elapsed=%s", result, time.Since(start))
 	}
 	server.Env["TOKEN"] = "${GO42X_MISSING_DOCTOR_TOKEN}"
 	t.Setenv("GO42X_MISSING_DOCTOR_TOKEN", "")
-	if result = probeMCP(t.Context(), server, time.Second); result.Status != check.Skipped {
+	if result = probeMCP(t.Context(), server, time.Second); result.Status != check.StatusSkipped {
 		t.Fatalf("missing credentials: %+v", result)
 	}
 }
@@ -209,7 +209,7 @@ func TestMCPRemoteProbe(t *testing.T) {
 				2*time.Second,
 			)
 
-			if result.Status != check.Pass {
+			if result.Status != check.StatusPass {
 				t.Fatalf("remote probe: %+v", result)
 			}
 		})

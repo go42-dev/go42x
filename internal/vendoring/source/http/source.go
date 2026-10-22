@@ -8,7 +8,9 @@ import (
 	"github.com/go42-dev/go42x/internal/vendoring/source"
 )
 
-type Adapter struct{ client *http.Client }
+type Adapter struct {
+	client *http.Client
+}
 
 func New(client *http.Client) *Adapter {
 	return &Adapter{client: client}

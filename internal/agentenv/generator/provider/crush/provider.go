@@ -10,11 +10,11 @@ import (
 	"github.com/go42-dev/go42x/internal/fspatch"
 )
 
-const (
-	Name            = "crush"
-	crushSchema     = "https://charm.land/crush.json"
-	crushConfigFile = ".crush.json"
-)
+const Name = "crush"
+
+const schemaURL = "https://charm.land/crush.json"
+
+const fileConfig = ".crush.json"
 
 // Config represents the .crush.json structure.
 type Config struct {
@@ -67,7 +67,6 @@ func (p *Provider) Prepare(plan *fspatch.Plan, _ map[string]any) error {
 	if err := p.prepareConfigFiles(plan); err != nil {
 		return fmt.Errorf("failed to prepare config files: %w", err)
 	}
-
 	return nil
 }
 
@@ -77,13 +76,13 @@ func (p *Provider) prepareConfigFiles(plan *fspatch.Plan) error {
 
 	// Generate .crush.json
 	crushConfig := Config{
-		Schema:      crushSchema,
+		Schema:      schemaURL,
 		LSP:         map[string]LSPConfig{"go": {Command: "gopls"}},
 		MCP:         mcpConfig,
 		Permissions: Permissions{AllowedTools: allTools},
 	}
 
-	crushPath := filepath.Join(p.settings.OutputDir, crushConfigFile)
+	crushPath := filepath.Join(p.settings.OutputDir, fileConfig)
 	if err := provider.PrepareJSONSettings(plan, crushPath, crushConfig,
 		[]string{"mcp", "permissions.allowed_tools"},
 		[]string{"$schema", "lsp.go"},

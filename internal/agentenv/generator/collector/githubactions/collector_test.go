@@ -1,104 +1,12 @@
-package collector
+package githubactions
 
 import (
-	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"strings"
 	"testing"
 )
-
-func TestCollectorMetadata(t *testing.T) {
-	collectors := []struct {
-		collector interface {
-			Name() string
-			Priority() int
-		}
-		name     string
-		priority int
-	}{
-		{
-			NewProjectCollector(nil),
-			"project",
-			5,
-		}, {
-			NewGitCollector("."),
-			"git",
-			10,
-		},
-		{
-			NewEnvironmentCollector(nil, "."),
-			"environment",
-			20,
-		}, {
-			NewGitHubActionsCollector(),
-			"github_actions",
-			30,
-		},
-		{
-			NewGoCollector(".", nil),
-			"golang",
-			25,
-		},
-	}
-	for _, tt := range collectors {
-		if tt.collector.Name() != tt.name || tt.collector.Priority() != tt.priority {
-			t.Errorf("collector metadata for %s", tt.name)
-		}
-	}
-	data, err := NewBaseCollector("base", 1).Collect(t.Context())
-	if err != nil || data != nil {
-		t.Fatalf("base Collect() = %v, %v", data, err)
-	}
-}
-
-func TestEnvironmentCollector(t *testing.T) {
-	t.Chdir(t.TempDir())
-	t.Setenv("CI", "true")
-	t.Setenv("AGENTENV_TEST_INCLUDED", "yes")
-	t.Setenv("AGENTENV_TEST_EMPTY", "")
-	t.Setenv("AGENTENV_TEST_PRIVATE", "secret")
-	data, err := NewEnvironmentCollector(
-		[]string{"AGENTENV_TEST_INCLUDED", "AGENTENV_TEST_EMPTY"},
-		".",
-	).Collect(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for key, want := range map[string]any{
-		"is_ci":       true,
-		"ci_mode":     "true",
-		"os":          runtime.GOOS,
-		"arch":        runtime.GOARCH,
-		"working_dir": wd,
-	} {
-		if data[key] != want {
-			t.Errorf("%s = %v, want %v", key, data[key], want)
-		}
-	}
-	variables := data["variables"].(map[string]string)
-
-	if variables["AGENTENV_TEST_INCLUDED"] != "yes" {
-		t.Error("configured environment variable missing")
-	}
-	for _, key := range []string{"AGENTENV_TEST_PRIVATE", "AGENTENV_TEST_EMPTY"} {
-		if _, ok := variables[key]; ok {
-			t.Errorf("unrequested or empty env var %s exposed", key)
-		}
-	}
-	t.Setenv("CI", "")
-	data, err = NewEnvironmentCollector(nil, ".").Collect(t.Context())
-	if err != nil || data["variables"] != nil || data["is_ci"] != false || data["ci_mode"] != "" {
-		t.Fatalf("unconfigured environment variables = %v, %v", data, err)
-	}
-}
 
 func cleanActionsEnv(t *testing.T) {
 	t.Helper()
@@ -116,7 +24,7 @@ func cleanActionsEnv(t *testing.T) {
 
 func TestGitHubActionsContext(t *testing.T) {
 	cleanActionsEnv(t)
-	c := NewGitHubActionsCollector()
+	c := New()
 	data, err := c.Collect(t.Context())
 	if err != nil || len(data) != 0 {
 		t.Fatalf("outside Actions = %v, %v", data, err)
@@ -220,8 +128,15 @@ func TestGitHubActionsContext(t *testing.T) {
 
 func TestGitHubActionsPrepareEnv(t *testing.T) {
 	for _, tt := range []struct {
-		name, event, action, payload, headRef, refName, subject, request string
-		details                                                          map[string]any
+		name    string
+		event   string
+		action  string
+		payload string
+		headRef string
+		refName string
+		subject string
+		request string
+		details map[string]any
 	}{
 		{
 			name:    "issue comment",
@@ -313,7 +228,7 @@ func TestGitHubActionsPrepareEnv(t *testing.T) {
 			} {
 				t.Setenv(key, value)
 			}
-			data, err := NewGitHubActionsCollector().Collect(t.Context())
+			data, err := New().Collect(t.Context())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -367,8 +282,10 @@ func TestGitHubActionsPrepareEnv(t *testing.T) {
 
 func TestGitHubEventPayloads(t *testing.T) {
 	for _, tt := range []struct {
-		name, env, file string
-		want            any
+		name string
+		env  string
+		file string
+		want any
 	}{
 		{
 			"env wins",
@@ -412,7 +329,7 @@ func TestGitHubEventPayloads(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			data, err := NewGitHubActionsCollector().Collect(t.Context())
+			data, err := New().Collect(t.Context())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -423,69 +340,5 @@ func TestGitHubEventPayloads(t *testing.T) {
 				t.Error("incomplete Actions context should not produce a malformed build URL")
 			}
 		})
-	}
-}
-
-func TestGitCollectorWithoutRepository(t *testing.T) {
-	t.Chdir(t.TempDir())
-	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
-	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
-	c := NewGitCollector(".")
-	data, err := c.Collect(t.Context())
-	if err != nil || len(data) != 0 {
-		t.Fatalf("nonrepository = %v, %v", data, err)
-	}
-	t.Setenv("PATH", "")
-	data, err = c.Collect(t.Context())
-	if err != nil || len(data) != 0 {
-		t.Fatalf("missing git = %v, %v", data, err)
-	}
-}
-
-func TestGitCollectorRepository(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git unavailable")
-	}
-	t.Chdir(t.TempDir())
-	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
-	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
-	t.Setenv("GIT_TEMPLATE_DIR", t.TempDir())
-	git := func(args ...string) string {
-		t.Helper()
-		cmd := exec.Command("git", args...)
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-		return strings.TrimSpace(string(out))
-	}
-	git("init", "-b", "test")
-	git("config", "user.name", "Test Author")
-	git("config", "user.email", "test@example.com")
-	git("config", "commit.gpgsign", "false")
-	git("config", "core.hooksPath", t.TempDir())
-	git("commit", "--allow-empty", "-m", "fixture")
-	git("remote", "add", "origin", "https://example.com/org/repo.git")
-	git("tag", "v1.0.0")
-	c := NewGitCollector(".")
-	data, err := c.Collect(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
-	for key, want := range map[string]any{
-		"root":   git("rev-parse", "--show-toplevel"),
-		"remote": "https://example.com/org/repo.git",
-		"branch": "test",
-		"commit": git("rev-parse", "HEAD"),
-		"tag":    "v1.0.0",
-	} {
-		if data[key] != want {
-			t.Errorf("%s = %v, want %v", key, data[key], want)
-		}
-	}
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
-	if _, err := c.runGitCommand(ctx, "status"); err == nil {
-		t.Fatal("canceled git command succeeded")
 	}
 }

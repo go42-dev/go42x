@@ -21,13 +21,19 @@ import (
 )
 
 const (
-	agentChunksDir         = "chunks"
-	agentUpstreamDir       = "upstream"
-	sourceIgnoreFile       = "kwb.ignore"
-	templateFileSuffix     = ".tpl.md"
-	markdownFileSuffix     = ".md"
-	markdownLongFileSuffix = ".markdown"
-	sourceIgnorePath       = config.Directory + "/" + sourceIgnoreFile
+	dirAgentChunks   = "chunks"
+	dirAgentUpstream = "upstream"
+)
+
+const (
+	sourceIgnoreFile = "kwb.ignore"
+	sourceIgnorePath = config.Directory + "/" + sourceIgnoreFile
+)
+
+const (
+	suffixTemplate     = ".tpl.md"
+	suffixMarkdown     = ".md"
+	suffixMarkdownLong = ".markdown"
 )
 
 var defaultExcludedDirs = []string{
@@ -36,35 +42,35 @@ var defaultExcludedDirs = []string{
 }
 
 var defaultExtensions = map[string]bool{
-	".go":                  true,
-	markdownFileSuffix:     true,
-	markdownLongFileSuffix: true,
-	".txt":                 true,
-	".rst":                 true,
-	".adoc":                true,
-	".yaml":                true,
-	".yml":                 true,
-	".mod":                 true,
-	".proto":               true,
-	".sql":                 true,
-	".json":                true,
-	".toml":                true,
-	".env":                 true,
-	".sh":                  true,
-	".ini":                 true,
-	".js":                  true,
-	".jsx":                 true,
-	".ts":                  true,
-	".tsx":                 true,
-	".py":                  true,
-	".rs":                  true,
-	".java":                true,
-	".c":                   true,
-	".h":                   true,
-	".cpp":                 true,
-	".cs":                  true,
-	".rb":                  true,
-	".php":                 true,
+	".go":              true,
+	suffixMarkdown:     true,
+	suffixMarkdownLong: true,
+	".txt":             true,
+	".rst":             true,
+	".adoc":            true,
+	".yaml":            true,
+	".yml":             true,
+	".mod":             true,
+	".proto":           true,
+	".sql":             true,
+	".json":            true,
+	".toml":            true,
+	".env":             true,
+	".sh":              true,
+	".ini":             true,
+	".js":              true,
+	".jsx":             true,
+	".ts":              true,
+	".tsx":             true,
+	".py":              true,
+	".rs":              true,
+	".java":            true,
+	".c":               true,
+	".h":               true,
+	".cpp":             true,
+	".cs":              true,
+	".rb":              true,
+	".php":             true,
 }
 
 var defaultExcludedFiles = []string{
@@ -97,19 +103,19 @@ func authoredAgentFile(relative string, directory bool) bool {
 		if len(tail) == 0 {
 			return directory
 		}
-		if tail[0] == agentChunksDir {
-			return directory || strings.HasSuffix(relative, templateFileSuffix)
+		if tail[0] == dirAgentChunks {
+			return directory || strings.HasSuffix(relative, suffixTemplate)
 		}
-		if tail[0] == agentUpstreamDir {
-			return directory || strings.HasSuffix(relative, markdownFileSuffix) ||
-				strings.HasSuffix(relative, markdownLongFileSuffix)
+		if tail[0] == dirAgentUpstream {
+			return directory || strings.HasSuffix(relative, suffixMarkdown) ||
+				strings.HasSuffix(relative, suffixMarkdownLong)
 		}
 		if len(tail) != 1 || directory {
 			return false
 		}
 
-		return tail[0] == config.ProjectConfigFile || tail[0] == sourceIgnoreFile ||
-			strings.HasSuffix(tail[0], templateFileSuffix)
+		return tail[0] == config.FileProject || tail[0] == sourceIgnoreFile ||
+			strings.HasSuffix(tail[0], suffixTemplate)
 	}
 	return true
 }
@@ -128,7 +134,7 @@ func (m *indexManager) ensureSourceIgnore(ctx context.Context, root string) (str
 		return "", err
 	}
 
-	if err := plan.WriteManagedBlock(path, assets.KWBIgnore(), fspatch.Sources); err != nil {
+	if err := plan.WriteManagedBlock(path, assets.KWBIgnore(), fspatch.KindSources); err != nil {
 		return "", err
 	}
 

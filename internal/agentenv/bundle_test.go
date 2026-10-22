@@ -15,10 +15,11 @@ import (
 
 func TestPinBundledSchemaURL(t *testing.T) {
 	for _, tt := range []struct {
-		path, schema string
+		path   string
+		schema string
 	}{
 		{
-			config.ProjectConfigFile,
+			config.FileProject,
 			"assets/schemas/go42x.schema.yaml",
 		},
 		{

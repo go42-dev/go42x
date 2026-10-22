@@ -23,10 +23,9 @@ import (
 	"github.com/go42-dev/go42x/internal/vendoring/source"
 )
 
-const (
-	SchemaVersion = "1.0"
-	ManifestFile  = ".vendor.yaml"
-)
+const SchemaVersion = "1.0"
+
+const ManifestFile = ".vendor.yaml"
 
 type Manifest struct {
 	Version      string                `yaml:"version"`
@@ -271,7 +270,7 @@ func Touch(ctx context.Context, directory string) (*Result, error) {
 			fspatch.Change{
 				Path:      manifestPath,
 				Operation: "create",
-				Kind:      fspatch.Sources,
+				Kind:      fspatch.KindSources,
 			})
 	}
 	result.Valid = true

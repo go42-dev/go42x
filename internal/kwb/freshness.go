@@ -110,7 +110,7 @@ func (m *indexManager) CheckFreshness(ctx context.Context) (*FreshnessResult, er
 		}
 
 		result.Selection = policy
-		walker := newIndexManager(&settings, m.logger)
+		walker := newIndexManager(m.logger, &settings)
 		seen := map[string]bool{}
 		if err := walker.walkFiles(ctx, result.Root, func(path string, _ os.FileInfo, data []byte) error {
 			seen[path] = true

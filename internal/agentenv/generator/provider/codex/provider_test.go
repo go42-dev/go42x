@@ -36,7 +36,7 @@ func TestSettingsPreserveUnmanagedConfiguration(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			root := t.TempDir()
-			path := filepath.Join(root, codexSettingsDir, codexSettingsFile)
+			path := filepath.Join(root, dirSettings, fileSettings)
 			if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 				t.Fatal(err)
 			}
@@ -111,7 +111,7 @@ command = "obsolete"
 
 func TestPreparationFailurePreservesConfiguration(t *testing.T) {
 	root := t.TempDir()
-	path := filepath.Join(root, codexSettingsDir, codexSettingsFile)
+	path := filepath.Join(root, dirSettings, fileSettings)
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		t.Fatal(err)
 	}

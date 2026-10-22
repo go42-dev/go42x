@@ -9,10 +9,9 @@ import (
 	"github.com/go42-dev/go42x/internal/fspatch"
 )
 
-const (
-	Name                 = "copilot"
-	copilotMcpConfigFile = ".mcp.json"
-)
+const Name = "copilot"
+
+const fileMCP = ".mcp.json"
 
 // MCPConfig represents the project configuration for Copilot CLI.
 type MCPConfig struct {
@@ -55,7 +54,6 @@ func (p *Provider) Prepare(plan *fspatch.Plan, _ map[string]any) error {
 	if err := p.prepareConfigFiles(plan); err != nil {
 		return fmt.Errorf("failed to prepare config files: %w", err)
 	}
-
 	return nil
 }
 
@@ -67,7 +65,7 @@ func (p *Provider) prepareConfigFiles(plan *fspatch.Plan) error {
 		MCPServers: mcpConfig,
 	}
 
-	path := filepath.Join(p.settings.OutputDir, copilotMcpConfigFile)
+	path := filepath.Join(p.settings.OutputDir, fileMCP)
 	if err := provider.PrepareJSONFile(plan, path, cfg); err != nil {
 		return fmt.Errorf("failed to prepare %s: %w", path, err)
 	}

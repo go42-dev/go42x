@@ -16,11 +16,11 @@ import (
 	"github.com/go42-dev/go42x/internal/fspatch"
 )
 
-const (
-	Name              = "codex"
-	codexSettingsDir  = ".codex"
-	codexSettingsFile = "config.toml"
-)
+const Name = "codex"
+
+const dirSettings = ".codex"
+
+const fileSettings = "config.toml"
 
 // MCPServer represents a server in .codex/config.toml.
 // @see https://developers.openai.com/codex/mcp
@@ -62,7 +62,6 @@ func (p *Provider) Prepare(plan *fspatch.Plan, _ map[string]any) error {
 	if err := p.prepareConfigFiles(plan); err != nil {
 		return fmt.Errorf("failed to prepare config files: %w", err)
 	}
-
 	return nil
 }
 
@@ -95,7 +94,7 @@ func (p *Provider) prepareConfigFiles(plan *fspatch.Plan) error {
 		return fmt.Errorf("failed to normalize codex MCP settings: %w", err)
 	}
 
-	path := filepath.Join(p.settings.OutputDir, codexSettingsDir, codexSettingsFile)
+	path := filepath.Join(p.settings.OutputDir, dirSettings, fileSettings)
 	previous, exists, err := plan.Read(path)
 	if err != nil {
 		return err
@@ -123,7 +122,7 @@ func (p *Provider) prepareConfigFiles(plan *fspatch.Plan) error {
 	if exists && bytes.Equal(before, content) {
 		content = previous
 	}
-	if err := plan.Write(path, content, fspatch.Settings, false); err != nil {
+	if err := plan.Write(path, content, fspatch.KindSettings, false); err != nil {
 		return fmt.Errorf("failed to prepare %s: %w", path, err)
 	}
 

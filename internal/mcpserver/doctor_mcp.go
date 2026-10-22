@@ -59,14 +59,14 @@ func probeMCP(ctx context.Context, server provider.MCPServer, timeout time.Durat
 	url := expand(server.URL)
 	if unsupportedReference {
 		return check.Result{
-			Status:  check.Skipped,
+			Status:  check.StatusSkipped,
 			Message: "Unsupported environment reference syntax; use $NAME or ${NAME}",
 		}
 	}
 	if len(missing) > 0 {
 		slices.Sort(missing)
 		return check.Result{
-			Status:      check.Skipped,
+			Status:      check.StatusSkipped,
 			Message:     "Required environment variables are unavailable",
 			Evidence:    slices.Compact(missing),
 			Remediation: "Set the listed environment variables before probing",
@@ -112,7 +112,7 @@ func probeMCP(ctx context.Context, server provider.MCPServer, timeout time.Durat
 			message = "MCP probe timed out or was canceled"
 		}
 		return check.Result{
-			Status:      check.Fail,
+			Status:      check.StatusFail,
 			Message:     message,
 			Remediation: "Check the server command, arguments, credentials, and connectivity",
 		}
@@ -155,7 +155,7 @@ func probeMCP(ctx context.Context, server provider.MCPServer, timeout time.Durat
 		}
 		if seenCursors[tools.NextCursor] || page == 99 {
 			return check.Result{
-				Status:  check.Fail,
+				Status:  check.StatusFail,
 				Message: "MCP tool listing exceeded pagination limits",
 			}
 		}
@@ -171,7 +171,7 @@ func probeMCP(ctx context.Context, server provider.MCPServer, timeout time.Durat
 	}
 	if len(absent) > 0 {
 		return check.Result{
-			Status:      check.Fail,
+			Status:      check.StatusFail,
 			Message:     "Configured tools were not advertised",
 			Evidence:    absent,
 			Remediation: "Update configured tool names or server version",
@@ -179,7 +179,7 @@ func probeMCP(ctx context.Context, server provider.MCPServer, timeout time.Durat
 	}
 
 	return check.Result{
-		Status:  check.Pass,
+		Status:  check.StatusPass,
 		Message: fmt.Sprintf("Initialized server; %d tools advertised, all configured names present", len(advertised)),
 	}
 }

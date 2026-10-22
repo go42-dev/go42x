@@ -24,6 +24,8 @@ import (
 	"github.com/go42-dev/go42x/internal/vendoring/source/npm"
 )
 
+const defaultCLIVersion = "unknown"
+
 const (
 	OperationCheck  = "check"
 	OperationSync   = "sync"
@@ -35,7 +37,6 @@ type Service struct {
 	logger     *slog.Logger
 	adapters   map[string]adapterAccessor
 	converters map[string]converterAccessor
-
 	cliVersion string
 	settings   Settings
 }
@@ -67,8 +68,6 @@ func newResult(operation string) *Result {
 // NewService uses settings validated and resolved by the caller.
 func NewService(settings *Settings, options ...Option) (*Service, error) {
 	s := &Service{
-		cliVersion: "unknown",
-		settings:   *settings,
 		adapters: map[string]adapterAccessor{
 			source.TypeGit:  gitsource.New(),
 			source.TypeHTTP: httpsource.New(source.NewHTTPClient(settings.Timeout)),
@@ -77,6 +76,8 @@ func NewService(settings *Settings, options ...Option) (*Service, error) {
 		converters: map[string]converterAccessor{
 			html2md.HTMLToMarkdown: html2md.NewHTMLToMarkdownConverter(),
 		},
+		cliVersion: defaultCLIVersion,
+		settings:   *settings,
 	}
 
 	for _, option := range options {
@@ -211,9 +212,9 @@ func (s *Service) reserved(filename string) bool {
 		filepath.Join(
 			root,
 			config.Directory,
-			config.ProjectConfigFile,
+			config.FileProject,
 		),
-		filepath.Join(root, config.Directory, config.LocalConfigFile),
+		filepath.Join(root, config.Directory, config.FileLocal),
 	}
 	for _, control := range append(controls, s.controlDirectories()...) {
 		if overlap(control, filename) {
@@ -513,13 +514,13 @@ func (s *Service) prepare(
 			return err
 		}
 
-		if err := in.plan.Write(s.target(name), contents[name], fspatch.Sources, false); err != nil {
+		if err := in.plan.Write(s.target(name), contents[name], fspatch.KindSources, false); err != nil {
 			return err
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(in.owned)) {
 		if _, ok := contents[name]; !ok {
-			if err := in.plan.Remove(s.target(name), fspatch.Sources); err != nil {
+			if err := in.plan.Remove(s.target(name), fspatch.KindSources); err != nil {
 				return err
 			}
 		}
@@ -538,7 +539,7 @@ func (s *Service) prepare(
 				return nil
 			}
 		}
-		return in.plan.Write(s.settings.LockPath, data, fspatch.Settings, false)
+		return in.plan.Write(s.settings.LockPath, data, fspatch.KindSettings, false)
 	}
 
 	return nil

@@ -24,11 +24,15 @@ import (
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/ghaw"
 )
 
+const SupportedVersion = "1.0"
+
 const (
-	SupportedVersion               = "1.0"
-	Directory                      = ".go42x"
-	ProjectConfigFile              = "go42x.yaml"
-	LocalConfigFile                = "go42x.local.yaml"
+	Directory   = ".go42x"
+	FileProject = "go42x.yaml"
+	FileLocal   = "go42x.local.yaml"
+)
+
+const (
 	DefaultTempDir                 = ".build"
 	DefaultDocumentationEntrypoint = "docs/README.md"
 )

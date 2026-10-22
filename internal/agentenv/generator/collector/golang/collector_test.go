@@ -1,4 +1,4 @@
-package collector
+package golang
 
 import (
 	"context"
@@ -92,7 +92,7 @@ func TestGoCollectorEffectiveEnvironment(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Chdir(t.TempDir())
-	data, err := NewGoCollector(root, []string{"GOFLAGS", "GOVERSION", "GOFLAGS"}).Collect(t.Context())
+	data, err := New(root, []string{"GOFLAGS", "GOVERSION", "GOFLAGS"}).Collect(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +124,11 @@ func TestGoCollectorEffectiveEnvironment(t *testing.T) {
 
 func TestGoCollectorModuleWithoutGo(t *testing.T) {
 	t.Setenv("PATH", "")
-	for _, tt := range []struct{ name, content, want string }{
+	for _, tt := range []struct {
+		name    string
+		content string
+		want    string
+	}{
 		{
 			"missing",
 			"",
@@ -159,7 +163,7 @@ func TestGoCollectorModuleWithoutGo(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			data, err := NewGoCollector(root, nil).Collect(t.Context())
+			data, err := New(root, nil).Collect(t.Context())
 			if !errors.Is(err, exec.ErrNotFound) {
 				t.Fatalf("Collect() error = %v, want missing Go", err)
 			}
@@ -187,7 +191,7 @@ func TestGoCollectorCommandFailures(t *testing.T) {
 			); err != nil {
 				t.Fatal(err)
 			}
-			c := NewGoCollector(root, nil)
+			c := New(root, nil)
 			ctx := t.Context()
 
 			if mode == "wait" {
@@ -220,7 +224,7 @@ func TestGoCollectorKeepsEnvWhenModuleUnreadable(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(root, "go.mod"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	data, err := NewGoCollector(root, nil).Collect(t.Context())
+	data, err := New(root, nil).Collect(t.Context())
 	if err == nil || !strings.Contains(err.Error(), "read project go.mod") || data["go_version"] != nil {
 		t.Fatalf("Collect() = %+v, %v; want module read error", data, err)
 	}
@@ -249,7 +253,7 @@ func TestGoCollectorWithInstalledGo(t *testing.T) {
 		t.Setenv(name, value)
 	}
 	t.Chdir(t.TempDir())
-	data, err := NewGoCollector(root, []string{"GOFLAGS"}).Collect(t.Context())
+	data, err := New(root, []string{"GOFLAGS"}).Collect(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}

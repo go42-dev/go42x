@@ -13,6 +13,11 @@ import (
 
 	"go.uber.org/mock/gomock"
 
+	"github.com/go42-dev/go42x/internal/agentenv/generator/collector/environment"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/collector/git"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/collector/githubactions"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/collector/golang"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/collector/project"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/mocks"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/antigravity"
@@ -25,6 +30,46 @@ import (
 	"github.com/go42-dev/go42x/internal/fspatch"
 )
 
+func TestCollectorMetadata(t *testing.T) {
+	collectors := []struct {
+		collector collectorAccessor
+		name      string
+		priority  int
+	}{
+		{
+			project.New(nil),
+			"project",
+			5,
+		},
+		{
+			git.New("."),
+			"git",
+			10,
+		},
+		{
+			environment.New(nil, "."),
+			"environment",
+			20,
+		},
+		{
+			githubactions.New(),
+			"github_actions",
+			30,
+		},
+		{
+			golang.New(".", nil),
+			"golang",
+			25,
+		},
+	}
+
+	for _, tt := range collectors {
+		if tt.collector.Name() != tt.name || tt.collector.Priority() != tt.priority {
+			t.Errorf("collector metadata for %s", tt.name)
+		}
+	}
+}
+
 func TestGenerateTempDirectory(t *testing.T) {
 	t.Setenv("PATH", "")
 	t.Setenv("GITHUB_ACTIONS", "false")
@@ -33,7 +78,12 @@ func TestGenerateTempDirectory(t *testing.T) {
 		"project": filepath.Join("..", "..", "..", ".go42x"),
 	} {
 		t.Run(name, func(t *testing.T) {
-			for _, tt := range []struct{ name, shared, local, want string }{
+			for _, tt := range []struct {
+				name   string
+				shared string
+				local  string
+				want   string
+			}{
 				{
 					"omitted",
 					"",
@@ -82,7 +132,7 @@ func TestGenerateTempDirectory(t *testing.T) {
 					}
 					if len(tt.local) > 0 {
 						if err := os.WriteFile(
-							filepath.Join(dir, config.LocalConfigFile),
+							filepath.Join(dir, config.FileLocal),
 							[]byte(tt.local),
 							0600,
 						); err != nil {
@@ -276,7 +326,10 @@ func TestGeneratePrepareEnvInstructions(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tt := range []struct {
-		name, ci, actions, ref string
+		name    string
+		ci      string
+		actions string
+		ref     string
 	}{
 		{
 			name:    "action variables",

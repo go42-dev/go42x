@@ -84,13 +84,11 @@ func TestConfigDefaults(t *testing.T) {
 	if normalized.Registry != "https://registry.npmjs.org" || len(original.Registry) > 0 {
 		t.Fatal("invalid registry default or input mutation")
 	}
-	if got := (Config{
+	uppercaseChecksum := Config{
 		Type:   "http",
 		SHA256: strings.Repeat("AB", 32),
-	}).WithDefaults().SHA256; got != strings.Repeat(
-		"ab",
-		32,
-	) {
+	}
+	if got := uppercaseChecksum.WithDefaults().SHA256; got != strings.Repeat("ab", 32) {
 		t.Fatal("SHA-256 was not normalized")
 	}
 }

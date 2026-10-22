@@ -80,20 +80,21 @@ func TestUpdateBacksUpEntireBatchBeforeReplacing(t *testing.T) {
 	})
 	plan := NewPlan(logger, dir, backupDir)
 	for _, destination := range []struct {
-		path, content string
-		kind          Kind
+		path    string
+		content string
+		kind    Kind
 	}{{
 		first,
 		"original",
-		Sources,
+		KindSources,
 	}, {
 		second,
 		"updated",
-		Settings,
+		KindSettings,
 	}, {
 		created,
 		"created",
-		Instructions,
+		KindInstructions,
 	}} {
 		if err := plan.Write(
 			destination.path,
@@ -123,11 +124,11 @@ func TestUpdateBacksUpEntireBatchBeforeReplacing(t *testing.T) {
 	}
 	manifest := readUpdateManifest(t, result.BackupDir)
 
-	if manifest.Status != updateComplete || manifest.CLIVersion != "test-version" || len(manifest.Files) != 3 {
+	if manifest.Status != updateStatusComplete || manifest.CLIVersion != "test-version" || len(manifest.Files) != 3 {
 		t.Fatalf("manifest = %+v", manifest)
 	}
 	for _, file := range manifest.Files {
-		if file.Status != updateApplied || file.Existed != (file.Path != "new") {
+		if file.Status != updateStatusApplied || file.Existed != (file.Path != "new") {
 			t.Errorf("incorrect recovery entry: %+v", file)
 		}
 	}
@@ -161,7 +162,7 @@ func TestUpdateFailurePreservesBackupsAndProgress(t *testing.T) {
 	})
 	plan := NewPlan(logger, dir, filepath.Join(dir, "backups"))
 	for _, path := range []string{first, second} {
-		if err := plan.Write(path, []byte("updated"), Sources, false); err != nil {
+		if err := plan.Write(path, []byte("updated"), KindSources, false); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -171,8 +172,8 @@ func TestUpdateFailurePreservesBackupsAndProgress(t *testing.T) {
 	}
 	manifest := readUpdateManifest(t, result.BackupDir)
 
-	if manifest.Status != updateApplying || manifest.Files[0].Status != updateApplied ||
-		manifest.Files[1].Status != updateApplying {
+	if manifest.Status != updateStatusApplying || manifest.Files[0].Status != updateStatusApplied ||
+		manifest.Files[1].Status != updateStatusApplying {
 		t.Fatalf("incorrect application progress: %+v", manifest)
 	}
 	for _, path := range []string{"first", "parent/second"} {
@@ -193,7 +194,7 @@ func TestUpdateRejectsChangedSnapshotsAndCancellation(t *testing.T) {
 				t.Fatal(err)
 			}
 			plan := NewPlan(slog.New(slog.DiscardHandler), dir, backupDir)
-			if err := plan.Write(path, []byte("replacement"), Sources, false); err != nil {
+			if err := plan.Write(path, []byte("replacement"), KindSources, false); err != nil {
 				t.Fatal(err)
 			}
 			ctx, cancel := context.WithCancel(t.Context())
@@ -237,7 +238,7 @@ func TestUpdateSkipsUnchangedAndRecordsRemovals(t *testing.T) {
 		t.Fatal(err)
 	}
 	plan := NewPlan(slog.New(slog.DiscardHandler), root, filepath.Join(root, "backups"))
-	if err := plan.Write(keep, []byte("original"), Sources, false); err != nil {
+	if err := plan.Write(keep, []byte("original"), KindSources, false); err != nil {
 		t.Fatal(err)
 	}
 	result, err := plan.ApplyUpdate(t.Context(), "test")
@@ -252,7 +253,7 @@ func TestUpdateSkipsUnchangedAndRecordsRemovals(t *testing.T) {
 		t.Fatal("unchanged file was replaced")
 	}
 	plan = NewPlan(slog.New(slog.DiscardHandler), root, filepath.Join(root, "backups"))
-	if err := plan.Remove(obsolete, Sources); err != nil {
+	if err := plan.Remove(obsolete, KindSources); err != nil {
 		t.Fatal(err)
 	}
 	result, err = plan.ApplyUpdate(t.Context(), "test")
@@ -293,13 +294,13 @@ func TestUpdateUsesWriteOrderAndPreservesLockOnFailure(t *testing.T) {
 	if _, _, err := plan.Read(lock); err != nil {
 		t.Fatal(err)
 	}
-	if err := plan.Write(filepath.Join(root, "first"), []byte("new"), Sources, false); err != nil {
+	if err := plan.Write(filepath.Join(root, "first"), []byte("new"), KindSources, false); err != nil {
 		t.Fatal(err)
 	}
-	if err := plan.Write(filepath.Join(root, "blocked", "second"), []byte("new"), Sources, false); err != nil {
+	if err := plan.Write(filepath.Join(root, "blocked", "second"), []byte("new"), KindSources, false); err != nil {
 		t.Fatal(err)
 	}
-	if err := plan.Write(lock, []byte("new lock"), Settings, false); err != nil {
+	if err := plan.Write(lock, []byte("new lock"), KindSettings, false); err != nil {
 		t.Fatal(err)
 	}
 	result, err := plan.ApplyUpdate(t.Context(), "test")

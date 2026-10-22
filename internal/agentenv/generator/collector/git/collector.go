@@ -1,4 +1,4 @@
-package collector
+package git
 
 import (
 	"context"
@@ -6,23 +6,30 @@ import (
 	"strings"
 )
 
-const GitCollectorName = "git"
+const (
+	Name     = "git"
+	priority = 10
+)
 
-// GitCollector collects repository identity and checkout metadata.
-type GitCollector struct {
+// Collector collects repository identity and checkout metadata.
+type Collector struct {
 	root string
-	BaseCollector
 }
 
-// NewGitCollector creates a collector for the given project root.
-func NewGitCollector(root string) *GitCollector {
-	return &GitCollector{
-		root:          root,
-		BaseCollector: NewBaseCollector(GitCollectorName, 10),
-	}
+// New creates a collector for the given project root.
+func New(root string) *Collector {
+	return &Collector{root: root}
 }
 
-func (c *GitCollector) Collect(ctx context.Context) (map[string]any, error) {
+func (*Collector) Name() string {
+	return Name
+}
+
+func (*Collector) Priority() int {
+	return priority
+}
+
+func (c *Collector) Collect(ctx context.Context) (map[string]any, error) {
 	result := make(map[string]any)
 
 	root, err := c.runGitCommand(ctx, "rev-parse", "--show-toplevel")
@@ -48,7 +55,7 @@ func (c *GitCollector) Collect(ctx context.Context) (map[string]any, error) {
 	return result, nil
 }
 
-func (c *GitCollector) runGitCommand(ctx context.Context, args ...string) (string, error) {
+func (c *Collector) runGitCommand(ctx context.Context, args ...string) (string, error) {
 	// #nosec G204 -- All callers supply fixed Git arguments; no shell interprets repository data.
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = c.root

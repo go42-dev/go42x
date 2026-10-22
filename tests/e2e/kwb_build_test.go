@@ -76,7 +76,11 @@ func TestKnowledgeBaseBuildRefreshesExclusions(t *testing.T) {
 
 func TestKnowledgeBaseBuildRejectsInvalidExclusions(t *testing.T) {
 	t.Parallel()
-	for _, tt := range []struct{ name, path, content string }{
+	for _, tt := range []struct {
+		name    string
+		path    string
+		content string
+	}{
 		{
 			"unmatched marker",
 			".go42x/kwb.ignore",

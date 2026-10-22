@@ -1,4 +1,4 @@
-package collector
+package project
 
 import (
 	"context"
@@ -6,22 +6,30 @@ import (
 	"github.com/go42-dev/go42x/internal/config"
 )
 
-const ProjectCollectorName = "project"
+const (
+	Name     = "project"
+	priority = 5
+)
 
-// ProjectCollector collects project configuration data
-type ProjectCollector struct {
-	BaseCollector
+// Collector collects project configuration data.
+type Collector struct {
 	config *config.Config
 }
 
-func NewProjectCollector(cfg *config.Config) *ProjectCollector {
-	return &ProjectCollector{
-		BaseCollector: NewBaseCollector(ProjectCollectorName, 5),
-		config:        cfg,
-	}
+// New creates a collector for the given project configuration.
+func New(cfg *config.Config) *Collector {
+	return &Collector{config: cfg}
 }
 
-func (c *ProjectCollector) Collect(_ context.Context) (map[string]any, error) {
+func (*Collector) Name() string {
+	return Name
+}
+
+func (*Collector) Priority() int {
+	return priority
+}
+
+func (c *Collector) Collect(_ context.Context) (map[string]any, error) {
 	result := make(map[string]any)
 
 	if c.config == nil {

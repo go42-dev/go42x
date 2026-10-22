@@ -228,6 +228,19 @@ type Service struct {
 | Empty string checks | Prefer `len(s) == 0` over `s == ""` for empty strings. |
 | YAML filenames      | Prefer `.yaml` over `.yml`.                            |
 
+- Prefer concise, descriptive names that read clearly with the package name.
+  Omit words that repeat that context.
+
+  ```go
+  // Prefer:
+  claude.Name
+  cache.Lookup
+
+  // Avoid redundant qualifiers:
+  claude.ClaudeProviderName
+  cache.LookupCacheEntry
+  ```
+
 - Use named structs and interfaces. Anonymous structs and interfaces, including
   type assertions to anonymous interfaces, are allowed only in tests.
 - Define types and constants at package scope. Function-local type and constant
@@ -275,16 +288,44 @@ constant and an anonymous struct, both permitted in tests.
 
 - Use `MixedCaps` for exported constants and `mixedCaps` for unexported constants.
   Preserve initialisms, such as `JSON` and `URL`, within names.
-- Give related constants a shared prefix that describes their role or domain,
-  followed by the specific value's meaning. Avoid repeating the package name.
-- Keep related constants in one `const` block. Use separate declarations for
-  unrelated groups instead of blank lines within a block. Declare a lone constant
-  without a block.
+- Give related constants a shared prefix that identifies their role or domain.
+  Avoid repeating the package name in that prefix.
+- Keep constants for the same concern in one `const` block, including defaults,
+  limits, and related values. Do not split a coherent group merely because its
+  constants have different prefixes.
+- Use separate declarations for distinct concerns instead of blank lines within
+  a block. Declare an independent constant without a block.
 - Reuse constants from the package that owns the value. Place constants after
   imports and before other declarations. Apply the same judgment in tests.
 
-For example, CLI flag constants share the `flag` prefix. Keep the environment
-prefix in its own declaration:
+Keep a default and its limits together as one response budget, even though their
+names use different prefixes:
+
+```go
+const (
+    DefaultContentBytes = 16 * 1024
+    MaxContentBytes     = 48 * 1024
+    MaxItems            = 40
+)
+```
+
+Directory names and file suffixes describe distinct concerns. Give each family
+its own block:
+
+```go
+const (
+    dirChunks   = "chunks"
+    dirUpstream = "upstream"
+)
+
+const (
+    suffixMarkdown = ".md"
+    suffixTemplate = ".tpl.md"
+)
+```
+
+CLI flag constants share the `flag` prefix. The independent environment prefix
+uses a standalone declaration:
 
 ```go
 const envPrefix = "GO42X"
@@ -295,6 +336,9 @@ const (
     flagRoot       = "root"
 )
 ```
+
+Here, `flag` identifies the family. In package `cmd`, `cmdFlagJSON` would repeat
+package context.
 
 ### String constants
 
@@ -307,9 +351,10 @@ Name protocol values even when they appear in only one operation. Keep ordinary
 error messages inline:
 
 ```go
-const headerContentType = "Content-Type"
-
-const contentTypeJSON = "application/json"
+const (
+    headerContentType = "Content-Type"
+    contentTypeJSON   = "application/json"
+)
 
 func WriteJSON(w http.ResponseWriter, value any) error {
     w.Header().Set(headerContentType, contentTypeJSON)
@@ -675,8 +720,7 @@ const defaultTimeout = 5 * time.Second
 type Service struct {
     logger     *slog.Logger
     repository repository
-
-    timeout time.Duration
+    timeout    time.Duration
 }
 
 type Option func(*Service)

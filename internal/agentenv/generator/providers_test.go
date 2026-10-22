@@ -39,7 +39,9 @@ mcp:
       Authorization: 'Bearer ${TOKEN}'
 `
 	for _, tt := range []struct {
-		name, local, want string
+		name  string
+		local string
+		want  string
 	}{
 		{
 			name: "shared",

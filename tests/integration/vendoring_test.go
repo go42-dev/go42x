@@ -659,10 +659,11 @@ func TestGitBranchUpdateAndLockedRestore(t *testing.T) {
 	git("add", ".")
 	git("commit", "-m", "fixture one")
 	first := git("rev-parse", "HEAD")
-	remote := (&url.URL{
+	repositoryURL := &url.URL{
 		Scheme: "file",
 		Path:   repository,
-	}).String()
+	}
+	remote := repositoryURL.String()
 	manifest := fmt.Sprintf(
 		"version: \"1.0\"\ndependencies:\n  git:\n    source:\n      type: git\n      url: %s\n      ref: main\n    files:\n      - from: nested/file.txt\n        to: nested/file.txt\n",
 		remote,

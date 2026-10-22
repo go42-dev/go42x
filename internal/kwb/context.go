@@ -20,11 +20,16 @@ const (
 const maxContextPaths = 16
 
 type candidate struct {
-	doc                  *Document
-	path, title, reason  string
-	content, hash        string
-	start, end, priority int
-	evidence             []Evidence
+	doc      *Document
+	path     string
+	title    string
+	reason   string
+	content  string
+	hash     string
+	start    int
+	end      int
+	priority int
+	evidence []Evidence
 }
 
 type contextBuilder struct {

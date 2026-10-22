@@ -7,9 +7,8 @@ import (
 )
 
 type Factory struct {
-	ctx     context.Context
-	options *Options
-
+	ctx         context.Context
+	options     *Options
 	input       io.Reader
 	output      io.Writer
 	errorOutput io.Writer

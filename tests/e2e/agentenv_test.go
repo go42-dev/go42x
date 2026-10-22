@@ -641,7 +641,9 @@ func TestGenerationFailurePreservesProject(t *testing.T) {
 	}
 	validConfig := string(fixture)
 	for _, tc := range []struct {
-		name, path, content string
+		name    string
+		path    string
+		content string
 	}{
 		{
 			"invalid YAML",
@@ -846,7 +848,11 @@ func TestAgentEnvUpdate(t *testing.T) {
 
 func TestAgentEnvUpdateFailureBeforeApplication(t *testing.T) {
 	t.Parallel()
-	for _, scenario := range []struct{ name, path, content string }{
+	for _, scenario := range []struct {
+		name    string
+		path    string
+		content string
+	}{
 		{
 			"invalid local configuration",
 			".go42x/go42x.local.yaml",

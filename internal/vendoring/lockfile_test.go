@@ -71,8 +71,9 @@ func TestLockResolvedIdentityValidation(t *testing.T) {
 	hash := strings.Repeat("ab", 32)
 	integrity := "sha512-" + base64.StdEncoding.EncodeToString(make([]byte, 64))
 	for _, tc := range []struct {
-		name, identity string
-		valid          bool
+		name     string
+		identity string
+		valid    bool
 	}{
 		{
 			"Git",

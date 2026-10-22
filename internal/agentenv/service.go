@@ -30,8 +30,7 @@ type GenerateResult struct {
 }
 
 type Service struct {
-	logger *slog.Logger
-
+	logger   *slog.Logger
 	settings *Settings
 	config   *config.Config
 }
@@ -61,7 +60,7 @@ func NewAgentEnvService(settings *Settings, opts ...Option) (*Service, error) {
 func (s *Service) Init(ctx context.Context) (*InitResult, error) {
 	s.logger.InfoContext(ctx, "Initializing agentenv")
 
-	if _, err := os.Stat(filepath.Join(config.Directory, config.ProjectConfigFile)); err == nil {
+	if _, err := os.Stat(filepath.Join(config.Directory, config.FileProject)); err == nil {
 		s.logger.InfoContext(ctx, "Configuration already exists")
 	} else if !os.IsNotExist(err) {
 		return nil, fmt.Errorf("failed to check configuration: %w", err)
@@ -143,15 +142,15 @@ func (s *Service) Update(ctx context.Context) (*fspatch.UpdateResult, error) {
 			return &fspatch.UpdateResult{}, fmt.Errorf("prepare merged sources: %w", err)
 		}
 	} else {
-		updatedConfig, err = fs.ReadFile(bundle, config.ProjectConfigFile)
+		updatedConfig, err = fs.ReadFile(bundle, config.FileProject)
 		if err != nil {
 			return nil, fmt.Errorf("read bundled configuration: %w", err)
 		}
 
-		updatedConfig = pinBundledSchemaURL(config.ProjectConfigFile, updatedConfig)
+		updatedConfig = pinBundledSchemaURL(config.FileProject, updatedConfig)
 	}
 
-	local, _, err := plan.Read(filepath.Join(templateDir, config.LocalConfigFile))
+	local, _, err := plan.Read(filepath.Join(templateDir, config.FileLocal))
 	if err != nil {
 		return nil, fmt.Errorf("read local configuration: %w", err)
 	}
@@ -179,7 +178,7 @@ func (s *Service) Update(ctx context.Context) (*fspatch.UpdateResult, error) {
 			}
 
 			data = pinBundledSchemaURL(path, data)
-			return plan.Write(filepath.Join(templateDir, filepath.FromSlash(path)), data, fspatch.Sources, true)
+			return plan.Write(filepath.Join(templateDir, filepath.FromSlash(path)), data, fspatch.KindSources, true)
 		})
 		if err != nil {
 			return nil, fmt.Errorf("prepare bundled sources: %w", err)
@@ -213,7 +212,7 @@ func (s *Service) Generate(ctx context.Context) (*GenerateResult, error) {
 	s.logger.InfoContext(ctx, "Generating agentenv", slog.String("dir", workingDir))
 
 	templateDir := filepath.Join(workingDir, config.Directory)
-	cfgPath := filepath.Join(templateDir, config.ProjectConfigFile)
+	cfgPath := filepath.Join(templateDir, config.FileProject)
 	cfg, err := config.LoadProjectConfig(cfgPath, s.settings.Providers)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)

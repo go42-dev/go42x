@@ -41,9 +41,11 @@ func TestMCPContainerValidation(t *testing.T) {
 		Args:    []string{"mcp"},
 	}
 	for _, tt := range []struct {
-		name, provider, transport string
-		container                 *provider.MCPContainer
-		want                      string
+		name      string
+		provider  string
+		transport string
+		container *provider.MCPContainer
+		want      string
 	}{
 		{
 			"valid",
@@ -118,7 +120,9 @@ func TestMCPContainerValidation(t *testing.T) {
 
 func TestProjectWithDefaults(t *testing.T) {
 	for _, tt := range []struct {
-		name, entrypoint, want string
+		name       string
+		entrypoint string
+		want       string
 	}{
 		{
 			"default",
@@ -153,8 +157,9 @@ func TestProjectWithDefaults(t *testing.T) {
 
 func TestValidateDocumentationEntrypoint(t *testing.T) {
 	for _, tt := range []struct {
-		name, entrypoint string
-		valid            bool
+		name       string
+		entrypoint string
+		valid      bool
 	}{
 		{
 			"optional",
@@ -487,7 +492,8 @@ func TestValidateMCPServers(t *testing.T) {
 			}
 		})
 	}
-	if got := (provider.MCPServer{}).Transport(); got != "stdio" {
+	defaultServer := provider.MCPServer{}
+	if got := defaultServer.Transport(); got != provider.MCPServerTypeStdio {
 		t.Fatalf("default transport = %q", got)
 	}
 }
@@ -498,7 +504,11 @@ func TestLoadConfig(t *testing.T) {
 	if _, err := LoadConfig(path); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("missing file error = %v", err)
 	}
-	for _, tt := range []struct{ name, content, want string }{
+	for _, tt := range []struct {
+		name    string
+		content string
+		want    string
+	}{
 		{
 			"malformed YAML",
 			"version: [",
@@ -545,7 +555,12 @@ func TestLoadConfigSingleDocument(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, tt := range []struct{ name, prefix, suffix, want string }{
+	for _, tt := range []struct {
+		name   string
+		prefix string
+		suffix string
+		want   string
+	}{
 		{
 			"single document",
 			"",
@@ -731,8 +746,9 @@ func TestValidateGoEnv(t *testing.T) {
 
 func TestLoadConfigTempDirectoryValidation(t *testing.T) {
 	for _, tt := range []struct {
-		name, path string
-		valid      bool
+		name  string
+		path  string
+		valid bool
 	}{
 		{
 			"empty",
@@ -798,8 +814,9 @@ func TestLoadConfigSupportedVersions(t *testing.T) {
 
 func TestLoadConfigProviderEnabled(t *testing.T) {
 	for _, tt := range []struct {
-		name, entry string
-		want        bool
+		name  string
+		entry string
+		want  bool
 	}{
 		{
 			"omitted",
@@ -867,8 +884,9 @@ project: {name: example}
 context: {template: agents.tpl.md}
 `
 	for _, tt := range []struct {
-		name, content string
-		wantErr       bool
+		name    string
+		content string
+		wantErr bool
 	}{
 		{
 			"provider enabled by default",
@@ -1111,8 +1129,10 @@ mcp:
   server: {enabled: true, name: server, command: example, cwd: src}
 `
 	for _, tt := range []struct {
-		name, local, want string
-		selection         []string
+		name      string
+		local     string
+		want      string
+		selection []string
 	}{
 		{
 			name: "configured incompatible provider",

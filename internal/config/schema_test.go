@@ -58,8 +58,9 @@ project: {name: example}
 context: {template: agents.tpl.md}
 `
 	for _, tt := range []struct {
-		name, content string
-		valid         bool
+		name    string
+		content string
+		valid   bool
 	}{
 		{
 			"disabled provider",

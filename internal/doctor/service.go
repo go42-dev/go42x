@@ -14,11 +14,9 @@ import (
 )
 
 type Service struct {
-	logger *slog.Logger
-
+	logger   *slog.Logger
 	settings *Settings
-
-	checks []check.Check
+	checks   []check.Check
 }
 
 // NewService registers the built-in subsystem checks for the selected project.

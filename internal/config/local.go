@@ -24,7 +24,7 @@ func LoadProjectConfig(path string, providers []string) (*Config, error) {
 		return nil, fmt.Errorf("project configuration: %w", err)
 	}
 
-	localPath := filepath.Join(filepath.Dir(path), LocalConfigFile)
+	localPath := filepath.Join(filepath.Dir(path), FileLocal)
 	local, err := readConfig(localPath)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("local configuration: %w", err)

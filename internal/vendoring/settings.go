@@ -52,7 +52,7 @@ func (s *Settings) LoadProject() error {
 	}
 
 	s.RootPath = root
-	cfg, err := config.LoadProjectConfig(filepath.Join(root, config.Directory, config.ProjectConfigFile), nil)
+	cfg, err := config.LoadProjectConfig(filepath.Join(root, config.Directory, config.FileProject), nil)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}

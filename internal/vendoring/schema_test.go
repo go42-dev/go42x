@@ -63,8 +63,9 @@ func TestSchemaDefaultManifest(t *testing.T) {
 func TestSchemaSourceVariants(t *testing.T) {
 	compiled := compileVendorSchema(t)
 	for _, tc := range []struct {
-		name, source string
-		valid        bool
+		name   string
+		source string
+		valid  bool
 	}{
 		{
 			"HTTP",

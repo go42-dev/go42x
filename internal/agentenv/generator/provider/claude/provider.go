@@ -12,12 +12,16 @@ import (
 	"github.com/go42-dev/go42x/internal/fspatch"
 )
 
+const Name = "claude"
+
 const (
-	Name               = "claude"
-	claudeSettingsDir  = ".claude"
-	claudeSettingsFile = "settings.local.json"
-	claudeMCPFile      = ".mcp.json"
-	claudeAgentsDir    = "agents"
+	dirSettings = ".claude"
+	dirAgents   = "agents"
+)
+
+const (
+	fileSettings = "settings.local.json"
+	fileMCP      = ".mcp.json"
 )
 
 // Permissions contains the generated tool approval lists.
@@ -106,8 +110,8 @@ func (p *Provider) prepareConfigFiles(plan *fspatch.Plan) error {
 	claudeSettings.Permissions.Deny = []string{}
 	claudeSettings.EnabledMCPServers = enabledServers
 
-	claudeDir := filepath.Join(p.settings.OutputDir, claudeSettingsDir)
-	settingsPath := filepath.Join(claudeDir, claudeSettingsFile)
+	claudeDir := filepath.Join(p.settings.OutputDir, dirSettings)
+	settingsPath := filepath.Join(claudeDir, fileSettings)
 	if err := provider.PrepareJSONSettings(plan, settingsPath, claudeSettings,
 		[]string{"permissions.allow", "enabledMcpjsonServers"},
 		[]string{"permissions.deny"},
@@ -125,7 +129,7 @@ func (p *Provider) prepareConfigFiles(plan *fspatch.Plan) error {
 		MCPServers: mcpServers,
 	}
 
-	mcpPath := filepath.Join(p.settings.OutputDir, claudeMCPFile)
+	mcpPath := filepath.Join(p.settings.OutputDir, fileMCP)
 	if err := provider.PrepareJSONFile(plan, mcpPath, mcpConfig); err != nil {
 		return fmt.Errorf("failed to prepare %s: %w", mcpPath, err)
 	}
@@ -171,7 +175,7 @@ func (p *Provider) prepareAgents(
 		return nil
 	}
 
-	destAgentsDir := filepath.Join(p.settings.OutputDir, claudeSettingsDir, claudeAgentsDir)
+	destAgentsDir := filepath.Join(p.settings.OutputDir, dirSettings, dirAgents)
 
 	for _, agentPath := range p.settings.Agents {
 		// Extract just the filename without .tpl.md extension for the agent name
@@ -195,7 +199,7 @@ func (p *Provider) prepareAgents(
 		// Prepare destination: {outputDir}/.claude/agents/{agent}.md
 		destFile := fmt.Sprintf("%s.md", agentName)
 		destPath := filepath.Join(destAgentsDir, destFile)
-		if err := plan.Write(destPath, []byte(processedContent), fspatch.Settings, false); err != nil {
+		if err := plan.Write(destPath, []byte(processedContent), fspatch.KindSettings, false); err != nil {
 			return fmt.Errorf("failed to prepare agent %s: %w", agentName, err)
 		}
 

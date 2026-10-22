@@ -11,7 +11,8 @@ import (
 func TestDoctorIndexCheck(t *testing.T) {
 	root := t.TempDir()
 	report, err := check.Run(t.Context(), DoctorChecks(root, "")...)
-	if err != nil || len(report.Checks) != 1 || report.Checks[0].ID != "kwb.index" || report.Status != check.Fail {
+	if err != nil || len(report.Checks) != 1 || report.Checks[0].ID != "kwb.index" ||
+		report.Status != check.StatusFail {
 		t.Fatalf("missing index: %+v %v", report, err)
 	}
 	entries, err := os.ReadDir(root)
@@ -40,19 +41,19 @@ func TestDoctorIndexCheck(t *testing.T) {
 			"default index",
 			root,
 			"",
-			check.Pass,
+			check.StatusPass,
 		},
 		{
 			"explicit index",
 			root,
 			settings.IndexPath,
-			check.Pass,
+			check.StatusPass,
 		},
 		{
 			"other checkout",
 			t.TempDir(),
 			settings.IndexPath,
-			check.Fail,
+			check.StatusFail,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -64,7 +65,7 @@ func TestDoctorIndexCheck(t *testing.T) {
 	}
 	writeFixture(t, root, "new.md", "new source\n")
 	report, err = check.Run(t.Context(), DoctorChecks(root, "")...)
-	if err != nil || report.Status != check.Warn {
+	if err != nil || report.Status != check.StatusWarn {
 		t.Fatalf("stale index: %+v %v", report, err)
 	}
 }

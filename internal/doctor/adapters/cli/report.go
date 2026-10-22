@@ -10,7 +10,7 @@ import (
 )
 
 func Report(output io.Writer, settings *doctor.Settings, result *check.Report, runErr error) error {
-	if runErr == nil && result.Status == check.Fail {
+	if runErr == nil && result.Status == check.StatusFail {
 		runErr = cmdutil.ReportedError(fmt.Errorf("doctor found failed checks"))
 	}
 	var text func(io.Writer) error

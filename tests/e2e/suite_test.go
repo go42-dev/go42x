@@ -153,7 +153,8 @@ func (p *project) command(ctx context.Context, args ...string) *exec.Cmd {
 }
 
 type commandResult struct {
-	stdout, stderr string
+	stdout string
+	stderr string
 }
 
 func (p *project) run(t *testing.T, wantExit int, args ...string) commandResult {

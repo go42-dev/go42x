@@ -18,8 +18,8 @@ import (
 
 const (
 	MaxSearchLimit  = 100
-	MaxListLimit    = 500
 	MaxSearchOffset = 10000
+	MaxListLimit    = 500
 	MaxReadLines    = 500
 	MaxReadBytes    = 64 * 1024
 )
@@ -110,9 +110,11 @@ func (m *indexManager) Search(ctx context.Context, options SearchOptions) (*Sear
 	if err := options.Validate(); err != nil {
 		return nil, err
 	}
+
 	if options.Limit == 0 {
 		options.Limit = m.settings.SearchLimit
 	}
+
 	var matches []query.Query
 	exact := bleve.NewTermQuery(options.Query)
 	exact.SetField("symbols")
@@ -147,21 +149,23 @@ func (m *indexManager) Search(ctx context.Context, options SearchOptions) (*Sear
 		matches = append(matches, match)
 	}
 	clauses := []query.Query{bleve.NewDisjunctionQuery(matches...)}
-	for field, value := range map[string]string{
-		"kind":     options.Kind,
-		"language": options.Language,
-	} {
-		if len(value) > 0 {
-			term := bleve.NewTermQuery(value)
-			term.SetField(field)
-			clauses = append(clauses, term)
-		}
+	if len(options.Kind) > 0 {
+		term := bleve.NewTermQuery(options.Kind)
+		term.SetField("kind")
+		clauses = append(clauses, term)
 	}
+	if len(options.Language) > 0 {
+		term := bleve.NewTermQuery(options.Language)
+		term.SetField("language")
+		clauses = append(clauses, term)
+	}
+
 	if len(options.PathPrefix) > 0 {
 		prefix := bleve.NewPrefixQuery(filepath.ToSlash(options.PathPrefix))
 		prefix.SetField("path")
 		clauses = append(clauses, prefix)
 	}
+
 	request := bleve.NewSearchRequestOptions(
 		bleve.NewConjunctionQuery(clauses...),
 		options.Limit,

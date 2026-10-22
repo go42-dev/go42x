@@ -22,9 +22,10 @@ func TestSelectFileConverter(t *testing.T) {
 	}
 	conversionError := errors.New("conversion failed")
 	for _, tc := range []struct {
-		name, converter string
-		want            []byte
-		err             error
+		name      string
+		converter string
+		want      []byte
+		err       error
 	}{
 		{
 			name: "copy",

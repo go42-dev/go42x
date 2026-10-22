@@ -17,12 +17,16 @@ const (
 	TypeGit  = "git"
 	TypeHTTP = "http"
 	TypeNPM  = "npm"
+)
 
+const (
 	schemeHTTP  = "http"
 	schemeHTTPS = "https"
 	schemeSSH   = "ssh"
 	schemeFile  = "file"
+)
 
+const (
 	checksumSHA256 = "sha256"
 	checksumSHA512 = "sha512"
 )

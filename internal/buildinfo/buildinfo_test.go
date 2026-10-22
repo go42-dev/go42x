@@ -28,7 +28,9 @@ func TestSourceURLFallbacks(t *testing.T) {
 	xBuildCommit = ""
 	const path = "assets/schemas/go42x.schema.yaml"
 	for _, tc := range []struct {
-		name, version, ref string
+		name    string
+		version string
+		ref     string
 	}{
 		{
 			"version tag",

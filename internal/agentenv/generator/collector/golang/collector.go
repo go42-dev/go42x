@@ -1,4 +1,4 @@
-package collector
+package golang
 
 import (
 	"context"
@@ -14,18 +14,20 @@ import (
 	"time"
 )
 
-const GoCollectorName = "golang"
+const (
+	Name     = "golang"
+	priority = 25
+)
 
-// GoCollector collects the project's Go requirement and effective Go settings.
-type GoCollector struct {
-	BaseCollector
+// Collector collects the project's Go requirement and effective Go settings.
+type Collector struct {
 	root    string
 	envVars []string
 	timeout time.Duration
 }
 
-// NewGoCollector adds extraEnv to the standard toolchain, path, and build settings.
-func NewGoCollector(root string, extraEnv []string) *GoCollector {
+// New adds extraEnv to the standard toolchain, path, and build settings.
+func New(root string, extraEnv []string) *Collector {
 	if len(root) == 0 {
 		root = "."
 	}
@@ -34,15 +36,22 @@ func NewGoCollector(root string, extraEnv []string) *GoCollector {
 		"GOMODCACHE", "GOMOD", "GOWORK", "GOOS", "GOARCH", "CGO_ENABLED",
 	}, extraEnv...)
 	slices.Sort(variables)
-	return &GoCollector{
-		BaseCollector: NewBaseCollector(GoCollectorName, 25),
-		root:          root,
-		envVars:       slices.Compact(variables),
-		timeout:       3 * time.Second,
+	return &Collector{
+		root:    root,
+		envVars: slices.Compact(variables),
+		timeout: 3 * time.Second,
 	}
 }
 
-func (c *GoCollector) Collect(ctx context.Context) (map[string]any, error) {
+func (*Collector) Name() string {
+	return Name
+}
+
+func (*Collector) Priority() int {
+	return priority
+}
+
+func (c *Collector) Collect(ctx context.Context) (map[string]any, error) {
 	result := make(map[string]any)
 	goVersion, moduleErr := c.moduleVersion()
 	if len(goVersion) > 0 {
@@ -55,7 +64,7 @@ func (c *GoCollector) Collect(ctx context.Context) (map[string]any, error) {
 	return result, errors.Join(moduleErr, envErr)
 }
 
-func (c *GoCollector) moduleVersion() (string, error) {
+func (c *Collector) moduleVersion() (string, error) {
 	// Read the Go requirement even when the Go executable is unavailable.
 	// #nosec G304 -- The caller explicitly selects the project whose go.mod is inspected.
 	data, err := os.ReadFile(filepath.Join(c.root, "go.mod"))
@@ -77,7 +86,7 @@ func (c *GoCollector) moduleVersion() (string, error) {
 	return "", nil
 }
 
-func (c *GoCollector) goEnv(ctx context.Context) (map[string]string, error) {
+func (c *Collector) goEnv(ctx context.Context) (map[string]string, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 

@@ -60,8 +60,9 @@ func TestContextReadsGuidanceWithoutIndexQueries(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, test := range []struct {
-		name, root string
-		rootError  error
+		name      string
+		root      string
+		rootError error
 	}{
 		{
 			"missing index with explicit root",

@@ -82,11 +82,11 @@ func TestGHAWMCPFragment(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !bytes.HasPrefix(content, []byte(ghAWFrontmatter)) || !bytes.HasSuffix(content, []byte(ghAWFrontmatter)) {
+	if !bytes.HasPrefix(content, []byte(yamlFrontmatter)) || !bytes.HasSuffix(content, []byte(yamlFrontmatter)) {
 		t.Fatalf("fragment is missing Markdown front matter: %s", content)
 	}
 	var fragment MCPConfig
-	if err := yaml.Unmarshal(content[len(ghAWFrontmatter):len(content)-len(ghAWFrontmatter)], &fragment); err != nil {
+	if err := yaml.Unmarshal(content[len(yamlFrontmatter):len(content)-len(yamlFrontmatter)], &fragment); err != nil {
 		t.Fatal(err)
 	}
 	want := map[string]MCPServer{
@@ -112,7 +112,7 @@ func TestGHAWMCPFragment(t *testing.T) {
 		},
 	}
 
-	if fragment.Description != ghAWMCPDescription || !reflect.DeepEqual(fragment.MCPServers, want) {
+	if fragment.Description != mcpDescription || !reflect.DeepEqual(fragment.MCPServers, want) {
 		t.Fatalf("fragment = %+v; want servers %+v", fragment, want)
 	}
 	if strings.Contains(string(content), "local-token-must-not-be-written") ||
@@ -437,7 +437,7 @@ func TestGHAWContainerPreservesSharedCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	var fragment MCPConfig
-	if err := yaml.Unmarshal(bytes.Split(data, []byte(ghAWFrontmatter))[1], &fragment); err != nil {
+	if err := yaml.Unmarshal(bytes.Split(data, []byte(yamlFrontmatter))[1], &fragment); err != nil {
 		t.Fatal(err)
 	}
 	entry := fragment.MCPServers["local"]

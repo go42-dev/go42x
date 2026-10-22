@@ -23,7 +23,7 @@ func DoctorChecks(root, indexPath string) []check.Check {
 			service, err := NewService(settings)
 			if err != nil {
 				return check.Result{
-					Status:  check.Fail,
+					Status:  check.StatusFail,
 					Message: "Invalid knowledge-base settings",
 				}
 			}
@@ -32,7 +32,7 @@ func DoctorChecks(root, indexPath string) []check.Check {
 			if err != nil {
 				if freshness != nil && len(freshness.Generation) > 0 {
 					return check.Result{
-						Status:      check.Warn,
+						Status:      check.StatusWarn,
 						Message:     "Index freshness scan could not complete",
 						Remediation: "go42x kwb check --json --search-timeout=30s",
 						Evidence:    []string{freshness.Generation},
@@ -40,14 +40,14 @@ func DoctorChecks(root, indexPath string) []check.Check {
 				}
 
 				return check.Result{
-					Status:      check.Fail,
+					Status:      check.StatusFail,
 					Message:     "Index missing, unreadable, incompatible, or belongs to another project",
 					Remediation: "go42x kwb build --rebuild",
 				}
 			}
 			if !freshness.Complete || freshness.Status != FreshnessFresh {
 				return check.Result{
-					Status: check.Warn,
+					Status: check.StatusWarn,
 					Message: fmt.Sprintf(
 						"Index %s: %d new, %d changed, %d deleted, %d excluded",
 						freshness.Status,
@@ -62,7 +62,7 @@ func DoctorChecks(root, indexPath string) []check.Check {
 			}
 
 			return check.Result{
-				Status:   check.Pass,
+				Status:   check.StatusPass,
 				Message:  "Index matches eligible source checked during this scan",
 				Evidence: []string{freshness.Generation},
 			}

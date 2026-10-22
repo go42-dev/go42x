@@ -44,8 +44,10 @@ func TestMCPReadTimeouts(t *testing.T) {
 }
 
 type mcpSessionConfig struct {
-	name, entrypoint, localEntrypoint string
-	indexedRoot                       bool
+	name            string
+	entrypoint      string
+	localEntrypoint string
+	indexedRoot     bool
 }
 
 func TestMCPDocumentationEntrypointFlagRemoved(t *testing.T) {
@@ -287,8 +289,13 @@ providers: {codex: {enabled: false}}
 			t.Fatalf("configured guidance or flag precedence lost: %+v", called)
 		}
 		var result struct {
-			Items       []struct{ Path, Reason string } `json:"items"`
-			Diagnostics []struct{ Code string }         `json:"diagnostics"`
+			Items []struct {
+				Path   string
+				Reason string
+			} `json:"items"`
+			Diagnostics []struct {
+				Code string
+			} `json:"diagnostics"`
 		}
 		if err := json.Unmarshal([]byte(called.Content[0].Text), &result); err != nil {
 			t.Fatal(err)

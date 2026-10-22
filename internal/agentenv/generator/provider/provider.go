@@ -13,8 +13,9 @@ import (
 	"github.com/go42-dev/go42x/internal/fspatch"
 )
 
+const AgentsFile = "AGENTS.md"
+
 const (
-	AgentsFile         = "AGENTS.md"
 	MCPServerTypeStdio = "stdio"
 	MCPServerTypeHTTP  = "http"
 	MCPServerTypeSSE   = "sse"
@@ -156,7 +157,7 @@ func PrepareJSONSettings(
 		return fmt.Errorf("failed to encode settings: %w", err)
 	}
 	if exists && bytes.Equal(before, after) {
-		return plan.Write(path, previous, fspatch.Settings, false)
+		return plan.Write(path, previous, fspatch.KindSettings, false)
 	}
 
 	var formatted bytes.Buffer
@@ -164,7 +165,7 @@ func PrepareJSONSettings(
 		return fmt.Errorf("failed to format settings: %w", err)
 	}
 
-	return plan.Write(path, formatted.Bytes(), fspatch.Settings, false)
+	return plan.Write(path, formatted.Bytes(), fspatch.KindSettings, false)
 }
 
 func decodeJSONSettings(content []byte) (map[string]any, error) {

@@ -1,4 +1,4 @@
-package collector
+package githubactions
 
 import (
 	"cmp"
@@ -9,17 +9,17 @@ import (
 	"strings"
 )
 
-const GitHubActionsCollectorName = "github_actions"
+const (
+	Name     = "github_actions"
+	priority = 30
+)
 
-// GitHubActionsCollector collects workflow metadata and event task context.
-type GitHubActionsCollector struct {
-	BaseCollector
-}
+// Collector collects workflow metadata and event task context.
+type Collector struct{}
 
-func NewGitHubActionsCollector() *GitHubActionsCollector {
-	return &GitHubActionsCollector{
-		BaseCollector: NewBaseCollector(GitHubActionsCollectorName, 30),
-	}
+// New creates a collector for the current GitHub Actions environment.
+func New() *Collector {
+	return &Collector{}
 }
 
 // githubEvent contains only event fields used in generated instructions.
@@ -60,7 +60,15 @@ type githubSubject struct {
 	PullRequest *githubPullRequestLink `json:"pull_request"`
 }
 
-func (c *GitHubActionsCollector) Collect(_ context.Context) (map[string]any, error) {
+func (*Collector) Name() string {
+	return Name
+}
+
+func (*Collector) Priority() int {
+	return priority
+}
+
+func (c *Collector) Collect(_ context.Context) (map[string]any, error) {
 	result := make(map[string]any)
 	if os.Getenv("GITHUB_ACTIONS") != "true" {
 		return result, nil
@@ -142,8 +150,8 @@ func (c *GitHubActionsCollector) Collect(_ context.Context) (map[string]any, err
 	return result, nil
 }
 
-func (c *GitHubActionsCollector) collectWorkflowContext(result map[string]any) {
-	for key, env := range map[string]string{
+func (c *Collector) collectWorkflowContext(result map[string]any) {
+	environment := map[string]string{
 		"action":           "GITHUB_ACTION",
 		"action_path":      "GITHUB_ACTION_PATH",
 		"api_url":          "GITHUB_API_URL",
@@ -162,39 +170,56 @@ func (c *GitHubActionsCollector) collectWorkflowContext(result map[string]any) {
 		"sha":              "GITHUB_SHA",
 		"workspace":        "GITHUB_WORKSPACE",
 		"server_url":       "GITHUB_SERVER_URL",
-	} {
+	}
+	for key, env := range environment {
 		if value := os.Getenv(env); len(value) > 0 {
 			result[key] = value
 		}
 	}
 
-	for key, fields := range map[string]map[string]string{
-		"actor": {
-			"login":            os.Getenv("GITHUB_ACTOR"),
-			"triggering_actor": os.Getenv("GITHUB_TRIGGERING_ACTOR"),
-		},
-		"workflow": {
-			"name": os.Getenv("GITHUB_WORKFLOW"),
-			"ref":  os.Getenv("GITHUB_WORKFLOW_REF"),
-			"sha":  os.Getenv("GITHUB_WORKFLOW_SHA"),
-		},
-		"runner": {
-			"name":       os.Getenv("RUNNER_NAME"),
-			"os":         os.Getenv("RUNNER_OS"),
-			"arch":       os.Getenv("RUNNER_ARCH"),
-			"temp_dir":   os.Getenv("RUNNER_TEMP"),
-			"tool_cache": os.Getenv("RUNNER_TOOL_CACHE"),
-		},
-	} {
-		group := make(map[string]any)
-		for name, value := range fields {
-			if len(value) > 0 {
-				group[name] = value
-			}
-		}
-		if len(group) > 0 {
-			result[key] = group
-		}
+	actor := make(map[string]any)
+	if value := os.Getenv("GITHUB_ACTOR"); len(value) > 0 {
+		actor["login"] = value
+	}
+	if value := os.Getenv("GITHUB_TRIGGERING_ACTOR"); len(value) > 0 {
+		actor["triggering_actor"] = value
+	}
+	if len(actor) > 0 {
+		result["actor"] = actor
+	}
+
+	workflow := make(map[string]any)
+	if value := os.Getenv("GITHUB_WORKFLOW"); len(value) > 0 {
+		workflow["name"] = value
+	}
+	if value := os.Getenv("GITHUB_WORKFLOW_REF"); len(value) > 0 {
+		workflow["ref"] = value
+	}
+	if value := os.Getenv("GITHUB_WORKFLOW_SHA"); len(value) > 0 {
+		workflow["sha"] = value
+	}
+	if len(workflow) > 0 {
+		result["workflow"] = workflow
+	}
+
+	runner := make(map[string]any)
+	if value := os.Getenv("RUNNER_NAME"); len(value) > 0 {
+		runner["name"] = value
+	}
+	if value := os.Getenv("RUNNER_OS"); len(value) > 0 {
+		runner["os"] = value
+	}
+	if value := os.Getenv("RUNNER_ARCH"); len(value) > 0 {
+		runner["arch"] = value
+	}
+	if value := os.Getenv("RUNNER_TEMP"); len(value) > 0 {
+		runner["temp_dir"] = value
+	}
+	if value := os.Getenv("RUNNER_TOOL_CACHE"); len(value) > 0 {
+		runner["tool_cache"] = value
+	}
+	if len(runner) > 0 {
+		result["runner"] = runner
 	}
 }
 

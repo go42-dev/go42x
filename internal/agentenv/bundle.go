@@ -22,8 +22,11 @@ import (
 
 const (
 	templateSchemaURLBase = "https://raw.githubusercontent.com/go42-dev/go42x/master/"
-	bundleMergeTimeout    = 30 * time.Second
+	schemaPathProject     = "assets/schemas/go42x.schema.yaml"
+	schemaPathVendor      = "assets/schemas/vendor.schema.yaml"
 )
+
+const bundleMergeTimeout = 30 * time.Second
 
 // bundleFile distinguishes a missing source from an empty file.
 type bundleFile struct {
@@ -41,10 +44,10 @@ type bundleMerge struct {
 func pinBundledSchemaURL(path string, data []byte) []byte {
 	var schemaPath string
 	switch path {
-	case config.ProjectConfigFile:
-		schemaPath = "assets/schemas/go42x.schema.yaml"
+	case config.FileProject:
+		schemaPath = schemaPathProject
 	case vendoring.ManifestFile:
-		schemaPath = "assets/schemas/vendor.schema.yaml"
+		schemaPath = schemaPathVendor
 	default:
 		return data
 	}
@@ -127,8 +130,8 @@ func (s *Service) prepareMergedBundle(
 		return nil, fmt.Errorf("read base bundle: %w", err)
 	}
 
-	if _, exists := base[config.ProjectConfigFile]; !exists {
-		return nil, fmt.Errorf("base bundle must contain %s", config.ProjectConfigFile)
+	if _, exists := base[config.FileProject]; !exists {
+		return nil, fmt.Errorf("base bundle must contain %s", config.FileProject)
 	}
 
 	incoming, err := readBundle(ctx, bundle)
@@ -200,13 +203,13 @@ func (s *Service) prepareMergedBundle(
 			continue
 		}
 
-		if path == config.ProjectConfigFile {
+		if path == config.FileProject {
 			updatedConfig = merged.file.data
 		}
 		if merged.file.exists {
-			err = plan.Write(target, merged.file.data, fspatch.Sources, false)
+			err = plan.Write(target, merged.file.data, fspatch.KindSources, false)
 		} else {
-			err = plan.Remove(target, fspatch.Sources)
+			err = plan.Remove(target, fspatch.KindSources)
 		}
 
 		if err != nil {
@@ -221,7 +224,7 @@ func (s *Service) prepareMergedBundle(
 		)
 	}
 	if updatedConfig == nil {
-		return nil, fmt.Errorf("merged bundle must retain %s", config.ProjectConfigFile)
+		return nil, fmt.Errorf("merged bundle must retain %s", config.FileProject)
 	}
 
 	if err := os.RemoveAll(workspace); err != nil {
@@ -297,14 +300,14 @@ func mergeBundleFile(
 		return bundleMerge{file: current}, nil
 	}
 
-	for name, source := range map[string]bundleFile{
-		"base":     base,
-		"current":  current,
-		"incoming": incoming,
-	} {
-		if err := writeBundleFile(workspace, filepath.Join(name, path), source.data); err != nil {
-			return bundleMerge{}, err
-		}
+	if err := writeBundleFile(workspace, filepath.Join("base", path), base.data); err != nil {
+		return bundleMerge{}, err
+	}
+	if err := writeBundleFile(workspace, filepath.Join("current", path), current.data); err != nil {
+		return bundleMerge{}, err
+	}
+	if err := writeBundleFile(workspace, filepath.Join("incoming", path), incoming.data); err != nil {
+		return bundleMerge{}, err
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, bundleMergeTimeout)

@@ -14,11 +14,14 @@ import (
 const (
 	updateManifestFile = "manifest.json"
 	updateBackupFiles  = "files"
-	updateBackingUp    = "backing_up"
-	updateApplying     = "applying"
-	updateComplete     = "complete"
-	updatePending      = "pending"
-	updateApplied      = "applied"
+)
+
+const (
+	updateStatusBackingUp = "backing_up"
+	updateStatusApplying  = "applying"
+	updateStatusComplete  = "complete"
+	updateStatusPending   = "pending"
+	updateStatusApplied   = "applied"
 )
 
 // UpdateResult describes a batch, including progress when application fails.
@@ -53,7 +56,7 @@ func (p *Plan) ApplyUpdate(ctx context.Context, cliVersion string) (*UpdateResul
 	manifest := updateManifest{
 		Version:    1,
 		CLIVersion: cliVersion,
-		Status:     updateBackingUp,
+		Status:     updateStatusBackingUp,
 	}
 	for _, f := range p.ordered {
 		if err := ctx.Err(); err != nil {
@@ -94,10 +97,10 @@ func (p *Plan) ApplyUpdate(ctx context.Context, cliVersion string) (*UpdateResul
 			Kind:      f.kind,
 			Existed:   f.exists,
 			Mode:      f.mode,
-			Status:    updatePending,
+			Status:    updateStatusPending,
 			Operation: operation,
 		})
-		if f.kind == Sources {
+		if f.kind == KindSources {
 			result.Sources++
 		}
 	}
@@ -139,7 +142,7 @@ func (p *Plan) ApplyUpdate(ctx context.Context, cliVersion string) (*UpdateResul
 			return result, err
 		}
 	}
-	manifest.Status = updateApplying
+	manifest.Status = updateStatusApplying
 	if err := manifest.save(backupDir); err != nil {
 		return result, err
 	}
@@ -158,7 +161,7 @@ func (p *Plan) ApplyUpdate(ctx context.Context, cliVersion string) (*UpdateResul
 				}
 			}
 		}
-		manifest.Files[i].Status = updateApplying
+		manifest.Files[i].Status = updateStatusApplying
 		if err := manifest.save(backupDir); err != nil {
 			return result, err
 		}
@@ -178,7 +181,7 @@ func (p *Plan) ApplyUpdate(ctx context.Context, cliVersion string) (*UpdateResul
 		}
 
 		result.Applied++
-		manifest.Files[i].Status = updateApplied
+		manifest.Files[i].Status = updateStatusApplied
 		if err := manifest.save(backupDir); err != nil {
 			return result, err
 		}
@@ -190,7 +193,7 @@ func (p *Plan) ApplyUpdate(ctx context.Context, cliVersion string) (*UpdateResul
 			slog.String("operation", manifest.Files[i].Operation),
 		)
 	}
-	manifest.Status = updateComplete
+	manifest.Status = updateStatusComplete
 	return result, manifest.save(backupDir)
 }
 

@@ -19,12 +19,16 @@ import (
 )
 
 const (
-	maxCatalogBytes      = 64 * 1024 * 1024
-	maxCatalogFiles      = 10000
-	MaxImpactPaths       = 100
-	MaxImpactDocuments   = 100
-	MaxRelationshipDepth = 2
+	maxCatalogBytes = 64 * 1024 * 1024
+	maxCatalogFiles = 10000
 )
+
+const (
+	MaxImpactPaths     = 100
+	MaxImpactDocuments = 100
+)
+
+const MaxRelationshipDepth = 2
 
 type catalogToken struct{}
 
@@ -92,7 +96,7 @@ func (s *documentCatalog) Load(ctx context.Context, rootPath string) (*Catalog, 
 	}
 
 	project := config.Project{}
-	cfg, err := config.LoadProjectConfig(filepath.Join(rootPath, config.Directory, config.ProjectConfigFile), nil)
+	cfg, err := config.LoadProjectConfig(filepath.Join(rootPath, config.Directory, config.FileProject), nil)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("load documentation configuration: %w", err)
 	}

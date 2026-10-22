@@ -322,8 +322,11 @@ func TestVendorNestedManifestAndTempConfiguration(t *testing.T) {
 	defer server.Close()
 
 	for _, tc := range []struct {
-		name, temp, local, want string
-		config                  bool
+		name   string
+		temp   string
+		local  string
+		want   string
+		config bool
 	}{
 		{
 			name: "missing configuration",

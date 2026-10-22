@@ -29,23 +29,31 @@ const (
 	collectionDecisions    = "decisions"
 	collectionHandbook     = "handbook"
 	collectionTemplates    = "templates"
+)
 
+const (
 	statusDraft      = "draft"
 	statusAccepted   = "accepted"
 	statusRetired    = "retired"
 	statusProposed   = "proposed"
 	statusRejected   = "rejected"
 	statusSuperseded = "superseded"
+)
 
+const (
 	KindCode          = "code"
 	KindDocumentation = "documentation"
 	KindConfig        = "config"
-
-	maxChunkLines    = 80
-	maxChunkBytes    = 16 * 1024
-	MaxFileBytes     = 5 * 1024 * 1024
-	MaxResponseBytes = 64 * 1024
 )
+
+const (
+	maxChunkLines = 80
+	maxChunkBytes = 16 * 1024
+)
+
+const MaxFileBytes = 5 * 1024 * 1024
+
+const MaxResponseBytes = 64 * 1024
 
 type document struct {
 	DocumentID     string   `json:"document_id,omitempty"`
@@ -68,9 +76,10 @@ type document struct {
 }
 
 type section struct {
-	start, end int // zero-based, end exclusive
-	title      string
-	symbols    []string
+	start   int
+	end     int // zero-based, end exclusive
+	title   string
+	symbols []string
 }
 
 func fileKind(path string) (string, string) {

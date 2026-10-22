@@ -198,8 +198,11 @@ func TestChunkRankingAndRanges(t *testing.T) {
 	writeFixture(t, root, "mentions.md", "# Notes\nNewHTTPServer is mentioned incidentally here.\n")
 	buildFixture(t, service, root)
 	for _, tc := range []struct {
-		query, kind, language, path string
-		line                        int
+		query    string
+		kind     string
+		language string
+		path     string
+		line     int
 	}{
 		{
 			"NewHTTPServer",

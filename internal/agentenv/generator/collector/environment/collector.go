@@ -1,4 +1,4 @@
-package collector
+package environment
 
 import (
 	"context"
@@ -7,25 +7,34 @@ import (
 	"runtime"
 )
 
-const EnvironmentCollectorName = "environment"
+const (
+	Name     = "environment"
+	priority = 20
+)
 
-// EnvironmentCollector collects runtime environment information
-type EnvironmentCollector struct {
-	root string
-	BaseCollector
+// Collector collects runtime environment information.
+type Collector struct {
+	root    string
 	envVars []string
 }
 
-// NewEnvironmentCollector creates a collector for the given project root.
-func NewEnvironmentCollector(envVars []string, root string) *EnvironmentCollector {
-	return &EnvironmentCollector{
-		root:          root,
-		BaseCollector: NewBaseCollector(EnvironmentCollectorName, 20),
-		envVars:       envVars,
+// New creates a collector for the given project root.
+func New(envVars []string, root string) *Collector {
+	return &Collector{
+		root:    root,
+		envVars: envVars,
 	}
 }
 
-func (c *EnvironmentCollector) Collect(_ context.Context) (map[string]any, error) {
+func (*Collector) Name() string {
+	return Name
+}
+
+func (*Collector) Priority() int {
+	return priority
+}
+
+func (c *Collector) Collect(_ context.Context) (map[string]any, error) {
 	result := make(map[string]any)
 
 	result["is_ci"] = os.Getenv("CI") == "true"

@@ -13,10 +13,9 @@ import (
 	"github.com/go42-dev/go42x/internal/fspatch"
 )
 
-const (
-	Name      = "antigravity"
-	PluginDir = ".agents/plugins/project-tools"
-)
+const Name = "antigravity"
+
+const PluginDir = ".agents/plugins/project-tools"
 
 var antigravityEnvNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
@@ -67,7 +66,6 @@ func (p *Provider) Prepare(plan *fspatch.Plan, _ map[string]any) error {
 	if err := p.prepareConfigFiles(plan); err != nil {
 		return fmt.Errorf("failed to prepare config files: %w", err)
 	}
-
 	return nil
 }
 

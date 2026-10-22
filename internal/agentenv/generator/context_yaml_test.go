@@ -339,7 +339,11 @@ func TestYAMLValueRoundTrip(t *testing.T) {
 }
 
 func TestYAMLBlockErrors(t *testing.T) {
-	for _, tt := range []struct{ name, body, want string }{
+	for _, tt := range []struct {
+		name string
+		body string
+		want string
+	}{
 		{
 			"syntax",
 			"value: [",
@@ -509,7 +513,11 @@ func TestYAMLBlockOmitEmptyRoot(t *testing.T) {
 }
 
 func TestYAMLBlockOmitEmptyErrors(t *testing.T) {
-	for _, tc := range []struct{ body, option, want string }{
+	for _, tc := range []struct {
+		body   string
+		option string
+		want   string
+	}{
 		{
 			"value: null",
 			"omit-emtpy",

@@ -35,7 +35,7 @@ func DoctorCheck(root string, servers func() map[string]provider.MCPServer, opti
 			}
 			if len(serverChecks) == 0 {
 				return check.Result{
-					Status:  check.Skipped,
+					Status:  check.StatusSkipped,
 					Message: "No enabled MCP servers",
 				}
 			}
@@ -43,7 +43,7 @@ func DoctorCheck(root string, servers func() map[string]provider.MCPServer, opti
 			report, err := check.Run(ctx, serverChecks...)
 			if err != nil {
 				return check.Result{
-					Status:  check.Fail,
+					Status:  check.StatusFail,
 					Message: "MCP checks interrupted",
 				}
 			}
@@ -71,7 +71,7 @@ func mcpChecks(root, name string, server provider.MCPServer, options DoctorOptio
 		Run: func(_ context.Context) check.Result {
 			if server.Transport() != provider.MCPServerTypeStdio {
 				return check.Result{
-					Status:  check.Pass,
+					Status:  check.StatusPass,
 					Message: "Remote transport configured; connectivity unchecked",
 				}
 			}
@@ -79,7 +79,7 @@ func mcpChecks(root, name string, server provider.MCPServer, options DoctorOptio
 			info, err := os.Stat(cwd)
 			if err != nil || !info.IsDir() {
 				return check.Result{
-					Status:      check.Fail,
+					Status:      check.StatusFail,
 					Message:     "MCP working directory is unavailable",
 					Remediation: "Correct the server cwd or prepare its repository",
 				}
@@ -91,14 +91,14 @@ func mcpChecks(root, name string, server provider.MCPServer, options DoctorOptio
 			}
 			if _, err := exec.LookPath(command); err != nil {
 				return check.Result{
-					Status:      check.Fail,
+					Status:      check.StatusFail,
 					Message:     "MCP executable is unavailable",
 					Remediation: "Install or configure the server command",
 				}
 			}
 
 			return check.Result{
-				Status:  check.Pass,
+				Status:  check.StatusPass,
 				Message: "Executable and working directory are available; wrapper arguments unchecked",
 			}
 		},
@@ -108,7 +108,7 @@ func mcpChecks(root, name string, server provider.MCPServer, options DoctorOptio
 		Run: func(ctx context.Context) check.Result {
 			if !options.ProbeMCP {
 				return check.Result{
-					Status:      check.Skipped,
+					Status:      check.StatusSkipped,
 					Message:     "Connection probe was not requested",
 					Remediation: "Use --probe-mcp to initialize servers and list tools",
 				}

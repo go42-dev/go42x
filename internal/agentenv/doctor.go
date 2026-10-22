@@ -23,7 +23,7 @@ func (s *Service) DoctorChecks(root string) []check.Check {
 		Run: func(_ context.Context) check.Result {
 			var err error
 			s.config, err = config.LoadProjectConfig(
-				filepath.Join(root, config.Directory, config.ProjectConfigFile),
+				filepath.Join(root, config.Directory, config.FileProject),
 				s.settings.Providers,
 			)
 			if err != nil {
@@ -34,14 +34,14 @@ func (s *Service) DoctorChecks(root string) []check.Check {
 				}
 				// Parser errors can contain credentials from invalid YAML; never echo them.
 				return check.Result{
-					Status:      check.Fail,
+					Status:      check.StatusFail,
 					Message:     message,
 					Remediation: "Run go42x agentenv init if needed, then review .go42x/go42x.yaml and go42x.local.yaml",
 				}
 			}
 
 			return check.Result{
-				Status:  check.Pass,
+				Status:  check.StatusPass,
 				Message: "Configuration is valid",
 			}
 		},
@@ -58,7 +58,7 @@ func (s *Service) DoctorChecks(root string) []check.Check {
 			plan, err := gen.Prepare(ctx, false)
 			if err != nil {
 				return check.Result{
-					Status:      check.Fail,
+					Status:      check.StatusFail,
 					Message:     "Templates or provider outputs cannot be prepared",
 					Remediation: "Review templates and existing provider settings; run go42x agentenv generate after correcting them",
 				}
@@ -67,13 +67,13 @@ func (s *Service) DoctorChecks(root string) []check.Check {
 			changes := plan.Changes()
 			if len(changes) == 0 {
 				return check.Result{
-					Status:  check.Pass,
+					Status:  check.StatusPass,
 					Message: "Generated outputs match configuration and templates",
 				}
 			}
 
 			result := check.Result{
-				Status:      check.Warn,
+				Status:      check.StatusWarn,
 				Message:     "Generated outputs are missing or differ from the prepared configuration",
 				Remediation: "go42x agentenv generate",
 			}
@@ -94,14 +94,14 @@ func (s *Service) DoctorChecks(root string) []check.Check {
 			}
 			if len(enabled) == 0 {
 				return check.Result{
-					Status:      check.Warn,
+					Status:      check.StatusWarn,
 					Message:     "No agent providers are enabled",
 					Remediation: "Select providers in .go42x/go42x.local.yaml, with GO42X_PROVIDERS, or with --providers",
 				}
 			}
 
 			return check.Result{
-				Status:   check.Pass,
+				Status:   check.StatusPass,
 				Message:  "Enabled agent providers",
 				Evidence: enabled,
 			}

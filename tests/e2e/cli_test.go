@@ -61,8 +61,11 @@ func TestDoctorReportsAndExitCodes(t *testing.T) {
 	// Run outside the project so --root must select the requested directory.
 	caller := newProject(t)
 	for _, tc := range []struct {
-		name, status, configStatus, indexStatus string
-		exit                                    int
+		name         string
+		status       string
+		configStatus string
+		indexStatus  string
+		exit         int
 	}{
 		{
 			"healthy",

@@ -84,7 +84,6 @@ FROM ghcr.io/jdx/mise:${MISE_VERSION} AS mise
 FROM golang:${GO_VERSION}-alpine3.24
 
 # Install runtime tools and CGO dependencies for projects inspected by gopls.
-# Pin the patched OpenSSL runtime libraries explicitly.
 # @see https://pkgs.alpinelinux.org/packages?branch=v3.24
 RUN apk add --no-cache \
     bash=5.3.9-r1 \
@@ -96,7 +95,8 @@ RUN apk add --no-cache \
     libssl3=3.5.9-r0 \
     musl-dev=1.2.6-r2 \
     tini=0.19.0-r3 \
-    tzdata=2026e-r0
+    tzdata=2026e-r0 \
+    zlib=1.3.2-r1
 
 # Match GitHub's hosted Linux runner so mounted instructions and indexes remain accessible.
 RUN addgroup -g 1001 appuser && \

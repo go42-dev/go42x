@@ -16,10 +16,12 @@ const (
 	OperationCreate = "create"
 	OperationUpdate = "update"
 	OperationRemove = "remove"
+)
 
-	Instructions Kind = "instructions"
-	Settings     Kind = "settings"
-	Sources      Kind = "sources"
+const (
+	KindInstructions Kind = "instructions"
+	KindSettings     Kind = "settings"
+	KindSources      Kind = "sources"
 )
 
 // Kind groups files into backup subdirectories.
@@ -41,11 +43,9 @@ type file struct {
 // Plan retains originals while file changes are prepared.
 // Apply and ApplyUpdate write to disk. A plan is intended for a single operation.
 type Plan struct {
-	logger *slog.Logger
-
-	outputDir string
-	backupDir string
-
+	logger     *slog.Logger
+	outputDir  string
+	backupDir  string
 	files      map[string]*file
 	ordered    []*file
 	operations []*file

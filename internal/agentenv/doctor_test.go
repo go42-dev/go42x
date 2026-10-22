@@ -48,7 +48,7 @@ func TestDoctorMissingAndDriftDoNotWrite(t *testing.T) {
 	service := testService(t, root, false)
 	before := snapshotTree(t, root)
 	report, err := check.Run(t.Context(), service.DoctorChecks(root)...)
-	if err != nil || report.Status != check.Fail || report.Checks[0].Status != check.Fail {
+	if err != nil || report.Status != check.StatusFail || report.Checks[0].Status != check.StatusFail {
 		t.Fatalf("%+v %v", report, err)
 	}
 	if !reflect.DeepEqual(before, snapshotTree(t, root)) {
@@ -62,7 +62,7 @@ func TestDoctorMissingAndDriftDoNotWrite(t *testing.T) {
 	writeFile(t, filepath.Join(root, ".go42x/agents.tpl.md"), "# Test\n")
 	before = snapshotTree(t, root)
 	report, err = check.Run(t.Context(), service.DoctorChecks(root)...)
-	if err != nil || report.Status != check.Warn || report.Checks[1].Status != check.Warn {
+	if err != nil || report.Status != check.StatusWarn || report.Checks[1].Status != check.StatusWarn {
 		t.Fatalf("%+v %v", report, err)
 	}
 	if !reflect.DeepEqual(before, snapshotTree(t, root)) {
@@ -73,7 +73,7 @@ func TestDoctorMissingAndDriftDoNotWrite(t *testing.T) {
 	}
 	before = snapshotTree(t, root)
 	report, err = check.Run(t.Context(), service.DoctorChecks(root)...)
-	if err != nil || report.Checks[1].Status != check.Pass {
+	if err != nil || report.Checks[1].Status != check.StatusPass {
 		t.Fatalf("%+v %v", report, err)
 	}
 	if !reflect.DeepEqual(before, snapshotTree(t, root)) {
@@ -111,7 +111,7 @@ func TestDoctorGHAWFragmentDrift(t *testing.T) {
 	before := snapshotTree(t, root)
 
 	report, err := check.Run(t.Context(), service.DoctorChecks(root)...)
-	if err != nil || report.Status != check.Pass {
+	if err != nil || report.Status != check.StatusPass {
 		t.Fatalf("generated fragment check = %+v, %v", report, err)
 	}
 	if !reflect.DeepEqual(before, snapshotTree(t, root)) {
@@ -121,7 +121,7 @@ func TestDoctorGHAWFragmentDrift(t *testing.T) {
 	writeFile(t, filepath.Join(root, ".github/workflows/900-aw-mcp.md"), "outdated declarations\n")
 	before = snapshotTree(t, root)
 	report, err = check.Run(t.Context(), service.DoctorChecks(root)...)
-	if err != nil || report.Checks[1].Status != check.Warn ||
+	if err != nil || report.Checks[1].Status != check.StatusWarn ||
 		!strings.Contains(strings.Join(report.Checks[1].Evidence, "\n"), ".github/workflows/900-aw-mcp.md") {
 		t.Fatalf("fragment drift check = %+v, %v", report, err)
 	}
@@ -149,7 +149,7 @@ func TestDoctorChecksUseExplicitCheckout(t *testing.T) {
 	}
 	t.Chdir(t.TempDir())
 	report, err := check.Run(t.Context(), service.DoctorChecks(root)...)
-	if err != nil || report.Checks[1].Status != check.Pass {
+	if err != nil || report.Checks[1].Status != check.StatusPass {
 		t.Fatalf("wrong checkout context: %+v %v", report, err)
 	}
 }

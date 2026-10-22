@@ -14,7 +14,11 @@ import (
 
 func TestTemplateProcessing(t *testing.T) {
 	e := newTemplateEngine(t.TempDir())
-	for _, tt := range []struct{ name, template, want string }{
+	for _, tt := range []struct {
+		name     string
+		template string
+		want     string
+	}{
 		{
 			"context",
 			"Hello {{ .name }}",
@@ -71,7 +75,10 @@ func TestTemplateProcessing(t *testing.T) {
 			}
 		})
 	}
-	for _, tt := range []struct{ template, want string }{{
+	for _, tt := range []struct {
+		template string
+		want     string
+	}{{
 		"{{",
 		"failed to parse template",
 	}, {

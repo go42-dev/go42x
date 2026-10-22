@@ -95,14 +95,14 @@ func TestServiceRegistersSubsystemsAndReloadsChecks(t *testing.T) {
 		Run: func(context.Context) check.Result {
 			runs++
 			return check.Result{
-				Status:  check.Pass,
+				Status:  check.StatusPass,
 				Message: "Test adapter is available",
 			}
 		},
 	})
 	beforeRoot, beforeIndex := snapshotTree(t, root), snapshotTree(t, indexPath)
 	report, err := service.Run(t.Context())
-	if err != nil || report.Status != check.Fail || report.SchemaVersion != 1 {
+	if err != nil || report.Status != check.StatusFail || report.SchemaVersion != 1 {
 		t.Fatalf("report: %+v %v", report, err)
 	}
 	var ids []string
@@ -114,7 +114,12 @@ func TestServiceRegistersSubsystemsAndReloadsChecks(t *testing.T) {
 	if !reflect.DeepEqual(ids, []string{
 		"agentenv.config", "agentenv.outputs", "agentenv.providers", "mcp.servers", "kwb.index", "deployment.adapter",
 	}) || !reflect.DeepEqual(statuses, []check.Status{
-		check.Fail, check.Skipped, check.Skipped, check.Skipped, check.Pass, check.Pass,
+		check.StatusFail,
+		check.StatusSkipped,
+		check.StatusSkipped,
+		check.StatusSkipped,
+		check.StatusPass,
+		check.StatusPass,
 	}) || runs != 1 {
 		t.Fatalf("registered checks: %+v; adapter runs: %d", report.Checks, runs)
 	}
@@ -136,8 +141,8 @@ func TestServiceRegistersSubsystemsAndReloadsChecks(t *testing.T) {
 	}
 	beforeRoot, beforeIndex = snapshotTree(t, root), snapshotTree(t, indexPath)
 	report, err = service.Run(t.Context())
-	if err != nil || report.Status != check.Warn || report.Checks[0].Status != check.Pass ||
-		report.Checks[1].Status != check.Warn || runs != 2 {
+	if err != nil || report.Status != check.StatusWarn || report.Checks[0].Status != check.StatusPass ||
+		report.Checks[1].Status != check.StatusWarn || runs != 2 {
 		t.Fatalf("updated configuration: %+v %v; adapter runs: %d", report, err, runs)
 	}
 	if !reflect.DeepEqual(beforeRoot, snapshotTree(t, root)) ||
@@ -203,7 +208,8 @@ func TestMCPChecksDependOnCurrentConfiguration(t *testing.T) {
 	}
 	result := runMCP()
 
-	if result.Status != check.Pass || len(result.Children) != 2 || result.Children[1].Status != check.Skipped ||
+	if result.Status != check.StatusPass || len(result.Children) != 2 ||
+		result.Children[1].Status != check.StatusSkipped ||
 		requests.Load() != 0 {
 		t.Fatalf("probe ran without opt-in: %+v; requests=%d", result, requests.Load())
 	}
@@ -215,13 +221,13 @@ func TestMCPChecksDependOnCurrentConfiguration(t *testing.T) {
 	}
 	result = runMCP()
 
-	if result.Status != check.Pass || result.Children[1].Status != check.Pass || requests.Load() == 0 {
+	if result.Status != check.StatusPass || result.Children[1].Status != check.StatusPass || requests.Load() == 0 {
 		t.Fatalf("configured probe did not run: %+v; requests=%d", result, requests.Load())
 	}
 	writeConfig("missing")
 	result = runMCP()
 
-	if result.Status != check.Fail || !reflect.DeepEqual(result.Children[1].Evidence, []string{"missing"}) {
+	if result.Status != check.StatusFail || !reflect.DeepEqual(result.Children[1].Evidence, []string{"missing"}) {
 		t.Fatalf("probe used stale server definitions: %+v", result)
 	}
 	if err := os.WriteFile(configPath, []byte("invalid: ["), 0600); err != nil {
@@ -230,7 +236,7 @@ func TestMCPChecksDependOnCurrentConfiguration(t *testing.T) {
 	before := requests.Load()
 	result = runMCP()
 
-	if result.Status != check.Skipped || !strings.Contains(result.Message, "agentenv.config") ||
+	if result.Status != check.StatusSkipped || !strings.Contains(result.Message, "agentenv.config") ||
 		requests.Load() != before {
 		t.Fatalf("probe ran with invalid configuration: %+v; requests=%d", result, requests.Load())
 	}

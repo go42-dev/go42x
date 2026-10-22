@@ -7,10 +7,10 @@ import (
 )
 
 const (
-	Pass    Status = "pass"
-	Warn    Status = "warn"
-	Fail    Status = "fail"
-	Skipped Status = "skipped"
+	StatusPass    Status = "pass"
+	StatusWarn    Status = "warn"
+	StatusFail    Status = "fail"
+	StatusSkipped Status = "skipped"
 )
 
 type Status string
@@ -94,7 +94,7 @@ func Run(ctx context.Context, checks ...Check) (*Report, error) {
 
 	report := &Report{
 		SchemaVersion: 1,
-		Status:        Pass,
+		Status:        StatusPass,
 		Checks:        []Result{},
 	}
 	results := make(map[string]Status)
@@ -104,9 +104,9 @@ func Run(ctx context.Context, checks ...Check) (*Report, error) {
 			return nil, err
 		}
 
-		result := Result{Status: Skipped}
+		result := Result{Status: StatusSkipped}
 		for _, dependency := range check.DependsOn {
-			if results[dependency] == Fail || results[dependency] == Skipped {
+			if results[dependency] == StatusFail || results[dependency] == StatusSkipped {
 				result.Message = "Dependency unavailable: " + dependency
 				break
 			}
@@ -116,13 +116,13 @@ func Run(ctx context.Context, checks ...Check) (*Report, error) {
 		}
 		result.ID = check.ID
 		switch result.Status {
-		case Fail:
-			report.Status = Fail
-		case Warn:
-			if report.Status == Pass {
-				report.Status = Warn
+		case StatusFail:
+			report.Status = StatusFail
+		case StatusWarn:
+			if report.Status == StatusPass {
+				report.Status = StatusWarn
 			}
-		case Pass, Skipped:
+		case StatusPass, StatusSkipped:
 		default:
 			return nil, fmt.Errorf("check %q returned invalid status %q", check.ID, result.Status)
 		}

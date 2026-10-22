@@ -56,18 +56,16 @@ func (s *snapshot) close() error {
 }
 
 type indexManager struct {
-	logger *slog.Logger
-
+	logger   *slog.Logger
 	settings *Settings
-
-	mu      sync.RWMutex
-	current *snapshot
+	mu       sync.RWMutex
+	current  *snapshot
 }
 
-func newIndexManager(settings *Settings, logger *slog.Logger) *indexManager {
+func newIndexManager(logger *slog.Logger, settings *Settings) *indexManager {
 	return &indexManager{
-		settings: settings,
 		logger:   logger,
+		settings: settings,
 	}
 }
 

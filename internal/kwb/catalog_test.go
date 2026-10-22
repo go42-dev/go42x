@@ -28,7 +28,10 @@ context: {template: agents.tpl.md}
 providers: {codex: {enabled: false}}
 `
 	for _, tt := range []struct {
-		name, config, local, entrypoint string
+		name       string
+		config     string
+		local      string
+		entrypoint string
 	}{
 		{
 			"no configuration",
@@ -108,7 +111,9 @@ providers: {codex: {enabled: false}}
 
 func TestCatalogRejectsInvalidProjectConfiguration(t *testing.T) {
 	for _, tt := range []struct {
-		name, shared, local string
+		name   string
+		shared string
+		local  string
 	}{
 		{
 			"malformed shared",

@@ -19,5 +19,5 @@ func updateGitIgnore(root string) error {
 }
 
 func prepareGitIgnore(plan *fspatch.Plan, root string) error {
-	return plan.WriteManagedBlock(filepath.Join(root, ".gitignore"), assets.AgentEnvGitIgnore(), fspatch.Sources)
+	return plan.WriteManagedBlock(filepath.Join(root, ".gitignore"), assets.AgentEnvGitIgnore(), fspatch.KindSources)
 }

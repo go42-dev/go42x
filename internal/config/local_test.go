@@ -42,7 +42,7 @@ func writeConfigFixture(t *testing.T, shared, local string) string {
 		t.Fatal(err)
 	}
 	if len(local) > 0 {
-		if err := os.WriteFile(filepath.Join(dir, LocalConfigFile), []byte(local), 0600); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, FileLocal), []byte(local), 0600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -57,8 +57,9 @@ func TestProjectConfigContainerOverrides(t *testing.T) {
       args: [mcp]
 `
 	for _, tt := range []struct {
-		name, local string
-		want        *provider.MCPContainer
+		name  string
+		local string
+		want  *provider.MCPContainer
 	}{
 		{
 			"inherit",
@@ -103,8 +104,9 @@ func TestProjectConfigContainerOverrides(t *testing.T) {
 func TestProjectConfigGoEnv(t *testing.T) {
 	shared := strings.Replace(sharedConfig, "chunks-dir: chunks/", "chunks-dir: chunks/, go-env: [GOFLAGS]", 1)
 	for _, tt := range []struct {
-		name, local string
-		want        []string
+		name  string
+		local string
+		want  []string
 	}{
 		{
 			"shared",
@@ -190,8 +192,8 @@ mcp:
 		t.Fatalf("incorrect MCP merge: %+v", server)
 	}
 	for name, want := range map[string]string{
-		"go42x.yaml":    sharedConfig,
-		LocalConfigFile: local,
+		"go42x.yaml": sharedConfig,
+		FileLocal:    local,
 	} {
 		got, err := os.ReadFile(filepath.Join(filepath.Dir(path), name))
 		if err != nil || !bytes.Equal(got, []byte(want)) {
@@ -203,8 +205,9 @@ mcp:
 func TestProjectConfigExactProviderSelection(t *testing.T) {
 	path := writeConfigFixture(t, sharedConfig, "providers: {codex: {enabled: true}}\n")
 	for _, tt := range []struct {
-		name            string
-		selection, want []string
+		name      string
+		selection []string
+		want      []string
 	}{
 		{
 			"configuration fallback",
@@ -267,13 +270,17 @@ func TestProjectConfigMissingAndInvalidFiles(t *testing.T) {
 	if _, err := LoadProjectConfig(filepath.Join(t.TempDir(), "missing.yaml"), nil); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("missing shared config: %v", err)
 	}
-	if err := os.Mkdir(filepath.Join(filepath.Dir(path), LocalConfigFile), 0700); err != nil {
+	if err := os.Mkdir(filepath.Join(filepath.Dir(path), FileLocal), 0700); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := LoadProjectConfig(path, nil); err == nil || !strings.Contains(err.Error(), "local configuration") {
 		t.Fatalf("unreadable local config was ignored: %v", err)
 	}
-	for _, tt := range []struct{ name, local, want string }{
+	for _, tt := range []struct {
+		name  string
+		local string
+		want  string
+	}{
 		{
 			"bad YAML",
 			"providers: [",

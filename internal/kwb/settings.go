@@ -33,8 +33,8 @@ type Settings struct {
 
 func NewSettings() *Settings {
 	return &Settings{
-		RootPath:            ".",
 		DefaultContentBytes: DefaultContentBytes,
+		RootPath:            ".",
 		IndexPath:           ".go42x/kwb/index",
 		MaxFileSize:         5 * 1024 * 1024,
 		BatchSize:           1000,
@@ -115,10 +115,11 @@ func (s *SearchSettings) Validate() error {
 
 // ReadSettings configures a source read and its output format.
 type ReadSettings struct {
-	KnowledgeBase      *Settings
-	Path               string
-	StartLine, EndLine int
-	JSON               bool
+	KnowledgeBase *Settings
+	Path          string
+	StartLine     int
+	EndLine       int
+	JSON          bool
 }
 
 func (s *ReadSettings) Validate() error {

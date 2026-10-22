@@ -13,8 +13,6 @@ import (
 	"unicode/utf8"
 )
 
-// Impact maps explicit Markdown links and related/superseded_by edges. It makes
-// no inference that unmapped code is unrelated to documentation.
 const (
 	DefaultContentBytes = 16 * 1024
 	MaxContentBytes     = 48 * 1024
@@ -24,10 +22,9 @@ const (
 var ErrRootMismatch = errors.New("index root differs from requested project root")
 
 type Service struct {
-	logger  *slog.Logger
-	index   indexAccessor
-	catalog catalogAccessor
-
+	logger   *slog.Logger
+	index    indexAccessor
+	catalog  catalogAccessor
 	settings *Settings
 }
 
@@ -63,7 +60,7 @@ func NewService(settings *Settings, opts ...Option) (*Service, error) {
 	}
 	svc.logger = svc.logger.With(slog.String("component", "kwb"))
 
-	svc.index = newIndexManager(svc.settings, svc.logger.With(slog.String("subsystem", "index_manager")))
+	svc.index = newIndexManager(svc.logger.With(slog.String("subsystem", "index_manager")), svc.settings)
 	svc.catalog = newDocumentCatalog()
 
 	return svc, nil
@@ -260,6 +257,8 @@ func (s *Service) GetDocument(ctx context.Context, id string, start, end int) (*
 	return result, ctx.Err()
 }
 
+// Impact maps explicit Markdown links and related/superseded_by edges. It makes
+// no inference that unmapped code is unrelated to documentation.
 func (s *Service) Impact(ctx context.Context, paths []string) (*ImpactResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.settings.SearchTimeout)
 	defer cancel()

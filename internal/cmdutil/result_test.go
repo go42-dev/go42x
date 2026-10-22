@@ -64,7 +64,9 @@ func TestReportTextFailureLeavesErrorForCobra(t *testing.T) {
 	}
 }
 
-type failingWriter struct{ err error }
+type failingWriter struct {
+	err error
+}
 
 func (w failingWriter) Write([]byte) (int, error) {
 	return 0, w.err

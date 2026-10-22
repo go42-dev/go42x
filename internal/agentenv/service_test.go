@@ -159,7 +159,7 @@ func TestInitExtractsTemplatesAndPreservesCustomFiles(t *testing.T) {
 	custom := filepath.Join(dir, ".go42x/chunks/10-personality.tpl.md")
 	writeFile(t, custom, "custom personality")
 	writeFile(t, filepath.Join(dir, ".gitignore"), "existing-entry\n")
-	localPath := filepath.Join(dir, ".go42x", config.LocalConfigFile)
+	localPath := filepath.Join(dir, ".go42x", config.FileLocal)
 	writeFile(t, localPath, "providers: {codex: {enabled: true}}\n")
 	s := testService(t, dir, false)
 	if _, err := s.Init(t.Context()); err != nil {
@@ -394,8 +394,11 @@ func TestGenerateErrors(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tt := range []struct {
-		name, output, template, want string
-		clean                        bool
+		name     string
+		output   string
+		template string
+		want     string
+		clean    bool
 	}{
 		{
 			"missing template",
@@ -449,7 +452,7 @@ func TestUpdateReplacesOnlyBundledSources(t *testing.T) {
 	}
 	local := "project:\n  name: local-project\nproviders:\n  claude:\n    enabled: true\n" +
 		"    agents: [agents/reviewer.tpl.md]\n"
-	writeFile(t, filepath.Join(dir, ".go42x", config.LocalConfigFile), local)
+	writeFile(t, filepath.Join(dir, ".go42x", config.FileLocal), local)
 	originals := map[string]string{
 		".gitignore":                         "before\n# go42x -- START\nobsolete\n# go42x -- END\nafter\n",
 		".go42x/go42x.yaml":                  "invalid old configuration: [",
@@ -605,7 +608,7 @@ func TestUpdateRejectsInvalidProviderConfiguration(t *testing.T) {
 			if _, err := service.Init(t.Context()); err != nil {
 				t.Fatal(err)
 			}
-			writeFile(t, filepath.Join(root, ".go42x", config.LocalConfigFile), local)
+			writeFile(t, filepath.Join(root, ".go42x", config.FileLocal), local)
 			writeFile(t, filepath.Join(root, ".go42x/agents.tpl.md"), "existing instructions\n")
 			before := snapshotTree(t, root)
 

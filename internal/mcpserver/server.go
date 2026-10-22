@@ -19,12 +19,10 @@ type toolsetAccessor interface {
 }
 
 type Server struct {
-	logger *slog.Logger
-	server *server.MCPServer
-
-	name    string
-	version string
-
+	logger    *slog.Logger
+	server    *server.MCPServer
+	name      string
+	version   string
 	toolsets  map[string]bool
 	toolNames map[string]string
 }

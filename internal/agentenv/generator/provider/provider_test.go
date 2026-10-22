@@ -119,7 +119,10 @@ func writeTestFile(t *testing.T, path, content string) {
 }
 
 func TestProviderMCPLifecycle(t *testing.T) {
-	for _, tt := range []struct{ name, output string }{
+	for _, tt := range []struct {
+		name   string
+		output string
+	}{
 		{
 			claude.Name,
 			".mcp.json",
@@ -274,13 +277,13 @@ func TestPreparedOutputFiles(t *testing.T) {
 	writeTestFile(t, filepath.Join(dir, "a.md"), "  alpha \n")
 	if err := plan.Write(
 		filepath.Join(dir, "a.md", "child"),
-		[]byte("data"), fspatch.Settings, false,
+		[]byte("data"), fspatch.KindSettings, false,
 	); err == nil ||
 		!strings.Contains(err.Error(), "output parent must be a real directory") {
 		t.Fatalf("prepare error = %v", err)
 	}
 	path := filepath.Join(dir, "new", "nested", "files.md")
-	if err := plan.Write(path, []byte("rendered"), fspatch.Settings, false); err != nil {
+	if err := plan.Write(path, []byte("rendered"), fspatch.KindSettings, false); err != nil {
 		t.Fatal(err)
 	}
 	if err := plan.Apply(); err != nil {

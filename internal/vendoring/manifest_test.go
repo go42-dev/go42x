@@ -19,7 +19,10 @@ dependencies:
 `
 
 func TestStrictManifest(t *testing.T) {
-	for _, test := range []struct{ name, data string }{
+	for _, test := range []struct {
+		name string
+		data string
+	}{
 		{
 			"numeric version",
 			strings.Replace(valid, `"1.0"`, `1.0`, 1),
@@ -169,7 +172,10 @@ version: '1.0'
 }
 
 func TestManifestRequiredValues(t *testing.T) {
-	for _, tc := range []struct{ name, data string }{
+	for _, tc := range []struct {
+		name string
+		data string
+	}{
 		{
 			"missing version",
 			strings.TrimPrefix(valid, "version: \"1.0\"\n"),
@@ -259,8 +265,9 @@ func TestManifestEmptyInventory(t *testing.T) {
 
 func TestManifestSourceVariants(t *testing.T) {
 	for _, tc := range []struct {
-		name, source string
-		valid        bool
+		name   string
+		source string
+		valid  bool
 	}{
 		{
 			"HTTP",
@@ -475,8 +482,9 @@ func TestManifestPortablePaths(t *testing.T) {
 
 func TestManifestConverter(t *testing.T) {
 	for _, tc := range []struct {
-		name, options string
-		valid         bool
+		name    string
+		options string
+		valid   bool
 	}{
 		{
 			"HTML to Markdown",

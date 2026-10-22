@@ -14,13 +14,15 @@ import (
 	"github.com/go42-dev/go42x/internal/vendoring/source"
 )
 
-const (
-	headerAccept      = "Accept"
-	maxMetadataBytes  = 16 << 20
-	metadataMediaType = "application/vnd.npm.install-v1+json"
-)
+const headerAccept = "Accept"
 
-type Adapter struct{ client *http.Client }
+const maxMetadataBytes = 16 << 20
+
+const mediaTypeMetadata = "application/vnd.npm.install-v1+json"
+
+type Adapter struct {
+	client *http.Client
+}
 
 func New(client *http.Client) *Adapter {
 	return &Adapter{client: client}
@@ -128,7 +130,7 @@ func (a *Adapter) metadata(ctx context.Context, endpoint string, result any) err
 		return err
 	}
 
-	request.Header.Set(headerAccept, metadataMediaType)
+	request.Header.Set(headerAccept, mediaTypeMetadata)
 	response, err := a.client.Do(request)
 	if err != nil {
 		return err

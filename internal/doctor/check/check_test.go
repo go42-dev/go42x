@@ -20,13 +20,13 @@ func TestDependenciesAndIndependentChecks(t *testing.T) {
 	}
 	report, err := Run(
 		t.Context(),
-		check("deploy", Pass, "clone"),
-		check("clone", Fail),
-		check("config", Warn),
-		check("index", Pass, "config"),
+		check("deploy", StatusPass, "clone"),
+		check("clone", StatusFail),
+		check("config", StatusWarn),
+		check("index", StatusPass, "config"),
 	)
-	if err != nil || report.Status != Fail || !reflect.DeepEqual(ran, []string{"clone", "config", "index"}) ||
-		report.Checks[1].Status != Skipped {
+	if err != nil || report.Status != StatusFail || !reflect.DeepEqual(ran, []string{"clone", "config", "index"}) ||
+		report.Checks[1].Status != StatusSkipped {
 		t.Fatalf("report=%+v ran=%v err=%v", report, ran, err)
 	}
 }
@@ -37,7 +37,7 @@ func TestInvalidGraphNeverExecutes(t *testing.T) {
 		ID: "a",
 		Run: func(context.Context) Result {
 			called = true
-			return Result{Status: Pass}
+			return Result{Status: StatusPass}
 		},
 	}
 	for _, checks := range [][]Check{{check, check}, {check, {
