@@ -110,11 +110,14 @@ providers:
   # Generates .github/workflows/900-aw-mcp.md for import before gh-aw compilation.
   gh-aw:
     enabled: false
-    # Map $NAME and ${NAME} references to explicit workflow values; missing bindings fail generation.
-    # Native ${{ ... }} expressions are preserved. Bindings never read the local environment.
+    # Map ${NAME} references to explicit workflow values; missing bindings fail generation.
+    # Keep GitHub ${{ ... }} expressions here. Bindings never read the local environment.
     bindings:
       CONTEXT7_API_KEY: '${{ secrets.CONTEXT7_API_KEY }}'
       GITHUB_TOKEN: '${{ github.token }}'
+      GITLAB_PERSONAL_ACCESS_TOKEN: '${{ secrets.GITLAB_PERSONAL_ACCESS_TOKEN }}'
+      MCP_IMAGE_VERSION: '${{ env.GO42X_MCP_IMAGE_VERSION }}'
+      PROJECT_DIR: '${{ github.workspace }}'
 
 mcp:
   # All tools from enabled servers are available, including tools omitted from these lists.
@@ -138,13 +141,13 @@ mcp:
       - mcp
     container:
       image: ghcr.io/go42-dev/go42x
-      version: '${{ env.GO42X_MCP_IMAGE_VERSION }}'
+      version: '${MCP_IMAGE_VERSION}'
       command: gopls
       args:
         - mcp
-      workdir: '${{ github.workspace }}'
+      workdir: '${PROJECT_DIR}'
       mounts:
-        - '${{ github.workspace }}:${{ github.workspace }}:rw'
+        - '${PROJECT_DIR}:${PROJECT_DIR}:rw'
     tools:
       - go_diagnostics
       - go_file_context
@@ -167,13 +170,13 @@ mcp:
       - mcp
     container:
       image: ghcr.io/go42-dev/go42x
-      version: '${{ env.GO42X_MCP_IMAGE_VERSION }}'
+      version: '${MCP_IMAGE_VERSION}'
       command: go42x
       args:
         - mcp
-      workdir: '${{ github.workspace }}'
+      workdir: '${PROJECT_DIR}'
       mounts:
-        - '${{ github.workspace }}:${{ github.workspace }}:rw'
+        - '${PROJECT_DIR}:${PROJECT_DIR}:rw'
     tools:
       - project_context
       - docs_get
@@ -195,16 +198,16 @@ mcp:
       - mcp
     container:
       image: ghcr.io/go42-dev/go42x
-      version: '${{ env.GO42X_MCP_IMAGE_VERSION }}'
+      version: '${MCP_IMAGE_VERSION}'
       command: mise
       args:
         - mcp
-      workdir: '${{ github.workspace }}'
+      workdir: '${PROJECT_DIR}'
       mounts:
-        - '${{ github.workspace }}:${{ github.workspace }}:rw'
+        - '${PROJECT_DIR}:${PROJECT_DIR}:rw'
       env:
         MISE_DEFAULT_CONFIG_FILENAME: etc/mise.toml
-        MISE_TRUSTED_CONFIG_PATHS: '${{ github.workspace }}/etc/mise.toml'
+        MISE_TRUSTED_CONFIG_PATHS: '${PROJECT_DIR}/etc/mise.toml'
     tools:
       - list_commands
       - run_task
