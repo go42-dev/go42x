@@ -40,6 +40,48 @@ func TestGeneratedDirectoriesArePrivate(t *testing.T) {
 	}
 }
 
+func TestAgentEnvRejectsInvalidHeadings(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name     string
+		template string
+		chunk    string
+		want     string
+	}{
+		{
+			name:     "duplicate title",
+			template: "# First\n\n# Second\n",
+			want:     "agents.tpl.md:3: only one H1",
+		},
+		{
+			name:     "chunk nesting",
+			template: "# Custom title\n\n## Custom section\n\n{{ .chunks }}\n",
+			chunk:    "#### Too deep\n",
+			want:     "chunks/900-invalid.tpl.md:1: first chunk heading is H4; expected H3",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			p := newProject(t)
+			p.configure(t)
+			p.run(t, 0, "agentenv", "generate")
+			p.write(t, ".go42x/agents.tpl.md", tt.template)
+			if len(tt.chunk) > 0 {
+				p.write(t, ".go42x/go42x.local.yaml", "context: {chunks-dir: chunks}\n")
+				p.write(t, ".go42x/chunks/900-invalid.tpl.md", tt.chunk)
+			}
+			before := p.snapshot(t)
+
+			result := p.run(t, 1, "agentenv", "generate")
+
+			if !strings.Contains(result.stderr, tt.want) {
+				t.Fatalf("missing heading error %q: %s", tt.want, result.stderr)
+			}
+			p.assertUnchanged(t, before)
+		})
+	}
+}
+
 func TestAgentEnvExport(t *testing.T) {
 	t.Parallel()
 	p := newProject(t)
@@ -306,7 +348,7 @@ func TestAgentEnvUpstream(t *testing.T) {
 	// Init and update must use the bundle even when downloads cannot work.
 	p.env = append(p.env, "HTTP_PROXY=http://127.0.0.1:1", "HTTPS_PROXY=http://127.0.0.1:1")
 	p.configure(t)
-	p.write(t, ".go42x/agents.tpl.md", "# {{ .project.name }}\n\n{{ .chunks }}\n")
+	p.write(t, ".go42x/agents.tpl.md", "# {{ .project.name }}\n\n## Instructions\n\n{{ .chunks }}\n")
 	p.write(t, ".go42x/go42x.local.yaml", "context: {chunks-dir: chunks/}\n")
 	templates, err := assets.AgentEnvTemplates()
 	if err != nil {
@@ -348,7 +390,7 @@ func TestAgentEnvUpstream(t *testing.T) {
 	p.run(t, 0, "agentenv", "generate")
 	instructions := p.read(t, "AGENTS.md")
 
-	if !strings.Contains(instructions, "# Go Code Style\n") {
+	if !strings.Contains(instructions, "\n### Go code style\n") {
 		t.Fatal("generation omitted the Go style chunk")
 	}
 	for _, path := range documents {

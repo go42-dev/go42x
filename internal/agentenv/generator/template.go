@@ -21,6 +21,18 @@ import (
 
 const chunksPlaceholder = "{{ .chunks }}"
 
+// instructionTemplate describes one unrendered main template or chunk.
+type instructionTemplate struct {
+	path    string
+	content string
+}
+
+// renderedTemplate contains generated text and its source locations.
+type renderedTemplate struct {
+	content string
+	sources *templateSources
+}
+
 func defaultTemplateOps() template.FuncMap {
 	return template.FuncMap{
 		"hasMCPTool": hasMCPTool,
@@ -37,8 +49,6 @@ func hasMCPTool(servers map[string]provider.MCPServer, server, tool string) bool
 	return slices.Contains(servers[server].Tools, tool)
 }
 
-// ---
-
 type templateEngine struct {
 	baseDir   string
 	functions template.FuncMap
@@ -51,61 +61,83 @@ func newTemplateEngine(baseDir string) *templateEngine {
 	}
 }
 
-func (e *templateEngine) Render(cfg config.Context, ctxData map[string]any) (string, error) {
-	content, err := e.loadTemplate(cfg.Template)
+func (e *templateEngine) Render(cfg config.Context, ctxData map[string]any) (*renderedTemplate, error) {
+	main, err := e.loadTemplate(cfg.Template)
 	if err != nil {
-		return "", fmt.Errorf("failed to load template: %w", err)
+		return nil, fmt.Errorf("failed to load template: %w", err)
 	}
 
 	chunks, err := e.loadTemplates(cfg.ChunksDir)
 	if err != nil {
-		return "", fmt.Errorf("failed to load chunks: %w", err)
+		return nil, fmt.Errorf("failed to load chunks: %w", err)
 	}
 
-	return e.Process(e.InjectChunks(content, mergeStrings(chunks)), ctxData)
+	sources := newTemplateSources(main, chunks)
+	tmpl, err := e.parse(sources.content)
+	if err != nil {
+		return nil, err
+	}
+
+	var output bytes.Buffer
+	if err := sources.track(tmpl, &output); err != nil {
+		return nil, fmt.Errorf("track template sources: %w", err)
+	}
+
+	if err := tmpl.Execute(&output, ctxData); err != nil {
+		return nil, fmt.Errorf("failed to execute template: %w", err)
+	}
+
+	return &renderedTemplate{
+		content: output.String(),
+		sources: sources,
+	}, nil
 }
 
-func (e *templateEngine) loadTemplate(path string) (string, error) {
+func (e *templateEngine) loadTemplate(path string) (instructionTemplate, error) {
 	// #nosec G304 -- Template paths are authored in the trusted local project configuration.
 	data, err := os.ReadFile(filepath.Join(e.baseDir, path))
 	if err != nil {
-		return "", fmt.Errorf("failed to read template %s: %w", path, err)
+		return instructionTemplate{}, fmt.Errorf("failed to read template %s: %w", path, err)
 	}
 
-	return string(data), nil
+	return instructionTemplate{
+		path:    filepath.ToSlash(path),
+		content: string(data),
+	}, nil
 }
 
-func (e *templateEngine) loadTemplates(dir string) ([]string, error) {
+func (e *templateEngine) loadTemplates(dir string) ([]instructionTemplate, error) {
 	if len(dir) == 0 {
 		return nil, nil
 	}
+
 	// os.ReadDir returns entries sorted by filename.
 	entries, err := os.ReadDir(filepath.Join(e.baseDir, dir))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read template directory %s: %w", dir, err)
 	}
 
-	contents := make([]string, 0, len(entries))
+	templates := make([]instructionTemplate, 0, len(entries))
 	for _, entry := range entries {
 		if !entry.Type().IsRegular() || !strings.HasSuffix(entry.Name(), ".tpl.md") {
 			continue
 		}
 
-		content, err := e.loadTemplate(filepath.Join(dir, entry.Name()))
+		chunk, err := e.loadTemplate(filepath.Join(dir, entry.Name()))
 		if err != nil {
 			return nil, err
 		}
 
-		contents = append(contents, content)
+		templates = append(templates, chunk)
 	}
-	return contents, nil
+
+	return templates, nil
 }
 
 func (e *templateEngine) Process(content string, ctxData map[string]any) (string, error) {
-	tmpl := template.New("main").Funcs(e.functions)
-	tmpl.Funcs(template.FuncMap{"yamlBlock": yamlBlockFunc(tmpl)})
-	if _, err := tmpl.Parse(content); err != nil {
-		return "", fmt.Errorf("failed to parse template: %w", err)
+	tmpl, err := e.parse(content)
+	if err != nil {
+		return "", err
 	}
 
 	var buf bytes.Buffer
@@ -116,16 +148,14 @@ func (e *templateEngine) Process(content string, ctxData map[string]any) (string
 	return buf.String(), nil
 }
 
-func (e *templateEngine) InjectChunks(content string, chunks string) string {
-	return strings.Replace(content, chunksPlaceholder, chunks, 1)
-}
-
-func mergeStrings(items []string) string {
-	trimmed := make([]string, len(items))
-	for i, item := range items {
-		trimmed[i] = strings.TrimSpace(item)
+func (e *templateEngine) parse(content string) (*template.Template, error) {
+	tmpl := template.New("main").Funcs(e.functions)
+	tmpl.Funcs(template.FuncMap{"yamlBlock": yamlBlockFunc(tmpl)})
+	if _, err := tmpl.Parse(content); err != nil {
+		return nil, fmt.Errorf("failed to parse template: %w", err)
 	}
-	return strings.Join(trimmed, "\n\n")
+
+	return tmpl, nil
 }
 
 func mcpToolName(providerName, serverName, toolName string) string {

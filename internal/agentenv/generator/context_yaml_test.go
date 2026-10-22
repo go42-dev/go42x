@@ -27,7 +27,8 @@ func defaultContextTemplate(t *testing.T) string {
 func renderDefaultContext(t *testing.T, data map[string]any) (string, error) {
 	t.Helper()
 	engine := newTemplateEngine("")
-	return engine.Process(engine.InjectChunks(defaultContextTemplate(t), ""), data)
+	content := strings.Replace(defaultContextTemplate(t), chunksPlaceholder, "", 1)
+	return engine.Process(content, data)
 }
 
 func decodeContextBlock(t *testing.T, content string) (map[string]any, string) {
@@ -219,7 +220,7 @@ func TestDefaultContextKeepsMarkdownChunks(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "chunks", "rules.tpl.md"), []byte(chunk), 0600); err != nil {
 		t.Fatal(err)
 	}
-	content, err := newTemplateEngine(dir).Render(
+	rendered, err := newTemplateEngine(dir).Render(
 		config.Context{
 			Template:  "agents.tpl.md",
 			ChunksDir: "chunks",
@@ -229,7 +230,7 @@ func TestDefaultContextKeepsMarkdownChunks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, after := decodeContextBlock(t, content)
+	data, after := decodeContextBlock(t, rendered.content)
 
 	if data["project"].(map[string]any)["name"] != "example" {
 		t.Fatal("missing YAML context")

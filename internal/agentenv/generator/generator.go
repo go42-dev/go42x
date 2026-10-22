@@ -185,13 +185,17 @@ func (g *Generator) buildTemplateContext(ctx context.Context) (*Context, error) 
 }
 
 func (g *Generator) prepareInstructions(plan *fspatch.Plan, ctxData map[string]any, clean bool) error {
-	content, err := newTemplateEngine(g.templateDir).Render(g.config.Context, ctxData)
+	rendered, err := newTemplateEngine(g.templateDir).Render(g.config.Context, ctxData)
 	if err != nil {
 		return err
 	}
 
+	if err := validateInstructions(rendered); err != nil {
+		return err
+	}
+
 	fullPath := filepath.Join(g.outputDir, provider.AgentsFile)
-	if err := plan.Write(fullPath, []byte(instructionsMarker+"\n\n"+content),
+	if err := plan.Write(fullPath, []byte(instructionsMarker+"\n\n"+rendered.content),
 		fspatch.KindInstructions, clean); err != nil {
 		return fmt.Errorf("prepare instructions %s: %w", provider.AgentsFile, err)
 	}

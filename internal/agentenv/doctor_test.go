@@ -141,7 +141,7 @@ func TestDoctorChecksUseExplicitCheckout(t *testing.T) {
 	writeFile(
 		t,
 		filepath.Join(root, ".go42x/agents.tpl.md"),
-		"{{.environment.working_dir}} {{.golang.go_version}}\n",
+		"# Instructions\n\n{{.environment.working_dir}} {{.golang.go_version}}\n",
 	)
 	writeFile(t, filepath.Join(root, "go.mod"), "module example\ngo 1.27\n")
 	if _, err := service.Generate(t.Context()); err != nil {

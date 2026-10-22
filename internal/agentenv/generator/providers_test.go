@@ -63,7 +63,11 @@ mcp:
 				t.Fatal(err)
 			}
 			dir, out := t.TempDir(), t.TempDir()
-			if err := os.WriteFile(filepath.Join(dir, "main.tpl.md"), []byte("{{ .project.name }}"), 0600); err != nil {
+			if err := os.WriteFile(
+				filepath.Join(dir, "main.tpl.md"),
+				[]byte("# {{ .project.name }}"),
+				0600,
+			); err != nil {
 				t.Fatal(err)
 			}
 			g := NewGenerator(slog.New(slog.DiscardHandler), cfg, dir, out)
@@ -139,7 +143,11 @@ func TestGenerateProviderToggles(t *testing.T) {
 				cfg.MCP["example"] = server
 			}
 			dir, out := t.TempDir(), t.TempDir()
-			if err := os.WriteFile(filepath.Join(dir, "main.tpl.md"), []byte("{{ .project.name }}"), 0600); err != nil {
+			if err := os.WriteFile(
+				filepath.Join(dir, "main.tpl.md"),
+				[]byte("# {{ .project.name }}"),
+				0600,
+			); err != nil {
 				t.Fatal(err)
 			}
 			g := NewGenerator(slog.New(slog.DiscardHandler), cfg, dir, out)

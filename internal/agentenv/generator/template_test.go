@@ -98,19 +98,44 @@ func TestTemplateProcessing(t *testing.T) {
 	}
 }
 
-func TestTemplateInjection(t *testing.T) {
-	e := newTemplateEngine("")
-	content := "before {{ .chunks }} after"
-	content = e.InjectChunks(content, "chunk")
+func TestTemplateRenderingDoesNotValidateInstructions(t *testing.T) {
+	const content = "## Missing title\n\n#### Skipped level\n"
 
-	if content != "before chunk after" {
-		t.Fatalf("injected = %q", content)
+	dir := t.TempDir()
+	writeInstructionTemplates(t, dir, content, nil)
+
+	rendered, err := newTemplateEngine(dir).Render(config.Context{Template: "main.tpl.md"}, nil)
+
+	if err != nil {
+		t.Fatal(err)
 	}
-	if got := e.InjectChunks("no placeholder", "chunk"); got != "no placeholder" {
-		t.Fatalf("unexpected injection: %q", got)
+	if rendered.content != content {
+		t.Fatalf("Render() = %q, want %q", rendered.content, content)
 	}
-	if got := e.InjectChunks("{{ .chunks }}", ""); len(got) > 0 {
-		t.Fatalf("empty injection: %q", got)
+}
+
+func TestTemplateInjection(t *testing.T) {
+	for _, tt := range []struct {
+		main   string
+		chunks []instructionTemplate
+		want   string
+	}{
+		{
+			main:   "before {{ .chunks }} after",
+			chunks: []instructionTemplate{{content: "  alpha \n"}, {content: "\n beta "}},
+			want:   "before alpha\n\nbeta after",
+		},
+		{
+			main:   "no placeholder",
+			chunks: []instructionTemplate{{content: "chunk"}},
+			want:   "no placeholder",
+		},
+		{main: "{{ .chunks }}"},
+	} {
+		sources := newTemplateSources(instructionTemplate{content: tt.main}, tt.chunks)
+		if sources.content != tt.want {
+			t.Errorf("injected = %q, want %q", sources.content, tt.want)
+		}
 	}
 }
 
@@ -145,11 +170,12 @@ func TestTemplateFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := mergeStrings(contents); got != "alpha\n\nbeta" {
+	sources := newTemplateSources(instructionTemplate{content: chunksPlaceholder}, contents)
+	if got := sources.content; got != "alpha\n\nbeta" {
 		t.Fatalf("merge = %q", got)
 	}
-	if got := mergeStrings(nil); len(got) > 0 {
-		t.Fatalf("empty merge = %q", got)
+	if contents[0].path != "a.tpl.md" || contents[1].path != "b.tpl.md" {
+		t.Fatalf("chunk sources = %+v", contents)
 	}
 	if _, err := e.loadTemplates("missing"); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("load error = %v", err)
@@ -161,7 +187,7 @@ func TestTemplateGenerationErrors(t *testing.T) {
 	for _, stage := range []string{"template", "chunks", "process", "output"} {
 		t.Run(stage, func(t *testing.T) {
 			dir, out := t.TempDir(), t.TempDir()
-			content := "{{ .chunks }}"
+			content := "# Instructions\n\n{{ .chunks }}"
 			cfg := config.Context{Template: "main.tpl.md"}
 			want := ""
 			switch stage {

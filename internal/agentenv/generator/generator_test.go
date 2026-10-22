@@ -73,9 +73,19 @@ func TestCollectorMetadata(t *testing.T) {
 func TestGenerateTempDirectory(t *testing.T) {
 	t.Setenv("PATH", "")
 	t.Setenv("GITHUB_ACTIONS", "false")
+	projectTemplates := t.TempDir()
+	writeInstructionTemplates(t, projectTemplates, "# Custom\n\n## Instructions\n\n{{ .chunks }}", []string{
+		"### Intermediate storage\n\nUse the `{{ .context.TempDir }}` directory for intermediate storage.",
+	})
+	if err := os.Rename(
+		filepath.Join(projectTemplates, "main.tpl.md"),
+		filepath.Join(projectTemplates, "agents.tpl.md"),
+	); err != nil {
+		t.Fatal(err)
+	}
 	for name, templateDir := range map[string]string{
 		"bundled": filepath.Join("..", "..", "..", "assets", "agentenv"),
-		"project": filepath.Join("..", "..", "..", ".go42x"),
+		"project": projectTemplates,
 	} {
 		t.Run(name, func(t *testing.T) {
 			for _, tt := range []struct {
@@ -151,7 +161,7 @@ func TestGenerateTempDirectory(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					want := "Use `" + tt.want + "` directory for intermediate storage"
+					want := "Use the `" + tt.want + "` directory"
 
 					if !strings.Contains(string(data), want) {
 						t.Fatalf("generated instructions missing %q:\n%s", want, data)
@@ -171,7 +181,7 @@ func TestGeneratorGoContextWithoutExecutable(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example\ngo 1.27\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	template := "{{.golang.go_version}}\n"
+	template := "# Instructions\n\n{{.golang.go_version}}\n"
 	if err := os.WriteFile(filepath.Join(root, "agents.tpl.md"), []byte(template), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +221,7 @@ func TestGeneratorContextAndProviderErrors(t *testing.T) {
 		},
 	}
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "main.tpl.md"), []byte("{{ .project.name }}"), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "main.tpl.md"), []byte("# {{ .project.name }}"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	g := NewGenerator(slog.New(slog.DiscardHandler), cfg, dir, t.TempDir())
@@ -256,7 +266,7 @@ func TestGeneratorPreservesOutputsAfterProviderFailure(t *testing.T) {
 	out := t.TempDir()
 	if err := os.WriteFile(
 		filepath.Join(dir, "valid.tpl.md"),
-		[]byte("{{ .project.name }}"),
+		[]byte("# {{ .project.name }}"),
 		0600,
 	); err != nil {
 		t.Fatal(err)
