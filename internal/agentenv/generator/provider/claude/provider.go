@@ -183,7 +183,10 @@ func (p *Provider) prepareAgents(
 		agentName := strings.TrimSuffix(baseName, ".tpl.md")
 
 		// Read the template file from templateDir
-		sourcePath := filepath.Join(p.templateDir, agentPath)
+		sourcePath := agentPath
+		if !filepath.IsAbs(sourcePath) {
+			sourcePath = filepath.Join(p.templateDir, sourcePath)
+		}
 		// #nosec G304 -- Agent template paths are selected by the trusted local project configuration.
 		templateContent, err := os.ReadFile(sourcePath)
 		if err != nil {

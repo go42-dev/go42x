@@ -155,7 +155,12 @@ func (s *Service) Update(ctx context.Context) (*fspatch.UpdateResult, error) {
 		return nil, fmt.Errorf("read local configuration: %w", err)
 	}
 
-	if _, err := config.ParseProjectConfig(updatedConfig, local, nil); err != nil {
+	variables, err := config.VariablesForProject(root)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := config.ParseProjectConfig(updatedConfig, local, nil, variables); err != nil {
 		return nil, fmt.Errorf("validate updated configuration: %w", err)
 	}
 

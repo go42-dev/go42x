@@ -119,6 +119,12 @@ mcp: {remote: {name: remote, type: http, url: https://example.com/mcp}}`,
 			true,
 		},
 		{
+			name: "built-in working directory",
+			content: `providers: {codex: {}}
+mcp: {local: {name: local, command: task, cwd: '${GO42X_PROJECT_ROOT}/src'}}`,
+			valid: true,
+		},
+		{
 			"MCP container",
 			`providers: {codex: {}}
 mcp: {local: {name: local, command: task, container: {image: example/tools, command: go42x}}}`,

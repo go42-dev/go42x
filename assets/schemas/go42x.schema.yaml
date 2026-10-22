@@ -2,7 +2,8 @@
 $schema: http://json-schema.org/draft-07/schema#
 $id: https://github.com/go42-dev/go42x/agentenv/schema/v1.0
 title: AgentEnv Configuration Schema
-description: Schema for .go42x/go42x.yaml configuration file
+description: Schema for .go42x/go42x.yaml. String values support ${GO42X_PROJECT_ROOT}, resolved to the absolute project root
+  after local overrides merge and before validation. Keys and runtime expressions remain unchanged.
 type: object
 required:
   - version
@@ -221,7 +222,8 @@ properties:
           bindings:
             type: object
             description: Explicit replacements for $NAME and ${NAME} in MCP values. Native GitHub expressions are preserved;
-              missing bindings fail generation. Values are copied without reading the local environment.
+              missing bindings fail generation. Built-ins in binding values resolve before provider bindings. Values are copied
+              without reading the local environment.
             propertyNames:
               pattern: ^[A-Za-z_][A-Za-z0-9_]*$
             additionalProperties:
@@ -321,12 +323,16 @@ properties:
             type: string
         cwd:
           type: string
-          description: Literal working directory for stdio servers. Relative paths resolve from the project directory; omit
-            or leave empty for the client's default. Supported by Codex, Antigravity, and Copilot; rejected on enabled servers
-            when Claude or Crush is enabled. Environment variables and home expansion are not supported.
+          description: Working directory for stdio servers after built-in substitution. Relative paths resolve from the project
+            directory; omit or leave empty for the client's default. Supported by Codex, Antigravity, and Copilot; rejected
+            on enabled servers when Claude or Crush is enabled. Environment variables and home expansion are not supported.
           pattern: ^$|\S
           not:
-            pattern: "\0|\\$(?:[A-Za-z_]|\\{|\\()|%[A-Za-z_][A-Za-z0-9_]*%|^~"
+            pattern: "\0"
+          anyOf:
+            - not:
+                pattern: "\\$(?:[A-Za-z_]|\\{|\\()|%[A-Za-z_][A-Za-z0-9_]*%|^~"
+            - pattern: '\$\{GO42X_[A-Za-z0-9_]+\}'
       allOf:
         - if:
             properties:

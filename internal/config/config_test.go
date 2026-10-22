@@ -641,7 +641,7 @@ func TestDefaultConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cfg.Providers) != 6 || len(cfg.MCP) != 7 {
+	if len(cfg.Providers) != 6 || len(cfg.MCP) != 8 {
 		t.Fatalf("default providers/servers = %d/%d", len(cfg.Providers), len(cfg.MCP))
 	}
 	paths := []string{cfg.Context.Template, cfg.Context.ChunksDir}
@@ -1160,7 +1160,7 @@ mcp:
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := ParseProjectConfig([]byte(base), []byte(tt.local), tt.selection)
+			_, err := ParseProjectConfig([]byte(base), []byte(tt.local), tt.selection, nil)
 
 			if len(tt.want) == 0 {
 				if err != nil {

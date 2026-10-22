@@ -110,7 +110,17 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, err
 	}
 
-	cfg, err := decodeConfig(data)
+	values, err := decodeConfigMap(data)
+	if err != nil {
+		return nil, err
+	}
+
+	variables, err := variablesForConfigFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	cfg, err := resolveConfig(values, variables)
 	if err != nil {
 		return nil, err
 	}

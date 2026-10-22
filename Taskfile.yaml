@@ -68,7 +68,8 @@ tasks:
       - |
         version={{.VERSION | default "" | shellQuote}}
         if [ -z "$version" ]; then
-          version=$(mise latest go:github.com/go42-dev/go42x)
+          # Resolve new releases without the release-age delay or proxy metadata lag.
+          version=$(GOPROXY=direct mise latest --minimum-release-age 0s go:github.com/go42-dev/go42x)
         fi
         if [ -z "$version" ]; then
           printf 'mise did not resolve a go42x release.\n' >&2

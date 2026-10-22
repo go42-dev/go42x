@@ -11,9 +11,10 @@ import (
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider"
 )
 
-// LoadProjectConfig merges the adjacent optional local file, then applies an
-// exact provider selection. Nil preserves configuration choices; an empty slice
-// disables every provider. Neither source file is modified.
+// LoadProjectConfig merges the adjacent optional local file, resolves built-ins,
+// applies an exact provider selection, and validates the effective configuration.
+// Nil providers preserve configuration choices; an empty slice disables every
+// provider. Neither source file is modified.
 func LoadProjectConfig(path string, providers []string) (*Config, error) {
 	if err := provider.ValidateProviders(providers, ProviderNames()); err != nil {
 		return nil, err
@@ -30,13 +31,19 @@ func LoadProjectConfig(path string, providers []string) (*Config, error) {
 		return nil, fmt.Errorf("local configuration: %w", err)
 	}
 
-	return ParseProjectConfig(base, local, providers)
+	variables, err := variablesForConfigFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	return ParseProjectConfig(base, local, providers, variables)
 }
 
 // ParseProjectConfig merges configuration bytes with optional local overrides,
-// applies an exact provider selection, and validates the effective configuration.
+// resolves supplied built-ins, applies an exact provider selection, and validates
+// the effective configuration. Variables never read the process environment.
 // Nil local bytes mean no overrides; nil providers preserve configuration choices.
-func ParseProjectConfig(baseData, localData []byte, providers []string) (*Config, error) {
+func ParseProjectConfig(baseData, localData []byte, providers []string, variables Variables) (*Config, error) {
 	if err := provider.ValidateProviders(providers, ProviderNames()); err != nil {
 		return nil, err
 	}
@@ -52,15 +59,11 @@ func ParseProjectConfig(baseData, localData []byte, providers []string) (*Config
 	}
 
 	mergeConfigMaps(base, local)
-	data, err := yaml.Marshal(base)
-	if err != nil {
-		return nil, fmt.Errorf("encode effective configuration: %w", err)
-	}
-
-	cfg, err := decodeConfig(data)
+	cfg, err := resolveConfig(base, variables)
 	if err != nil {
 		return nil, err
 	}
+
 	if providers != nil {
 		if cfg.Providers == nil {
 			cfg.Providers = make(map[string]Provider)
@@ -75,6 +78,7 @@ func ParseProjectConfig(baseData, localData []byte, providers []string) (*Config
 			cfg.Providers[name] = p
 		}
 	}
+
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid effective config: %w", err)
 	}

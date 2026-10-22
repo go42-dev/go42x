@@ -1,8 +1,14 @@
 ---
 
-# yaml-language-server: $schema=https://raw.githubusercontent.com/go42-dev/go42x/v0.41.0/assets/schemas/go42x.schema.yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/go42-dev/go42x/v0.43.0/assets/schemas/go42x.schema.yaml
 
 version: "1.0"
+
+# Variable substitution is supported in configuration string values.
+# Example: temp-dir: '${GO42X_PROJECT_ROOT}/.build'
+#
+# Supported substitutions:
+# - ${GO42X_PROJECT_ROOT}: absolute path to the project directory.
 
 project:
   name: go42x
@@ -462,3 +468,18 @@ mcp:
       - transitionJiraIssue
       - addOrEditJiraIssueComment
       - searchJiraIssuesUsingJql
+
+  # Requires a running JetBrains IDE with this project open.
+  # Set the URL from Settings > Tools > MCP Server; the project path resolves automatically.
+  # Override the URL in ignored go42x.local.yaml before enabling locally.
+  # Keep disabled for CI; see https://www.jetbrains.com/help/go/mcp-server.html.
+  jetbrains:
+    enabled: false
+    type: http
+    name: jetbrains
+    url: http://127.0.0.1:64422/stream
+    headers:
+      IJ_MCP_SERVER_PROJECT_PATH: '${GO42X_PROJECT_ROOT}'
+    tools:
+      - get_file_problems
+      - lint_files

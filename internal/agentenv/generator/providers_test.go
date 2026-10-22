@@ -58,7 +58,7 @@ mcp:
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg, err := config.ParseProjectConfig([]byte(base), []byte(tt.local), nil)
+			cfg, err := config.ParseProjectConfig([]byte(base), []byte(tt.local), nil, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

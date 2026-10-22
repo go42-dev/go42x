@@ -156,7 +156,7 @@ mcp:
   server: {enabled: false, args: [mcp], env: {CHANGE: local}}
 `
 	path := writeConfigFixture(t, sharedConfig, local)
-	cfg, err := ParseProjectConfig([]byte(sharedConfig), []byte(local), nil)
+	cfg, err := ParseProjectConfig([]byte(sharedConfig), []byte(local), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

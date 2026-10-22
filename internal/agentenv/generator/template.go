@@ -95,7 +95,7 @@ func (e *templateEngine) Render(cfg config.Context, ctxData map[string]any) (*re
 
 func (e *templateEngine) loadTemplate(path string) (instructionTemplate, error) {
 	// #nosec G304 -- Template paths are authored in the trusted local project configuration.
-	data, err := os.ReadFile(filepath.Join(e.baseDir, path))
+	data, err := os.ReadFile(e.resolvePath(path))
 	if err != nil {
 		return instructionTemplate{}, fmt.Errorf("failed to read template %s: %w", path, err)
 	}
@@ -112,7 +112,7 @@ func (e *templateEngine) loadTemplates(dir string) ([]instructionTemplate, error
 	}
 
 	// os.ReadDir returns entries sorted by filename.
-	entries, err := os.ReadDir(filepath.Join(e.baseDir, dir))
+	entries, err := os.ReadDir(e.resolvePath(dir))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read template directory %s: %w", dir, err)
 	}
@@ -132,6 +132,14 @@ func (e *templateEngine) loadTemplates(dir string) ([]instructionTemplate, error
 	}
 
 	return templates, nil
+}
+
+func (e *templateEngine) resolvePath(path string) string {
+	if filepath.IsAbs(path) {
+		return path
+	}
+
+	return filepath.Join(e.baseDir, path)
 }
 
 func (e *templateEngine) Process(content string, ctxData map[string]any) (string, error) {

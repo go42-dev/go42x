@@ -3,6 +3,7 @@ package generator
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -11,7 +12,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/pelletier/go-toml/v2"
 	"go.uber.org/mock/gomock"
+	"gopkg.in/yaml.v3"
 
 	"github.com/go42-dev/go42x/internal/agentenv/generator/collector/environment"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/collector/git"
@@ -29,6 +32,122 @@ import (
 	"github.com/go42-dev/go42x/internal/config"
 	"github.com/go42-dev/go42x/internal/fspatch"
 )
+
+func TestGenerateBuiltInProjectRoot(t *testing.T) {
+	t.Setenv("PATH", "")
+	t.Setenv("GITHUB_ACTIONS", "false")
+	for _, tt := range []struct {
+		name    string
+		file    string
+		servers string
+		headers string
+	}{
+		{claude.Name, ".mcp.json", "mcpServers", "headers"},
+		{codex.Name, ".codex/config.toml", "mcp_servers", "http_headers"},
+		{antigravity.Name, ".agents/plugins/project-tools/mcp_config.json", "mcpServers", "headers"},
+		{crush.Name, ".crush.json", "mcp", "headers"},
+		{copilot.Name, ".mcp.json", "mcpServers", "headers"},
+		{ghaw.Name, ghaw.MCPFile, "mcp-servers", "headers"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := filepath.Join(t.TempDir(), "project with spaces")
+			templates := filepath.Join(root, config.Directory)
+			providerConfig := tt.name + ": {}"
+			header := "${GO42X_PROJECT_ROOT}"
+			if tt.name == ghaw.Name {
+				providerConfig = "gh-aw:\n    bindings:\n      GENERATION_ROOT: '${GO42X_PROJECT_ROOT}'\n"
+				header = "${GENERATION_ROOT}"
+			}
+			if tt.name == claude.Name {
+				providerConfig = "claude:\n    agents: ['${GO42X_PROJECT_ROOT}/.go42x/helper.tpl.md']"
+			}
+			base := fmt.Sprintf(`version: "1.0"
+project: {name: example}
+context:
+  template: '${GO42X_PROJECT_ROOT}/.go42x/main.tpl.md'
+  chunks-dir: '${GO42X_PROJECT_ROOT}/.go42x/chunks'
+providers:
+  %s
+mcp:
+  jetbrains:
+    enabled: false
+    name: jetbrains
+    type: http
+    url: http://127.0.0.1:64422/stream
+    headers:
+      IJ_MCP_SERVER_PROJECT_PATH: /shared/default
+`, providerConfig)
+			local := fmt.Sprintf(`mcp:
+  jetbrains:
+    enabled: true
+    headers:
+      IJ_MCP_SERVER_PROJECT_PATH: '%s'
+`, header)
+			for path, content := range map[string]string{
+				config.FileProject:   base,
+				config.FileLocal:     local,
+				"main.tpl.md":        "# Example\n\n## Instructions\n\n{{ .chunks }}\n",
+				"chunks/rule.tpl.md": "### Rule\n\nProject {{ .project.name }}.\n",
+				"helper.tpl.md":      "Helper for {{ .project.name }}.\n",
+			} {
+				path = filepath.Join(templates, path)
+				if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			cfg, err := config.LoadProjectConfig(filepath.Join(templates, config.FileProject), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			g := NewGenerator(slog.New(slog.DiscardHandler), cfg, templates, root)
+
+			if err := g.Generate(t.Context(), false); err != nil {
+				t.Fatal(err)
+			}
+
+			content, err := os.ReadFile(filepath.Join(root, tt.file))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var settings map[string]any
+			switch tt.name {
+			case codex.Name:
+				err = toml.Unmarshal(content, &settings)
+			case ghaw.Name:
+				parts := strings.SplitN(string(content), "---", 3)
+				if len(parts) != 3 {
+					t.Fatalf("missing workflow front matter: %s", content)
+				}
+				err = yaml.Unmarshal([]byte(parts[1]), &settings)
+			default:
+				err = json.Unmarshal(content, &settings)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			var value any = settings
+			for _, key := range []string{tt.servers, "jetbrains", tt.headers, "IJ_MCP_SERVER_PROJECT_PATH"} {
+				object, ok := value.(map[string]any)
+				if !ok {
+					t.Fatalf("expected an object containing %s, got %#v", key, value)
+				}
+				value = object[key]
+			}
+			if value != root {
+				t.Fatalf("generated project-path header = %v, want %q", value, root)
+			}
+			if tt.name == claude.Name {
+				content, err := os.ReadFile(filepath.Join(root, ".claude/agents/helper.md"))
+				if err != nil || string(content) != "Helper for example.\n" {
+					t.Fatalf("absolute agent template = %q, %v", content, err)
+				}
+			}
+		})
+	}
+}
 
 func TestCollectorMetadata(t *testing.T) {
 	collectors := []struct {
@@ -488,8 +607,9 @@ func TestGenerateMCPConfigurations(t *testing.T) {
 	crushConfig := readJSON[crush.Config](t, out, ".crush.json")
 	copilotConfig := readJSON[copilot.MCPConfig](t, out, ".mcp.json")
 
-	if len(claudeMCP.MCPServers) != 9 || len(antigravityConfig.MCPServers) != 9 || len(copilotConfig.MCPServers) != 9 ||
-		len(crushConfig.MCP) != 9 {
+	if len(claudeMCP.MCPServers) != 10 || len(antigravityConfig.MCPServers) != 10 ||
+		len(copilotConfig.MCPServers) != 10 ||
+		len(crushConfig.MCP) != 10 {
 		t.Fatal("enabled server set does not match generated configurations")
 	}
 	for name, s := range cfg.MCP {

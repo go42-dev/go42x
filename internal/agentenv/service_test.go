@@ -601,6 +601,7 @@ func TestUpdateRejectsInvalidProviderConfiguration(t *testing.T) {
 		"providers: {typo: {enabled: false}}\n",
 		"providers: {codex: {approval-policy: invalid}}\n",
 		"providers: {copilot: {auto-approve-tools: []}}\n",
+		"project: {description: '${GO42X_UNKNOWN}'}\n",
 	} {
 		t.Run(local, func(t *testing.T) {
 			root := t.TempDir()
