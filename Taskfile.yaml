@@ -720,11 +720,12 @@ tasks:
     desc: "Generate agent instructions and gh-aw MCP declarations"
     summary: |-
       Usage: task agentic:generate
-      Uses the mise-pinned go42x binary to generate shared agent instructions and the gh-aw MCP fragment from shared configuration, ignoring local overrides.
+      Uses the mise-pinned go42x binary to generate shared agent instructions and the gh-aw MCP fragment from project configuration.
     cmds:
       - task: x
         vars:
-          CLI_ARGS: 'agentenv generate --providers=gh-aw --no-local'
+          # @todo Restore --no-local after upgrading the pinned go42x release.
+          CLI_ARGS: 'agentenv generate --providers=gh-aw'
 
   agentic:compile:
     desc: "Generate agent instructions and compile agentic workflows"
