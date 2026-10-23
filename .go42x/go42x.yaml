@@ -1,6 +1,6 @@
 ---
 
-# yaml-language-server: $schema=https://raw.githubusercontent.com/go42-dev/go42x/v0.44.0/assets/schemas/go42x.schema.yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/go42-dev/go42x/v0.45.0/assets/schemas/go42x.schema.yaml
 
 version: "1.0"
 
@@ -43,6 +43,7 @@ context:
 # Set enabled: false to skip a provider; omitted enabled defaults to true.
 # Keep shared defaults disabled; enable your providers in ignored go42x.local.yaml.
 # --providers or GO42X_PROVIDERS selects an exact list for generate and doctor.
+# --no-local skips go42x.local.yaml; use it when generating shared workflows.
 # Disabling preserves existing settings, including with --clean.
 # Shared AGENTS.md is still generated when all providers are disabled.
 providers:
