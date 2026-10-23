@@ -11,6 +11,7 @@ import (
 type Settings struct {
 	BaseDir   string
 	Clean     bool
+	NoLocal   bool
 	Providers []string
 	JSON      bool
 }

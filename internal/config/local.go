@@ -11,11 +11,31 @@ import (
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider"
 )
 
-// LoadProjectConfig merges the adjacent optional local file, resolves built-ins,
+// LoadOption configures project configuration loading.
+type LoadOption func(*loadOptions)
+
+type loadOptions struct {
+	localOverrides bool
+}
+
+// WithLocalOverrides controls whether the adjacent local configuration is read.
+// Local overrides are enabled by default.
+func WithLocalOverrides(enabled bool) LoadOption {
+	return func(options *loadOptions) {
+		options.localOverrides = enabled
+	}
+}
+
+// LoadProjectConfig optionally merges the adjacent local file, resolves built-ins,
 // applies an exact provider selection, and validates the effective configuration.
 // Nil providers preserve configuration choices; an empty slice disables every
 // provider. Neither source file is modified.
-func LoadProjectConfig(path string, providers []string) (*Config, error) {
+func LoadProjectConfig(path string, providers []string, opts ...LoadOption) (*Config, error) {
+	options := loadOptions{localOverrides: true}
+	for _, opt := range opts {
+		opt(&options)
+	}
+
 	if err := provider.ValidateProviders(providers, ProviderNames()); err != nil {
 		return nil, err
 	}
@@ -25,10 +45,13 @@ func LoadProjectConfig(path string, providers []string) (*Config, error) {
 		return nil, fmt.Errorf("project configuration: %w", err)
 	}
 
-	localPath := filepath.Join(filepath.Dir(path), FileLocal)
-	local, err := readConfig(localPath)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf("local configuration: %w", err)
+	var local []byte
+	if options.localOverrides {
+		localPath := filepath.Join(filepath.Dir(path), FileLocal)
+		local, err = readConfig(localPath)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("local configuration: %w", err)
+		}
 	}
 
 	variables, err := variablesForConfigFile(path)

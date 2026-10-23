@@ -18,11 +18,14 @@ func newGenerateCommand(f *cmdutil.Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "generate",
 		Short: "Generate AI agent instructions and settings",
-		Args:  cobra.NoArgs,
+		Example: `  go42x agentenv generate
+  go42x agentenv generate --providers=gh-aw --no-local`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			settings := &agentenv.Settings{
-				Clean: viper.GetBool(flagClean),
-				JSON:  viper.GetBool(flagJSON),
+				Clean:   viper.GetBool(flagClean),
+				NoLocal: viper.GetBool(flagNoLocal),
+				JSON:    viper.GetBool(flagJSON),
 			}
 			if cmdutil.ExplicitFlag(cmd, flagProviders) {
 				var err error
@@ -45,6 +48,9 @@ func newGenerateCommand(f *cmdutil.Factory) *cobra.Command {
 	cmd.Flags().Bool(
 		flagClean, false,
 		"rewrite generated instructions even when unchanged")
+	cmd.Flags().Bool(
+		flagNoLocal, false,
+		"ignore go42x.local.yaml and generate from shared configuration only")
 	cmd.Flags().String(
 		flagProviders, "",
 		"exact comma-separated provider list (empty selects none); overrides GO42X_PROVIDERS")

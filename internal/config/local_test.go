@@ -257,6 +257,104 @@ func TestProjectConfigExactProviderSelection(t *testing.T) {
 	}
 }
 
+func TestProjectConfigWithoutLocalOverrides(t *testing.T) {
+	shared := strings.Replace(sharedConfig,
+		"template: agents.tpl.md", "template: '${GO42X_PROJECT_ROOT}/agents.tpl.md'", 1)
+	tests := []struct {
+		name      string
+		local     string
+		directory bool
+	}{
+		{
+			name: "valid overrides",
+			local: `project: {name: local}
+context: {template: local.tpl.md}
+providers: {codex: {enabled: true}}
+mcp: {server: {enabled: false}}
+`,
+		},
+		{
+			name:  "invalid YAML",
+			local: "project: [",
+		},
+		{
+			name:  "unknown built-in",
+			local: "project: {name: '${GO42X_UNKNOWN}'}",
+		},
+		{
+			name:      "unreadable local file",
+			directory: true,
+		},
+		{
+			name: "missing local file",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := writeConfigFixture(t, shared, tt.local)
+			localPath := filepath.Join(filepath.Dir(path), FileLocal)
+			if tt.directory {
+				if err := os.Mkdir(localPath, 0700); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			cfg, err := LoadProjectConfig(path, []string{"gh-aw"}, WithLocalOverrides(false))
+
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.Project.Name != "shared" || !cfg.MCP["server"].Enabled {
+				t.Fatalf("local overrides affected shared configuration: %+v", cfg)
+			}
+			if want := filepath.Join(filepath.Dir(path), "agents.tpl.md"); cfg.Context.Template != want {
+				t.Errorf("template = %q, want resolved shared path %q", cfg.Context.Template, want)
+			}
+			if !cfg.ProviderEnabled("gh-aw") || cfg.ProviderEnabled("claude") || cfg.ProviderEnabled("codex") {
+				t.Errorf("provider selection was not applied: %+v", cfg.Providers)
+			}
+			if data, err := os.ReadFile(path); err != nil || string(data) != shared {
+				t.Fatalf("shared source changed: %s, %v", data, err)
+			}
+			if len(tt.local) > 0 {
+				if data, err := os.ReadFile(localPath); err != nil || string(data) != tt.local {
+					t.Fatalf("local source changed: %s, %v", data, err)
+				}
+			}
+		})
+	}
+}
+
+func TestProjectConfigWithoutLocalOverridesValidatesSharedConfig(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		shared string
+		want   string
+	}{
+		{
+			name:   "unknown field",
+			shared: sharedConfig + "unknown: true\n",
+			want:   "project configuration",
+		},
+		{
+			name:   "invalid version",
+			shared: strings.Replace(sharedConfig, `version: "1.0"`, `version: "2.0"`, 1),
+			want:   "unsupported configuration version",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			path := writeConfigFixture(t, tt.shared, "project: [")
+
+			_, err := LoadProjectConfig(path, nil, WithLocalOverrides(false))
+
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("LoadProjectConfig() = %v, want %s", err, tt.want)
+			}
+		})
+	}
+}
+
 func TestProjectConfigMissingAndInvalidFiles(t *testing.T) {
 	path := writeConfigFixture(t, sharedConfig, "")
 	legacy, err := LoadConfig(path)

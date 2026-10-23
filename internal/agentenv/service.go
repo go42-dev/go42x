@@ -218,7 +218,11 @@ func (s *Service) Generate(ctx context.Context) (*GenerateResult, error) {
 
 	templateDir := filepath.Join(workingDir, config.Directory)
 	cfgPath := filepath.Join(templateDir, config.FileProject)
-	cfg, err := config.LoadProjectConfig(cfgPath, s.settings.Providers)
+	cfg, err := config.LoadProjectConfig(
+		cfgPath,
+		s.settings.Providers,
+		config.WithLocalOverrides(!s.settings.NoLocal),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}

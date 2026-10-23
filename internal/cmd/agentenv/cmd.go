@@ -10,6 +10,7 @@ const (
 	flagBase      = "base"
 	flagClean     = "clean"
 	flagJSON      = "json"
+	flagNoLocal   = "no-local"
 	flagOutput    = "output"
 	flagProviders = "providers"
 )

@@ -10,10 +10,12 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/pelletier/go-toml/v2"
+	"gopkg.in/yaml.v3"
 
 	"github.com/go42-dev/go42x/assets"
 	"github.com/go42-dev/go42x/internal/fspatch"
@@ -38,6 +40,109 @@ func TestGeneratedDirectoriesArePrivate(t *testing.T) {
 			t.Errorf("generated directory %s is accessible to other users: %s", path, info.Mode())
 		}
 	}
+}
+
+func TestAgentEnvGenerateWithoutLocalOverrides(t *testing.T) {
+	t.Parallel()
+	const shared = providerProjectConfig + `mcp:
+  shared:
+    enabled: true
+    name: shared
+    type: http
+    url: https://example.com/mcp
+  jetbrains:
+    enabled: false
+    name: jetbrains
+    type: http
+    url: http://127.0.0.1:64422/stream
+`
+	const local = `project: {name: local-development}
+mcp:
+  jetbrains:
+    enabled: true
+    headers:
+      IJ_MCP_SERVER_PROJECT_PATH: '${GO42X_PROJECT_ROOT}'
+`
+	p := newProject(t)
+	p.configure(t)
+	p.write(t, ".go42x/go42x.yaml", shared)
+	p.write(t, ".go42x/go42x.local.yaml", local)
+	p.run(t, 0, "agentenv", "generate", "--providers=claude")
+	clientConfig := p.read(t, ".mcp.json")
+	var client map[string]any
+	if err := json.Unmarshal([]byte(clientConfig), &client); err != nil {
+		t.Fatal(err)
+	}
+	projectRoot, err := filepath.EvalSymlinks(p.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertSetting(t, client, "mcpServers.jetbrains.headers.IJ_MCP_SERVER_PROJECT_PATH", projectRoot)
+	// Start with a workflow fragment containing the local server, then remove it.
+	p.run(t, 0, "agentenv", "generate", "--providers=gh-aw")
+
+	for _, tc := range []struct {
+		name      string
+		env       *string
+		flags     []string
+		wantLocal bool
+	}{
+		{
+			name:  "flag",
+			flags: []string{"--no-local"},
+		},
+		{
+			name: "environment",
+			env:  new("true"),
+		},
+		{
+			name:      "explicit false overrides environment",
+			env:       new("true"),
+			flags:     []string{"--no-local=false"},
+			wantLocal: true,
+		},
+		{
+			name:      "default",
+			wantLocal: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			workflow := *p
+			workflow.env = slices.Clone(p.env)
+			if tc.env != nil {
+				workflow.env = append(workflow.env, "GO42X_NO_LOCAL="+*tc.env)
+			}
+
+			workflow.run(t, 0, append([]string{"agentenv", "generate", "--providers=gh-aw"}, tc.flags...)...)
+
+			content := p.read(t, ".github/workflows/900-aw-mcp.md")
+			var fragment struct {
+				Servers map[string]any `yaml:"mcp-servers"`
+			}
+			if err := yaml.Unmarshal(
+				[]byte(strings.TrimSuffix(strings.TrimPrefix(content, "---\n"), "---\n")),
+				&fragment,
+			); err != nil {
+				t.Fatal(err)
+			}
+			if _, exists := fragment.Servers["jetbrains"]; exists != tc.wantLocal {
+				t.Fatalf("JetBrains present = %v, want %v", exists, tc.wantLocal)
+			}
+			if _, exists := fragment.Servers["shared"]; !exists {
+				t.Fatal("shared MCP server was omitted")
+			}
+			if strings.Contains(p.read(t, "AGENTS.md"), "local-development") != tc.wantLocal {
+				t.Fatal("instructions used the wrong configuration source")
+			}
+			if p.read(t, ".mcp.json") != clientConfig || p.read(t, ".go42x/go42x.yaml") != shared ||
+				p.read(t, ".go42x/go42x.local.yaml") != local {
+				t.Fatal("workflow generation changed local client settings or configuration sources")
+			}
+		})
+	}
+
+	p.write(t, ".go42x/go42x.local.yaml", "project: [")
+	p.run(t, 0, "agentenv", "generate", "--providers=gh-aw", "--no-local")
 }
 
 func TestAgentEnvRejectsInvalidHeadings(t *testing.T) {
