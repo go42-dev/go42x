@@ -159,7 +159,6 @@ func TestMCPImageMatchesMiseVersion(t *testing.T) {
 		t.Fatal("missing MCP image preparation script")
 	}
 
-	digest := "sha256:" + strings.Repeat("a", 64)
 	for _, tt := range []struct {
 		name    string
 		version string
@@ -186,8 +185,7 @@ func TestMCPImageMatchesMiseVersion(t *testing.T) {
 			version: "1.2.3",
 			wantTag: "v1.2.3",
 			changes: map[string]string{
-				"IMAGE_REPOSITORY":  "ghcr.io/example/tools",
-				"MOCK_IMAGE_DIGEST": "ghcr.io/example/tools@" + digest,
+				"IMAGE_REPOSITORY": "ghcr.io/example/tools",
 			},
 		},
 		{name: "missing version"},
@@ -209,16 +207,6 @@ func TestMCPImageMatchesMiseVersion(t *testing.T) {
 			version: "1.2.3",
 			changes: map[string]string{"MOCK_PULL_STATUS": "1"},
 		},
-		{
-			name:    "missing digest",
-			version: "1.2.3",
-			changes: map[string]string{"MOCK_IMAGE_DIGEST": "ghcr.io/go42-dev/go42x@"},
-		},
-		{
-			name:    "different repository",
-			version: "1.2.3",
-			changes: map[string]string{"MOCK_IMAGE_DIGEST": "ghcr.io/other/image@" + digest},
-		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -234,7 +222,6 @@ set -euo pipefail
 printf '%s\n' "$*" >> "$MOCK_DOCKER_LOG"
 case "$*" in
   'pull '*) exit "$MOCK_PULL_STATUS" ;;
-  'image inspect --format {{index .RepoDigests 0}} '*) printf '%s\n' "$MOCK_IMAGE_DIGEST" ;;
   *) exit 2 ;;
 esac
 `,
@@ -249,7 +236,6 @@ esac
 				"MOCK_MISE_VERSION": tt.version,
 				"MOCK_MISE_STATUS":  "0",
 				"MOCK_PULL_STATUS":  "0",
-				"MOCK_IMAGE_DIGEST": repository + "@" + digest,
 				"MOCK_DOCKER_LOG":   filepath.Join(dir, "docker.log"),
 				"GITHUB_ENV":        filepath.Join(dir, "github.env"),
 			}
@@ -277,7 +263,7 @@ esac
 			if err != nil {
 				t.Fatal(err)
 			}
-			want := "GO42X_MCP_IMAGE_VERSION=" + tt.wantTag + "@" + digest + "\n"
+			want := "GO42X_MCP_IMAGE_VERSION=" + tt.wantTag + "\n"
 
 			if string(published) != want {
 				t.Fatalf("published environment = %q, want %q", published, want)
@@ -287,8 +273,7 @@ esac
 				t.Fatal(err)
 			}
 			imageReference := environment["IMAGE_REPOSITORY"] + ":" + tt.wantTag
-			wantCalls := "pull " + imageReference + "\n" +
-				"image inspect --format {{index .RepoDigests 0}} " + imageReference + "\n"
+			wantCalls := "pull " + imageReference + "\n"
 
 			if string(calls) != wantCalls {
 				t.Fatalf("Docker calls = %q, want %q", calls, wantCalls)

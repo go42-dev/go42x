@@ -6,6 +6,12 @@ paths:
       # GitHub supports queueing, but actionlint 1.7.12 does not recognize this key.
       # @see https://github.com/rhysd/actionlint/issues/680
       - '^unexpected key "queue" for "concurrency" section\.'
+      # actionlint 1.7.12 does not recognize GitHub's job.workflow_ref context.
+      # @see https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#job-context
+      - '^property "workflow_ref" is not defined in object type \{check_run_id:'
+      # gh-aw 0.93.2 reads optional admission outputs even when admission is disabled.
+      # These missing properties evaluate to empty strings in GitHub Actions.
+      - '^property "admission-(result|max-ai-credits(-threat-detection|-evals)?)" is not defined in object type '
   .github/workflows/400-cleanup-registry.yaml:
     ignore:
       # Keep the same file-scoped exception for the registry cleanup queue.
