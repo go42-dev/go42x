@@ -104,12 +104,9 @@ tasks:
       - task: x
         vars:
           CLI_ARGS: 'agentenv generate'
-      - task: agentic:generate
-      - 'mise exec -- gh-aw compile --no-check-update --strict --purge --approve'
+      - task: agentic:compile
       - task: agentic:lint
       - task: lint:actions
-        vars:
-          CLI_ARGS: ''
       - task: x
         vars:
           CLI_ARGS: 'kwb build'
