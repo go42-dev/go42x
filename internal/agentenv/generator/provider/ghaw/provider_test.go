@@ -90,7 +90,7 @@ func TestGHAWMCPFragment(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]MCPServer{
-		"local": {
+		"mcp-local": {
 			Type:    provider.MCPServerTypeStdio,
 			Command: "npx",
 			Args:    []string{"tool", "--", "gopls", "mcp"},
@@ -100,7 +100,7 @@ func TestGHAWMCPFragment(t *testing.T) {
 			},
 			Allowed: []string{"*"},
 		},
-		"remote": {
+		"mcp-remote": {
 			Type: provider.MCPServerTypeHTTP,
 			URL:  "https://api.example.com/mcp?key=${{ secrets.API_KEY }}",
 			Headers: map[string]string{
@@ -144,6 +144,68 @@ func TestGHAWMCPFragment(t *testing.T) {
 	content, err = os.ReadFile(filepath.Join(root, MCPFile))
 	if err != nil || !strings.Contains(string(content), "mcp-servers: {}") {
 		t.Fatalf("stale servers were retained: %s, %v", content, err)
+	}
+}
+
+func TestGHAWMCPServerNames(t *testing.T) {
+	wantNames := map[string]string{
+		"go42x":       "mcp-go42x",
+		"gopls":       "mcp-gopls",
+		"mise":        "mcp-mise",
+		"mcp-mise":    "mcp-mcp-mise",
+		"github":      "github",
+		"safeoutputs": "safeoutputs",
+		"mcpscripts":  "mcpscripts",
+		"awf-enclave": "awf-enclave",
+	}
+	root := t.TempDir()
+	settings := Settings{
+		OutputDir:  root,
+		MCPServers: make(map[string]provider.MCPServer, len(wantNames)),
+	}
+	for name := range wantNames {
+		settings.MCPServers[name] = provider.MCPServer{
+			Enabled: true,
+			Command: commandNPX,
+			Args:    []string{name},
+		}
+	}
+	logger := slog.New(slog.DiscardHandler)
+	plan := fspatch.NewPlan(logger, root, filepath.Join(root, ".build/backups"))
+	p := New(logger, nil, settings, "")
+
+	if err := p.Prepare(plan, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := plan.Apply(); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, MCPFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var fragment MCPConfig
+	if err := yaml.Unmarshal(bytes.Split(data, []byte(yamlFrontmatter))[1], &fragment); err != nil {
+		t.Fatal(err)
+	}
+	if len(fragment.MCPServers) != len(wantNames) {
+		t.Fatalf(
+			"got %d servers, want %d; configured names must remain distinct",
+			len(fragment.MCPServers),
+			len(wantNames),
+		)
+	}
+	for original, rendered := range wantNames {
+		server, exists := fragment.MCPServers[rendered]
+		if !exists {
+			t.Errorf("configured server %q is missing under rendered name %q", original, rendered)
+			continue
+		}
+
+		if server.Command != commandNPX || !slices.Equal(server.Args, []string{original}) {
+			t.Errorf("renaming server %q changed its executable or arguments: %+v", original, server)
+		}
 	}
 }
 
@@ -440,7 +502,7 @@ func TestGHAWContainerPreservesSharedCommand(t *testing.T) {
 	if err := yaml.Unmarshal(bytes.Split(data, []byte(yamlFrontmatter))[1], &fragment); err != nil {
 		t.Fatal(err)
 	}
-	entry := fragment.MCPServers["local"]
+	entry := fragment.MCPServers["mcp-local"]
 
 	if entry.Type != provider.MCPServerTypeStdio || entry.Container != "ghcr.io/example/tools" ||
 		entry.Version != "${{ env.GO42X_MCP_IMAGE_VERSION }}" ||

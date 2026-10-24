@@ -112,11 +112,13 @@ mcp:
 			if err != nil {
 				t.Fatal(err)
 			}
+			serverName := "jetbrains"
 			var settings map[string]any
 			switch tt.name {
 			case codex.Name:
 				err = toml.Unmarshal(content, &settings)
 			case ghaw.Name:
+				serverName = "mcp-jetbrains"
 				parts := strings.SplitN(string(content), "---", 3)
 				if len(parts) != 3 {
 					t.Fatalf("missing workflow front matter: %s", content)
@@ -129,7 +131,7 @@ mcp:
 				t.Fatal(err)
 			}
 			var value any = settings
-			for _, key := range []string{tt.servers, "jetbrains", tt.headers, "IJ_MCP_SERVER_PROJECT_PATH"} {
+			for _, key := range []string{tt.servers, serverName, tt.headers, "IJ_MCP_SERVER_PROJECT_PATH"} {
 				object, ok := value.(map[string]any)
 				if !ok {
 					t.Fatalf("expected an object containing %s, got %#v", key, value)
