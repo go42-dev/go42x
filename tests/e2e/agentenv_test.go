@@ -117,7 +117,7 @@ mcp:
 
 			content := p.read(t, ".github/workflows/900-aw-mcp.md")
 			var fragment struct {
-				Servers map[string]any `yaml:"mcp-servers"`
+				Servers map[string]map[string]any `yaml:"mcp-servers"`
 			}
 			if err := yaml.Unmarshal(
 				[]byte(strings.TrimSuffix(strings.TrimPrefix(content, "---\n"), "---\n")),
@@ -125,10 +125,21 @@ mcp:
 			); err != nil {
 				t.Fatal(err)
 			}
-			if _, exists := fragment.Servers["jetbrains"]; exists != tc.wantLocal {
-				t.Fatalf("JetBrains present = %v, want %v", exists, tc.wantLocal)
+
+			var localPresent, sharedPresent bool
+			for _, server := range fragment.Servers {
+				switch server["url"] {
+				case "http://127.0.0.1:64422/stream":
+					localPresent = true
+				case "https://example.com/mcp":
+					sharedPresent = true
+				}
 			}
-			if _, exists := fragment.Servers["shared"]; !exists {
+
+			if localPresent != tc.wantLocal {
+				t.Fatalf("JetBrains present = %v, want %v", localPresent, tc.wantLocal)
+			}
+			if !sharedPresent {
 				t.Fatal("shared MCP server was omitted")
 			}
 			if strings.Contains(p.read(t, "AGENTS.md"), "local-development") != tc.wantLocal {

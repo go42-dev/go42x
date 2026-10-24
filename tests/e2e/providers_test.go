@@ -223,17 +223,35 @@ mcp:
 
 	p.run(t, 0, "agentenv", "generate", "--providers=gh-aw")
 	content := p.read(t, ".github/workflows/900-aw-mcp.md")
-	var fragment map[string]any
+	var fragment struct {
+		Servers map[string]map[string]any `yaml:"mcp-servers"`
+	}
 	if err := yaml.Unmarshal(
 		[]byte(strings.TrimSuffix(strings.TrimPrefix(content, "---\n"), "---\n")),
 		&fragment,
 	); err != nil {
 		t.Fatal(err)
 	}
-	assertSetting(t, fragment, "mcp-servers.local.command", "docker")
-	assertSetting(t, fragment, "mcp-servers.remote.headers.Authorization", "Bearer ${{ github.token }}")
-	assertSetting(t, fragment, "mcp-servers.remote.headers.X-API-Key", "${{ secrets.REMOTE_API_KEY }}")
-	assertSetting(t, fragment, "mcp-servers.remote.allowed", []any{"*"})
+
+	var localPresent, remotePresent bool
+	for _, server := range fragment.Servers {
+		if server["command"] == "docker" {
+			localPresent = true
+		}
+		if server["url"] == "https://api.example.com/mcp" {
+			remotePresent = true
+			assertSetting(t, server, "headers.Authorization", "Bearer ${{ github.token }}")
+			assertSetting(t, server, "headers.X-API-Key", "${{ secrets.REMOTE_API_KEY }}")
+			assertSetting(t, server, "allowed", []any{"*"})
+		}
+	}
+
+	if !localPresent {
+		t.Fatal("local MCP command was omitted")
+	}
+	if !remotePresent {
+		t.Fatal("remote MCP URL was omitted")
+	}
 	if strings.Contains(content, "local-token-do-not-write") || strings.Contains(content, "local-key-do-not-write") {
 		t.Fatal("fragment contains local credential values")
 	}
