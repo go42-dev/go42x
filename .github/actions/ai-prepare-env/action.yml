@@ -13,7 +13,7 @@ inputs:
     required: false
     default: ''
   pull-mcp-image:
-    description: 'Pull the MCP tools image matching the mise go42x version'
+    description: 'Pull the MCP tools image for the latest stable go42x release'
     required: false
     default: 'false'
   mcp-image-repository:
@@ -63,16 +63,11 @@ runs:
       if: inputs.pull-mcp-image == 'true'
       shell: bash
       env:
+        GH_TOKEN: ${{ github.token }}
         IMAGE_REPOSITORY: ${{ inputs.mcp-image-repository }}
       run: |-
         set -euo pipefail
-        version=$(mise current go:github.com/go42-dev/go42x)
-        version=${version#v}
-        if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$ ]]; then
-          echo '::error::mise must select one go42x release version for the MCP image.'
-          exit 1
-        fi
-        image_tag="v$version"
+        image_tag=$(gh api repos/go42-dev/go42x/releases/latest --jq .tag_name)
         image_reference="$IMAGE_REPOSITORY:$image_tag"
         docker pull "$image_reference"
         echo "GO42X_MCP_IMAGE_VERSION=$image_tag" >> "$GITHUB_ENV"

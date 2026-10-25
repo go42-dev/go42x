@@ -172,9 +172,8 @@ mcp:
     name: go42x
     command: task
     args:
-      - tool
+      - x
       - --
-      - go42x
       - mcp
     container:
       image: ghcr.io/go42-dev/go42x

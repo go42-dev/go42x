@@ -136,6 +136,15 @@ jobs:
             docker-go-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.go_version }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ env.go_cache_platforms }}-
             docker-go-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.go_version }}-${{ hashFiles('go.mod', 'go.sum') }}-
             docker-go-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.go_version }}-
+      - name: 'Make restored Go cache writable'
+        continue-on-error: true
+        shell: bash
+        run: |
+          # Go module directories are read-only; cache-dance removes them after injection.
+          cache_dir="$RUNNER_TEMP/docker-go-cache"
+          if [[ -d "$cache_dir" ]]; then
+            chmod -R u+w "$cache_dir"
+          fi
       - name: 'Restore and extract Go cache mounts'
         uses: reproducible-containers/buildkit-cache-dance@5422eac04292c961a382e0f584ea0f03ad9da723 # v3.4.0
         continue-on-error: true

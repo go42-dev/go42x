@@ -50,17 +50,19 @@ tasks:
       - "task --list --sort none"
 
   x:
-    desc: "Run the go42x binary installed by mise"
+    desc: "Run go42x from checked-out source"
     summary: "Usage: task x [-- COMMAND ...]"
     interactive: true
     cmds:
-      - 'mise exec -- go42x {{.CLI_ARGS}}'
+      - task: run
+        vars:
+          CLI_ARGS: '{{.CLI_ARGS}}'
 
   x:update:
     desc: "Update go42x and merge bundled assets with project customizations (writes)"
     summary: |-
       Usage: task x:update [VERSION=<version>]
-      Defaults to the latest available release. Exports the old bundle, updates mise, merges assets, generates agent files, compiles and lints workflows, and refreshes the knowledge base.
+      Defaults to the latest available release. Exports the old bundle, updates mise, and merges released assets. Generates agent files and the knowledge base from checked-out source, and compiles and lints workflows.
     preconditions:
       - sh: 'test -z {{.CLI_ARGS | shellQuote}}'
         msg: "Pass VERSION=... without arguments after --."
@@ -87,12 +89,13 @@ tasks:
           printf 'Restored the previous mise pin and lockfile.\n' >&2
         }
 
-        task x -- agentenv export --output "$workspace/base"
+        # Bundle merging needs the installed release's original assets.
+        task tool -- go42x agentenv export --output "$workspace/base"
         if ! task bump TOOL=go:github.com/go42-dev/go42x "VERSION=$version"; then
           restore_pins
           exit 1
         fi
-        if ! task --silent x -- agentenv update --base "$workspace/base" --json > "$workspace/update.json"; then
+        if ! task --silent tool -- go42x agentenv update --base "$workspace/base" --json > "$workspace/update.json"; then
           cat "$workspace/update.json"
           # Restore only when the command reports that no replacements were applied.
           if grep -Eq '"result":null|"applied":0[,}]' "$workspace/update.json"; then
@@ -720,7 +723,7 @@ tasks:
       Usage: task agentic:generate
       Uses the checked-out go42x source to generate shared agent instructions and the gh-aw MCP fragment from shared configuration, ignoring local overrides.
     cmds:
-      - task: run
+      - task: x
         vars:
           CLI_ARGS: 'agentenv generate --providers=gh-aw --no-local'
 
