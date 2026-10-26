@@ -29,9 +29,6 @@ Replace `FILE` in the commands below with the affected file paths.
 
 Run `task fmt:markdown` on changed Markdown files and correct any remaining diagnostics.
 
-Instruction chunks start with H3 because they appear under `## Instructions` in the generated document.
-The Markdown lint configuration sets that heading level for both chunk directories and keeps the default for full documents.
-
 ### Generated outputs
 
 Regenerate affected outputs through their owning tasks. Review the generated
@@ -69,10 +66,6 @@ replace the full lint run before review.
 | `task lint:markdown -- FILE.md ...`  | While editing authored Markdown                                                           | Check Markdown formatting                                       |
 | `task lint:prose -- FILE.md ...`     | While editing authored Markdown                                                           | Check prose rules                                               |
 | `task docs:check`                    | While editing documentation; also included in full lint                                   | Run the full project documentation check                        |
-
-Documentation checks run Markdown lint and Vale prose checks. Vulnerability
-checks cover all four release platforms. After local provider generation with
-`task x -- agentenv generate`, scan the resulting `AGENTS.md` explicitly too.
 
 ### Results and review
 
@@ -125,22 +118,3 @@ artifacts before running tests that consume them.
 | `task build`            | Application entry points or Go build settings changed          | Verify the development binary builds                        |
 | `task image`            | The Dockerfile, runtime tools, or image build settings changed | Verify the container image builds                           |
 | `task release:snapshot` | Release packaging changed; before task test:release            | Build local release artifacts without publishing or signing |
-
-### Behavior covered
-
-Unit tests cover feature services, configuration, and failure paths. Choose tests
-that exercise the affected boundary:
-
-- Service tests cover feature behavior and partial results.
-- Reporter tests cover text and JSON output, write failures, and error ownership.
-- CLI tests cover validation before side effects, selected formats, redirected
-  streams, cancellation where relevant, and exit status.
-- Verify that changing the log level does not change or hide a command result.
-
-Use the [shared reporter tests](../../internal/cmdutil/result_test.go) and
-[CLI reporting tests](../../tests/e2e/reporting_test.go) as examples.
-
-Integration tests cover vendoring and downloads, generated workflow behavior,
-and registry scripts. End-to-end tests exercise the compiled CLI's commands,
-streams, exit codes, and file operations in temporary projects. Release tests
-verify produced artifacts and exercise the native release archive.

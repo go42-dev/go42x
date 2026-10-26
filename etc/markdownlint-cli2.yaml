@@ -26,6 +26,11 @@ overrides:
       MD041:
         level: 3
     combine: merge
+  - filter:
+      - '.github/workflows/*.md'
+    config:
+      MD041: false
+    combine: merge
 
 globs:
   - docs/**/*.md

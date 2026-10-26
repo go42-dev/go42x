@@ -96,6 +96,9 @@
   <Known limitations, unresolved issues, or required next steps. Omit if none.>
   ````
 
+- Publication: Report whether changes are prepared or published. Link to
+  published results only after confirming they exist.
+
 - Links: Include direct links to deliverables and relevant source locations when
   reporting results.
 
@@ -177,6 +180,9 @@
 - After fixes, rerun checks whose results the fixes can affect. Fix failures
   introduced by the changes. Treat failed, skipped, or crashing checks as
   unresolved verification gaps; do not suppress failures to report success.
+
+- Run the project's required security checks with redacted output. Do not
+  retrieve credentials or expose secret values in diagnostics or reports.
 
 - Review the final diff against the request, including generated outputs.
   Report the commands run, their results, warnings, existing failures, and
