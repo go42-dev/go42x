@@ -15,7 +15,13 @@ import (
 
 const Name = "antigravity"
 
+// EngineAlias is gh-aw's short engine name for Antigravity.
+const EngineAlias = "agy"
+
 const PluginDir = ".agents/plugins/project-tools"
+
+// MaxInstructionBytes is Antigravity's per-file limit after expanding includes.
+const MaxInstructionBytes = 24000
 
 var antigravityEnvNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 

@@ -89,12 +89,13 @@ func (c Context) WithDefaults() Context {
 }
 
 type Provider struct {
-	Enabled          *bool             `yaml:"enabled,omitempty"`
-	Agents           []string          `yaml:"agents,omitempty"`
-	AutoApproveTools []string          `yaml:"auto-approve-tools,omitempty"`
-	ApprovalPolicy   *string           `yaml:"approval-policy,omitempty"`
-	MCPApproval      *string           `yaml:"mcp-approval,omitempty"`
-	Bindings         map[string]string `yaml:"bindings,omitempty"`
+	Enabled            *bool             `yaml:"enabled,omitempty"`
+	Agents             []string          `yaml:"agents,omitempty"`
+	AutoApproveTools   []string          `yaml:"auto-approve-tools,omitempty"`
+	ApprovalPolicy     *string           `yaml:"approval-policy,omitempty"`
+	MCPApproval        *string           `yaml:"mcp-approval,omitempty"`
+	ProjectDocMaxBytes *int              `yaml:"project-doc-max-bytes,omitempty"`
+	Bindings           map[string]string `yaml:"bindings,omitempty"`
 }
 
 // ProviderEnabled reports whether a provider is configured and enabled.
@@ -306,6 +307,15 @@ func ProviderNames() []string {
 }
 
 func validateProvider(p Provider, name string) error {
+	if p.ProjectDocMaxBytes != nil {
+		if name != codex.Name {
+			return fmt.Errorf("project-doc-max-bytes is only supported by codex")
+		}
+		if *p.ProjectDocMaxBytes < 0 {
+			return fmt.Errorf("project-doc-max-bytes must be non-negative")
+		}
+	}
+
 	if p.Bindings != nil && name != ghaw.Name {
 		return fmt.Errorf("bindings is only supported by gh-aw")
 	}

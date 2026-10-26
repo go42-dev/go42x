@@ -109,12 +109,12 @@ tasks:
           exit 1
         fi
         cat "$workspace/update.json"
+      - task: generate:agentic
+      - task: lint:agentic
+      - task: lint:actions
       - task: x
         vars:
           CLI_ARGS: 'agentenv generate'
-      - task: agentic:compile
-      - task: agentic:lint
-      - task: lint:actions
       - task: x
         vars:
           CLI_ARGS: 'kwb build'
@@ -142,9 +142,9 @@ tasks:
       - "go mod download"
 
   setup:generators:
-    desc: "Install pinned code generation tools"
+    desc: "Install pinned code and agentic workflow generation tools"
     cmds:
-      - "mise install --locked go:go.uber.org/mock/mockgen"
+      - "mise install --locked node actionlint go:go.uber.org/mock/mockgen github:github/gh-aw"
 
   setup:docs:
     desc: "Install pinned documentation tools and Vale styles"
@@ -382,13 +382,34 @@ tasks:
         {{.CLI_ARGS}} .
 
   generate:
-    desc: "Regenerate code and tidy Go dependencies"
+    desc: "Regenerate code, agent instructions, and workflow locks"
     summary: |-
       Usage: task generate
+      Run task setup:generators first; runs generate:code, then generate:agentic.
+    cmds:
+      - task: generate:code
+      - task: generate:agentic
+
+  generate:code:
+    desc: "Regenerate code and tidy Go dependencies"
+    summary: |-
+      Usage: task generate:code
       Run task setup:generators first; updates generated files and Go module metadata.
     cmds:
       - "go mod tidy"
       - 'mise exec -- go generate ./...'
+
+  generate:agentic:
+    desc: "Generate agent instructions, MCP definitions, and workflow locks"
+    summary: |-
+      Usage: task generate:agentic
+      Uses the checked-out go42x source and shared configuration, ignoring local overrides.
+      Compiles workflows in strict mode, approves safe updates, and removes stale workflow locks.
+    cmds:
+      - task: x
+        vars:
+          CLI_ARGS: 'agentenv generate --providers=gh-aw --no-local'
+      - 'mise exec -- gh-aw compile --no-check-update --strict --purge --approve'
 
   # ╭────────────────────----------------──────────╮
   # │                  Formatters                  │
@@ -472,7 +493,7 @@ tasks:
     cmds:
       - task: "lint:go"
       - task: "lint:nilaway"
-      - task: "lint:go-security"
+      - task: "lint:gosec"
       - task: "lint:vulnerabilities"
       - task: "lint:secrets"
       - task: "lint:json"
@@ -481,7 +502,7 @@ tasks:
       - task: "lint:docker"
       - task: "lint:actions"
       - task: "lint:editorconfig"
-      - task: "agentic:lint"
+      - task: "lint:agentic"
       - task: "docs:check"
 
   lint:go:
@@ -508,7 +529,7 @@ tasks:
           -print-full-file-path=true \
           ./... || true
 
-  lint:go-security:
+  lint:gosec:
     desc: "Check Go code with gosec"
     vars:
       PACKAGE_DIRS:
@@ -527,9 +548,24 @@ tasks:
       - 'CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 mise exec -- govulncheck .'
 
   lint:secrets:
-    desc: "Scan Git history for secrets with Gitleaks"
+    desc: "Scan Git history, or explicit files, for secrets with Gitleaks"
+    summary: |-
+      Usage: task lint:secrets [-- FILE ...]
+      Defaults to Git history. Explicit files are scanned directly, including ignored and untracked files.
+      Findings are redacted; secret findings and scanner errors fail the task.
+    preconditions:
+      - *file_paths
     cmds:
-      - 'mise exec -- gitleaks git --config etc/gitleaks.toml --no-banner --redact -v'
+      - |
+        set -- {{.CLI_ARGS}}
+        if [ "$#" -eq 0 ]; then
+          mise exec -- gitleaks git --config etc/gitleaks.toml --no-banner --redact -v
+        else
+          for file do
+            printf 'Scanning %s for secrets\n' "$file"
+            mise exec -- gitleaks stdin --config etc/gitleaks.toml --no-banner --redact < "$file"
+          done
+        fi
 
   lint:docker:
     desc: "Check Dockerfile instructions with Hadolint"
@@ -550,6 +586,17 @@ tasks:
         if [ "$#" -eq 0 ]; then set -- .; fi
         mise exec -- zizmor -q --persona regular --min-severity high --min-confidence high \
           --offline --format plain --color never --no-progress "$@"
+
+  lint:agentic:
+    desc: "Lint compiled GitHub Agentic Workflows"
+    summary: |-
+      Usage: task lint:agentic [-- FILE.lock.yml ...]
+      Defaults to all workflow locks.
+      Runs all native rules; Actionlint runs separately in lint:actions.
+    preconditions:
+      - *file_paths
+    cmds:
+      - 'mise exec -- gh-aw lint --rules= {{.CLI_ARGS | default ".github/workflows/*.lock.yml"}}'
 
   lint:editorconfig:
     desc: "Check EditorConfig rules for the project, or explicit files (read only)"
@@ -719,39 +766,3 @@ tasks:
         msg: "Dispatch the release workflow from master to publish a release."
     cmds:
       - 'mise exec -- goreleaser release --config etc/goreleaser.yaml --clean'
-
-  # ╭────────────────────----------------──────────╮
-  # │              Agentic workflows               │
-  # ╰─────────────────────----------------─────────╯
-
-  agentic:lint:
-    desc: "Lint compiled GitHub Agentic Workflows"
-    summary: |-
-      Usage: task agentic:lint [-- FILE.lock.yml ...]
-      Defaults to all workflow locks.
-      Runs all native rules; Actionlint runs separately in lint:actions.
-    preconditions:
-      - *file_paths
-    cmds:
-      - 'mise exec -- gh-aw lint --rules= {{.CLI_ARGS | default ".github/workflows/*.lock.yml"}}'
-
-  agentic:generate:
-    desc: "Generate agent instructions and gh-aw MCP declarations"
-    summary: |-
-      Usage: task agentic:generate
-      Uses the checked-out go42x source to generate shared agent instructions and the gh-aw MCP fragment from shared
-      configuration, ignoring local overrides.
-    cmds:
-      - task: x
-        vars:
-          CLI_ARGS: 'agentenv generate --providers=gh-aw --no-local'
-
-  agentic:compile:
-    desc: "Generate agent instructions and compile agentic workflows"
-    summary: |-
-      Usage: task agentic:compile
-      Runs task agentic:generate, then compiles all workflows in strict mode, approves safe updates, and removes stale
-      workflow locks.
-    cmds:
-      - task: agentic:generate
-      - 'mise exec -- gh-aw compile --no-check-update --strict --purge --approve'

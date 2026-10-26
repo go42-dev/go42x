@@ -65,6 +65,58 @@ func TestGitCollectorRepository(t *testing.T) {
 			t.Errorf("%s = %v, want %v", key, data[key], want)
 		}
 	}
+	for _, tt := range []struct {
+		name   string
+		remote string
+		want   string
+	}{
+		{
+			name:   "HTTPS credentials",
+			remote: "https://x-access-token:disposable-token@github.com/org/repo.git",
+			want:   "https://github.com/org/repo.git",
+		},
+		{
+			name:   "HTTP username",
+			remote: "http://user@example.com:8080/org/repo.git",
+			want:   "http://example.com:8080/org/repo.git",
+		},
+		{
+			name:   "SSH shorthand",
+			remote: "git@github.com:org/repo.git",
+			want:   "git@github.com:org/repo.git",
+		},
+		{
+			name:   "SSH URL",
+			remote: "ssh://git@github.com/org/repo.git",
+			want:   "ssh://git@github.com/org/repo.git",
+		},
+		{
+			name:   "file URL",
+			remote: "file:///tmp/repo.git",
+			want:   "file:///tmp/repo.git",
+		},
+		{
+			name:   "malformed HTTPS URL is omitted",
+			remote: "https://user:bad%zz@example.com/org/repo.git",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			git("remote", "set-url", "origin", tt.remote)
+
+			data, err := c.Collect(t.Context())
+
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(tt.want) == 0 {
+				if _, exists := data["remote"]; exists {
+					t.Fatal("invalid remote was included in context")
+				}
+			} else if data["remote"] != tt.want {
+				t.Errorf("remote = %v, want %v", data["remote"], tt.want)
+			}
+		})
+	}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	if _, err := c.runGitCommand(ctx, "status"); err == nil {

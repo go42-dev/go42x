@@ -2,9 +2,12 @@ package codex
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"maps"
+	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -18,9 +21,15 @@ import (
 
 const Name = "codex"
 
-const dirSettings = ".codex"
+// ConfigFile is the project-local Codex configuration path.
+const ConfigFile = ".codex/config.toml"
 
-const fileSettings = "config.toml"
+// DefaultInstructionBytes is Codex's default project instruction budget.
+const DefaultInstructionBytes = 32 * 1024
+
+const keyProjectDocMaxBytes = "project_doc_max_bytes"
+
+const envHome = "CODEX_HOME"
 
 // MCPServer represents a server in .codex/config.toml.
 // @see https://developers.openai.com/codex/mcp
@@ -39,10 +48,11 @@ type MCPServer struct {
 
 // Settings contains the inputs needed to generate this provider's files.
 type Settings struct {
-	OutputDir      string
-	MCPServers     map[string]provider.MCPServer
-	ApprovalPolicy *string
-	MCPApproval    *string
+	OutputDir          string
+	MCPServers         map[string]provider.MCPServer
+	ApprovalPolicy     *string
+	MCPApproval        *string
+	ProjectDocMaxBytes *int
 }
 
 type Provider struct {
@@ -94,7 +104,7 @@ func (p *Provider) prepareConfigFiles(plan *fspatch.Plan) error {
 		return fmt.Errorf("failed to normalize codex MCP settings: %w", err)
 	}
 
-	path := filepath.Join(p.settings.OutputDir, dirSettings, fileSettings)
+	path := filepath.Join(p.settings.OutputDir, ConfigFile)
 	previous, exists, err := plan.Read(path)
 	if err != nil {
 		return err
@@ -110,10 +120,13 @@ func (p *Provider) prepareConfigFiles(plan *fspatch.Plan) error {
 	if err != nil {
 		return fmt.Errorf("failed to encode existing codex settings: %w", err)
 	}
-	// Agentenv owns the MCP section; retain the user's other Codex settings.
+	// Agentenv owns the MCP section and explicitly configured settings; retain other values.
 	settings["mcp_servers"] = serverSettings
 	if p.settings.ApprovalPolicy != nil {
 		settings["approval_policy"] = *p.settings.ApprovalPolicy
+	}
+	if p.settings.ProjectDocMaxBytes != nil {
+		settings[keyProjectDocMaxBytes] = *p.settings.ProjectDocMaxBytes
 	}
 	content, err := toml.Marshal(settings)
 	if err != nil {
@@ -127,6 +140,57 @@ func (p *Provider) prepareConfigFiles(plan *fspatch.Plan) error {
 	}
 
 	return nil
+}
+
+// InstructionLimit resolves the user and project instruction budget, in that order.
+func InstructionLimit(root string) (int, error) {
+	home := os.Getenv(envHome)
+	if len(home) == 0 {
+		userHome, err := os.UserHomeDir()
+		if err != nil {
+			return 0, fmt.Errorf("locate Codex configuration: %w", err)
+		}
+		home = filepath.Join(userHome, filepath.Dir(ConfigFile))
+	}
+
+	limit := DefaultInstructionBytes
+	for _, path := range []string{filepath.Join(home, filepath.Base(ConfigFile)), filepath.Join(root, ConfigFile)} {
+		// #nosec G304 -- Read the selected runtime's configuration to resolve its instruction budget.
+		content, err := os.ReadFile(path)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return 0, fmt.Errorf("read Codex configuration %s: %w", path, err)
+		}
+
+		value, err := ParseInstructionLimit(string(content))
+		if err != nil {
+			return 0, fmt.Errorf("check Codex configuration %s: %w", path, err)
+		}
+		if value != nil {
+			limit = *value
+		}
+	}
+	return limit, nil
+}
+
+// ParseInstructionLimit reads the optional project instruction budget from TOML.
+func ParseInstructionLimit(content string) (*int, error) {
+	settings := make(map[string]any)
+	if err := toml.Unmarshal([]byte(content), &settings); err != nil {
+		return nil, fmt.Errorf("parse Codex configuration: %w", err)
+	}
+	value, exists := settings[keyProjectDocMaxBytes]
+	if !exists {
+		return nil, nil
+	}
+
+	limit, ok := value.(int64)
+	if !ok || limit < 0 || int64(int(limit)) != limit {
+		return nil, fmt.Errorf("%s must be a non-negative integer", keyProjectDocMaxBytes)
+	}
+	return new(int(limit)), nil
 }
 
 func codexMCPServer(server provider.MCPServer) (MCPServer, error) {

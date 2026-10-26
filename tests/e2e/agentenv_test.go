@@ -22,6 +22,82 @@ import (
 	"github.com/go42-dev/go42x/internal/vendoring"
 )
 
+func TestAgentEnvInstructionSizeWarning(t *testing.T) {
+	t.Parallel()
+	p := newProject(t)
+	p.configure(t)
+	p.write(t, ".go42x/go42x.yaml", providerProjectConfig)
+	content := strings.Repeat("x", 24001)
+	p.write(t, ".go42x/agents.tpl.md", "# Project\n\n"+content+"\n")
+	generated := p.run(t, 0, "agentenv", "generate", "--providers=antigravity")
+	if !strings.Contains(generated.stderr, "instructions exceed the size limit") {
+		t.Fatalf("generation omitted size warning: %+v", generated)
+	}
+	if got := p.read(t, "AGENTS.md"); !strings.Contains(got, content) {
+		t.Fatal("generation truncated instructions")
+	}
+
+	p.write(t, ".github/workflows/agent.md", "---\non: issues\nengine: unknown\n---\n")
+	failed := p.run(t, 1, "agentenv", "generate", "--json")
+	if !strings.Contains(failed.stdout, "cannot determine instruction limit") {
+		t.Fatalf("unresolved engine did not fail: %+v", failed)
+	}
+}
+
+func TestAgentEnvCodexInstructionBudget(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name     string
+		limit    int
+		existing bool
+		warning  bool
+	}{
+		{
+			name:  "first generation uses configured budget",
+			limit: 65536,
+		},
+		{
+			name:     "configured budget overrides existing value",
+			limit:    65536,
+			existing: true,
+		},
+		{
+			name:     "explicit zero budget",
+			limit:    0,
+			existing: true,
+			warning:  true,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			p := newProject(t)
+			p.configure(t)
+			p.write(t, ".go42x/go42x.yaml", providerProjectConfig)
+			local := fmt.Sprintf("providers: {codex: {project-doc-max-bytes: %d}}\n", tt.limit)
+			p.write(t, ".go42x/go42x.local.yaml", local)
+			p.write(t, ".go42x/agents.tpl.md", "# Project\n\n"+strings.Repeat("x", 40000)+"\n")
+			if tt.existing {
+				p.write(t, ".codex/config.toml", "project_doc_max_bytes = 32768\n")
+			}
+
+			generated := p.run(t, 0, "agentenv", "generate", "--providers=codex")
+
+			if strings.Contains(generated.stderr, "instructions exceed the size limit") != tt.warning {
+				t.Fatalf("unexpected instruction size warning: %s", generated.stderr)
+			}
+			var settings struct {
+				ProjectDocMaxBytes *int `toml:"project_doc_max_bytes"`
+			}
+			if err := toml.Unmarshal([]byte(p.read(t, ".codex/config.toml")), &settings); err != nil {
+				t.Fatal(err)
+			}
+			if settings.ProjectDocMaxBytes == nil || *settings.ProjectDocMaxBytes != tt.limit {
+				t.Fatalf("instruction budget = %v, want %d", settings.ProjectDocMaxBytes, tt.limit)
+			}
+		})
+	}
+}
+
 func TestGeneratedDirectoriesArePrivate(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS == "windows" {

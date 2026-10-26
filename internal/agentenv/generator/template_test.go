@@ -215,6 +215,7 @@ func TestTemplateGenerationErrors(t *testing.T) {
 			}
 			g := NewGenerator(slog.New(slog.DiscardHandler), &config.Config{Context: cfg}, dir, out)
 			if err := g.prepareInstructions(
+				t.Context(),
 				fspatch.NewPlan(slog.New(slog.DiscardHandler), out, filepath.Join(out, ".go42x", "backups")),
 				map[string]any{"items": []string{"a"}},
 				false,

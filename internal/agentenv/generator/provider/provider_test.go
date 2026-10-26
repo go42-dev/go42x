@@ -54,10 +54,11 @@ func makeProvider(
 			logger,
 			engine,
 			codex.Settings{
-				OutputDir:      out,
-				MCPServers:     cfg.MCP,
-				ApprovalPolicy: cfg.Providers[name].ApprovalPolicy,
-				MCPApproval:    cfg.Providers[name].MCPApproval,
+				OutputDir:          out,
+				MCPServers:         cfg.MCP,
+				ApprovalPolicy:     cfg.Providers[name].ApprovalPolicy,
+				MCPApproval:        cfg.Providers[name].MCPApproval,
+				ProjectDocMaxBytes: cfg.Providers[name].ProjectDocMaxBytes,
 			},
 			dir,
 		)

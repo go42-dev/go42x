@@ -889,6 +889,29 @@ context: {template: agents.tpl.md}
 		wantErr bool
 	}{
 		{
+			name:    "Codex instruction budget",
+			content: "providers: {codex: {project-doc-max-bytes: 65536}}",
+		},
+		{
+			name:    "zero Codex instruction budget",
+			content: "providers: {codex: {project-doc-max-bytes: 0}}",
+		},
+		{
+			name:    "negative Codex instruction budget",
+			content: "providers: {codex: {project-doc-max-bytes: -1}}",
+			wantErr: true,
+		},
+		{
+			name:    "invalid Codex instruction budget type",
+			content: "providers: {codex: {project-doc-max-bytes: large}}",
+			wantErr: true,
+		},
+		{
+			name:    "instruction budget on another provider",
+			content: "providers: {claude: {project-doc-max-bytes: 65536}}",
+			wantErr: true,
+		},
+		{
 			"provider enabled by default",
 			"providers: {codex: {}}",
 			false,

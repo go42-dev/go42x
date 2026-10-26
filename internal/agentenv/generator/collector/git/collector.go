@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"net/url"
 	"os/exec"
 	"strings"
 )
@@ -9,6 +10,11 @@ import (
 const (
 	Name     = "git"
 	priority = 10
+)
+
+const (
+	schemeHTTP  = "http"
+	schemeHTTPS = "https"
 )
 
 // Collector collects repository identity and checkout metadata.
@@ -40,7 +46,10 @@ func (c *Collector) Collect(ctx context.Context) (map[string]any, error) {
 	result["root"] = strings.TrimSpace(root)
 
 	if remote, err := c.runGitCommand(ctx, "config", "--local", "--get", "remote.origin.url"); err == nil {
-		result["remote"] = strings.TrimSpace(remote)
+		remote = sanitizeRemote(remote)
+		if len(remote) > 0 {
+			result["remote"] = remote
+		}
 	}
 	if branch, err := c.runGitCommand(ctx, "rev-parse", "--abbrev-ref", "HEAD"); err == nil {
 		result["branch"] = strings.TrimSpace(branch)
@@ -53,6 +62,24 @@ func (c *Collector) Collect(ctx context.Context) (map[string]any, error) {
 	}
 
 	return result, nil
+}
+
+// sanitizeRemote removes HTTP authentication without exposing malformed URLs.
+func sanitizeRemote(remote string) string {
+	remote = strings.TrimSpace(remote)
+	parsed, err := url.Parse(remote)
+	if err != nil {
+		if strings.Contains(remote, "://") {
+			return ""
+		}
+		return remote
+	}
+	if strings.EqualFold(parsed.Scheme, schemeHTTP) || strings.EqualFold(parsed.Scheme, schemeHTTPS) {
+		parsed.User = nil
+		return parsed.String()
+	}
+
+	return remote
 }
 
 func (c *Collector) runGitCommand(ctx context.Context, args ...string) (string, error) {

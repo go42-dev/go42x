@@ -180,6 +180,10 @@ properties:
         properties:
           enabled:
             $ref: '#/definitions/providerEnabled'
+          project-doc-max-bytes:
+            type: integer
+            minimum: 0
+            description: Maximum project instruction bytes written to Codex config.toml. Omit to preserve the existing setting.
           approval-policy:
             type: string
             description: Codex command approval policy. Omit to preserve the existing policy. Does not change sandbox settings.

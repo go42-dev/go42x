@@ -19,6 +19,7 @@ see the [project overview](../README.md).
 | [CLI codestyle](handbook/cli-codestyle.md)               | CLI code composition, organization, and style guidelines              |
 | [CLI output](handbook/cli-output.md)                     | Output streams, logging, result formats, errors, and exit status      |
 | [GitHub configuration](handbook/github-configuration.md) | Required and optional workflow variables and secrets                  |
+| [Agent instructions](handbook/agent-instructions.md)     | Generation, instruction budgets, warnings, and secret checks          |
 
 ## Maintaining the index
 

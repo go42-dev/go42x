@@ -78,7 +78,7 @@ jobs:
           cache-key-prefix: mise-gosec-v1-${{ hashFiles('go.mod') }}
       - name: 'Run Gosec security scanner'
         shell: bash
-        run: task lint:go-security
+        run: task lint:gosec
 
   govulncheck:
     name: govulncheck

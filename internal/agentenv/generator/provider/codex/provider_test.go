@@ -18,29 +18,46 @@ func TestSettingsPreserveUnmanagedConfiguration(t *testing.T) {
 	t.Setenv("API_KEY", "local-secret-must-not-be-written")
 
 	for _, tt := range []struct {
-		name           string
-		approvalPolicy *string
-		mcpApproval    *string
-		wantPolicy     string
+		name               string
+		approvalPolicy     *string
+		mcpApproval        *string
+		projectDocMaxBytes *int
+		wantPolicy         string
+		wantDocMaxBytes    int
 	}{
 		{
-			name:       "preserve existing approval policy",
-			wantPolicy: "on-request",
+			name:            "preserve existing approval policy",
+			wantPolicy:      "on-request",
+			wantDocMaxBytes: 50000,
 		},
 		{
-			name:           "apply explicit approval settings",
-			approvalPolicy: new("never"),
-			mcpApproval:    new("approve"),
-			wantPolicy:     "never",
+			name:            "apply explicit approval settings",
+			approvalPolicy:  new("never"),
+			mcpApproval:     new("approve"),
+			wantPolicy:      "never",
+			wantDocMaxBytes: 50000,
+		},
+		{
+			name:               "apply explicit instruction budget",
+			projectDocMaxBytes: new(65536),
+			wantPolicy:         "on-request",
+			wantDocMaxBytes:    65536,
+		},
+		{
+			name:               "apply explicit zero instruction budget",
+			projectDocMaxBytes: new(0),
+			wantPolicy:         "on-request",
+			wantDocMaxBytes:    0,
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			root := t.TempDir()
-			path := filepath.Join(root, dirSettings, fileSettings)
+			path := filepath.Join(root, ".codex/config.toml")
 			if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(path, []byte(`model = "existing-model"
+			if err := os.WriteFile(path, []byte(`project_doc_max_bytes = 50000
+model = "existing-model"
 approval_policy = "on-request"
 [mcp_servers.stale]
 command = "obsolete"
@@ -48,9 +65,10 @@ command = "obsolete"
 				t.Fatal(err)
 			}
 			settings := Settings{
-				OutputDir:      root,
-				ApprovalPolicy: tt.approvalPolicy,
-				MCPApproval:    tt.mcpApproval,
+				OutputDir:          root,
+				ApprovalPolicy:     tt.approvalPolicy,
+				MCPApproval:        tt.mcpApproval,
+				ProjectDocMaxBytes: tt.projectDocMaxBytes,
 				MCPServers: map[string]provider.MCPServer{
 					"current": {
 						Enabled: true,
@@ -75,15 +93,19 @@ command = "obsolete"
 				t.Fatal(err)
 			}
 			var got struct {
-				Model          string               `toml:"model"`
-				ApprovalPolicy string               `toml:"approval_policy"`
-				MCPServers     map[string]MCPServer `toml:"mcp_servers"`
+				Model              string               `toml:"model"`
+				ApprovalPolicy     string               `toml:"approval_policy"`
+				ProjectDocMaxBytes *int                 `toml:"project_doc_max_bytes"`
+				MCPServers         map[string]MCPServer `toml:"mcp_servers"`
 			}
 			if err := toml.Unmarshal(content, &got); err != nil {
 				t.Fatal(err)
 			}
 			if got.Model != "existing-model" || got.ApprovalPolicy != tt.wantPolicy {
 				t.Fatalf("unmanaged settings or approval policy changed unexpectedly: %+v", got)
+			}
+			if got.ProjectDocMaxBytes == nil || *got.ProjectDocMaxBytes != tt.wantDocMaxBytes {
+				t.Fatalf("instruction budget = %v, want %d", got.ProjectDocMaxBytes, tt.wantDocMaxBytes)
 			}
 			if len(got.MCPServers) != 1 || got.MCPServers["current"].Command != "example" {
 				t.Fatalf("managed server section was not replaced: %+v", got.MCPServers)
@@ -111,7 +133,7 @@ command = "obsolete"
 
 func TestPreparationFailurePreservesConfiguration(t *testing.T) {
 	root := t.TempDir()
-	path := filepath.Join(root, dirSettings, fileSettings)
+	path := filepath.Join(root, ".codex/config.toml")
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		t.Fatal(err)
 	}

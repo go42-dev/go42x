@@ -14,6 +14,9 @@ import (
 
 const Name = "claude"
 
+// MaxInstructionBytes is Claude's size limit for each startup instruction file.
+const MaxInstructionBytes = 4 * 1024 * 1024
+
 const (
 	dirSettings = ".claude"
 	dirAgents   = "agents"

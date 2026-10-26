@@ -96,7 +96,7 @@ func (g *Generator) Prepare(ctx context.Context, clean bool) (*fspatch.Plan, err
 	}
 
 	plan := fspatch.NewPlan(g.logger, g.outputDir, filepath.Join(g.outputDir, config.Directory, "backups"))
-	if err := g.prepareInstructions(plan, tplCtx.ToMap(), clean); err != nil {
+	if err := g.prepareInstructions(ctx, plan, tplCtx.ToMap(), clean); err != nil {
 		return nil, fmt.Errorf("failed to prepare shared instructions: %w", err)
 	}
 
@@ -184,7 +184,12 @@ func (g *Generator) buildTemplateContext(ctx context.Context) (*Context, error) 
 	return tplCtx, nil
 }
 
-func (g *Generator) prepareInstructions(plan *fspatch.Plan, ctxData map[string]any, clean bool) error {
+func (g *Generator) prepareInstructions(
+	ctx context.Context,
+	plan *fspatch.Plan,
+	ctxData map[string]any,
+	clean bool,
+) error {
 	rendered, err := newTemplateEngine(g.templateDir).Render(g.config.Context, ctxData)
 	if err != nil {
 		return err
@@ -194,8 +199,29 @@ func (g *Generator) prepareInstructions(plan *fspatch.Plan, ctxData map[string]a
 		return err
 	}
 
+	content := []byte(instructionsMarker + "\n\n" + rendered.content)
+	checks, err := checkInstructions(ctx, g.outputDir, g.config, content)
+	if err != nil {
+		return err
+	}
+
+	for _, check := range checks {
+		if len(check.warning) == 0 {
+			continue
+		}
+
+		g.logger.WarnContext(ctx, check.warning,
+			slog.String("engine", check.engine),
+			slog.String("source", check.source),
+			slog.String("file", check.file),
+			slog.Int("bytes", check.bytes),
+			slog.Int("limit_bytes", check.limitBytes),
+			slog.String("limit_source", check.limitSource),
+		)
+	}
+
 	fullPath := filepath.Join(g.outputDir, provider.AgentsFile)
-	if err := plan.Write(fullPath, []byte(instructionsMarker+"\n\n"+rendered.content),
+	if err := plan.Write(fullPath, content,
 		fspatch.KindInstructions, clean); err != nil {
 		return fmt.Errorf("prepare instructions %s: %w", provider.AgentsFile, err)
 	}
@@ -226,10 +252,11 @@ func (g *Generator) registerProviders() {
 		g.logger.With(slog.String("provider", codex.Name)),
 		templateEngine,
 		codex.Settings{
-			OutputDir:      g.outputDir,
-			MCPServers:     servers,
-			ApprovalPolicy: codexConfig.ApprovalPolicy,
-			MCPApproval:    codexConfig.MCPApproval,
+			OutputDir:          g.outputDir,
+			MCPServers:         servers,
+			ApprovalPolicy:     codexConfig.ApprovalPolicy,
+			MCPApproval:        codexConfig.MCPApproval,
+			ProjectDocMaxBytes: codexConfig.ProjectDocMaxBytes,
 		},
 		g.templateDir,
 	)
