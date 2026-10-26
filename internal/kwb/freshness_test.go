@@ -13,34 +13,46 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go42-dev/go42x/assets"
 	"github.com/go42-dev/go42x/internal/vendoring"
 )
 
 func TestAuthoredCoverageAndProjectExclusions(t *testing.T) {
 	root := t.TempDir()
 	for path, content := range map[string]string{
-		".env.example":                          "EXAMPLE=value",
-		".go42x/go42x.yaml":                     "project: sample",
-		".go42x/agents.tpl.md":                  "Agent instructions",
-		".go42x/chunks/team/rules.tpl.md":       "Project rules",
-		".go42x/go42x.local.yaml":               "local only",
-		".go42x/go42x.schema.json":              "{}",
-		".go42x/backups/old.tpl.md":             "backup",
-		".go42x/state.json":                     "{}",
-		".go42x/upstream/go/names.md":           "# Names\nNaming conventions.",
-		".go42x/upstream/guide.markdown":        "# Guide\nStyle guidance.",
-		".go42x/upstream/" + vendoring.LockFile: "manifest: " + vendoring.ManifestFile,
-		".go42x/upstream/raw.html":              "<h1>Raw HTML</h1>",
-		".go42x/upstream/LICENSE":               "license text",
-		".go42x/chunks/generated.json":          "{}",
-		".go42x/kwb/other/state.md":             "index state",
-		".gitignore":                            ".go42x/chunks/private.tpl.md\n",
-		".go42x/chunks/private.tpl.md":          "private",
-		".go42x/kwb.ignore":                     "static/**\n!static/keep.min.js\n!static/handwritten.js\n!static/flagged.js\n",
-		"static/bundle.min.js":                  "generated bundle",
-		"static/keep.min.js":                    "kept by exception",
-		"static/handwritten.js":                 "const handwritten = true",
-		"static/flagged.js":                     "excluded by flag",
+		".env.example":                              "EXAMPLE=value",
+		".go42x/go42x.yaml":                         "project: sample",
+		".go42x/agents.tpl.md":                      "Agent instructions",
+		".go42x/chunks/team/rules.tpl.md":           "Project rules",
+		".go42x/chunks/notes.md":                    "Chunk maintenance notes",
+		".go42x/references/guide.md":                "# Reference\nProject guidance.",
+		".go42x/go42x.local.yaml":                   "local only",
+		".go42x/go42x.schema.json":                  "{}",
+		".go42x/backups/old.tpl.md":                 "backup",
+		".go42x/state.json":                         "{}",
+		".go42x/upstream/go/names.md":               "# Names\nNaming conventions.",
+		".go42x/upstream/guide.markdown":            "# Guide\nStyle guidance.",
+		".go42x/upstream/api.proto":                 "syntax = \"proto3\";",
+		".go42x/upstream/" + vendoring.LockFile:     "manifest: " + vendoring.ManifestFile,
+		".go42x/upstream/raw.html":                  "<h1>Raw HTML</h1>",
+		".go42x/upstream/LICENSE":                   "license text",
+		".go42x/chunks/generated.json":              "{}",
+		".go42x/kwb/other/state.md":                 "index state",
+		"AGENTS.md":                                 "Generated instructions",
+		".mcp.json":                                 "{}",
+		".claude/settings.local.json":               "{}",
+		".codex/config.toml":                        "model = 'sample'",
+		".agents/plugins/project-tools/plugin.json": "{}",
+		".crush/state.json":                         "{}",
+		".crush.json":                               "{}",
+		".github/workflows/900-aw-mcp.md":           "Generated MCP definitions",
+		".gitignore":                                ".go42x/chunks/private.tpl.md\n",
+		".go42x/chunks/private.tpl.md":              "private",
+		".go42x/kwb.ignore":                         "static/**\n!static/keep.min.js\n!static/handwritten.js\n!static/flagged.js\n",
+		"static/bundle.min.js":                      "generated bundle",
+		"static/keep.min.js":                        "kept by exception",
+		"static/handwritten.js":                     "const handwritten = true",
+		"static/flagged.js":                         "excluded by flag",
 	} {
 		writeFixture(t, root, path, content)
 	}
@@ -59,14 +71,29 @@ func TestAuthoredCoverageAndProjectExclusions(t *testing.T) {
 	for _, file := range files.Files {
 		paths = append(paths, file.Path)
 	}
-	want := []string{".env.example", ".gitignore", ".go42x/agents.tpl.md", ".go42x/chunks/team/rules.tpl.md",
-		".go42x/go42x.yaml", ".go42x/kwb.ignore", ".go42x/upstream/go/names.md", ".go42x/upstream/guide.markdown",
-		"static/handwritten.js", "static/keep.min.js"}
+	want := []string{
+		".env.example",
+		".gitignore",
+		".go42x/agents.tpl.md",
+		".go42x/chunks/generated.json",
+		".go42x/chunks/notes.md",
+		".go42x/chunks/team/rules.tpl.md",
+		".go42x/go42x.schema.json",
+		".go42x/go42x.yaml",
+		".go42x/kwb.ignore",
+		".go42x/references/guide.md",
+		".go42x/state.json",
+		".go42x/upstream/api.proto",
+		".go42x/upstream/go/names.md",
+		".go42x/upstream/guide.markdown",
+		"static/handwritten.js",
+		"static/keep.min.js",
+	}
 
 	if !slices.Equal(paths, want) {
 		t.Fatalf("coverage: %v, want %v", paths, want)
 	}
-	writeFixture(t, root, sourceIgnorePath, "static/*.js\n")
+	writeFixture(t, root, sourceIgnorePath, assets.KWBIgnore()+"static/*.js\n")
 	before, err := service.CheckFreshness(t.Context())
 	if err != nil || !before.Complete || before.Excluded.Count != 2 || before.Changed.Count != 1 {
 		t.Fatalf("policy changes: %+v %v", before, err)

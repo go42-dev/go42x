@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -119,5 +120,41 @@ func TestSourceExclusionsUsesBundledDefaultsAndCustomExceptions(t *testing.T) {
 	}
 	if matcher.Match(path, false) {
 		t.Fatal("custom exception did not override the managed block")
+	}
+}
+
+func TestSourceExclusionsCanIncludeAgentFiles(t *testing.T) {
+	root := t.TempDir()
+	fixtures := map[string]string{
+		".gitignore":              ".go42x/private.md\n",
+		".go42x/go42x.local.yaml": "project: local",
+		".go42x/backups/keep.md":  "Retained reference",
+		".go42x/backups/skip.md":  "Backup",
+		".go42x/private.md":       "Private reference",
+		sourceIgnorePath: assets.KWBIgnore() + "!.go42x/backups/keep.md\n" +
+			"!.go42x/go42x.local.yaml\n!.go42x/private.md\n",
+	}
+	for path, content := range fixtures {
+		writeFixture(t, root, path, content)
+	}
+	manager := newIndexManager(slog.New(slog.DiscardHandler), NewSettings())
+	var paths []string
+
+	err := manager.walkFiles(t.Context(), root, func(path string, _ os.FileInfo, _ []byte) error {
+		paths = append(paths, path)
+		return nil
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		".gitignore",
+		".go42x/backups/keep.md",
+		".go42x/go42x.local.yaml",
+		sourceIgnorePath,
+	}
+	if !slices.Equal(paths, want) {
+		t.Fatalf("files after custom exceptions = %v, want %v", paths, want)
 	}
 }

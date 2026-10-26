@@ -21,17 +21,11 @@ import (
 )
 
 const (
-	dirAgentChunks   = "chunks"
-	dirAgentUpstream = "upstream"
-)
-
-const (
 	sourceIgnoreFile = "kwb.ignore"
 	sourceIgnorePath = config.Directory + "/" + sourceIgnoreFile
 )
 
 const (
-	suffixTemplate     = ".tpl.md"
 	suffixMarkdown     = ".md"
 	suffixMarkdownLong = ".markdown"
 )
@@ -89,35 +83,6 @@ var defaultFilenames = []string{
 	".env",
 	".env.example",
 	sourceIgnoreFile,
-}
-
-// authoredAgentFile identifies authored configuration, instruction templates, and upstream Markdown references.
-func authoredAgentFile(relative string, directory bool) bool {
-	parts := strings.Split(filepath.ToSlash(relative), "/")
-	for i, part := range parts {
-		if part != config.Directory {
-			continue
-		}
-
-		tail := parts[i+1:]
-		if len(tail) == 0 {
-			return directory
-		}
-		if tail[0] == dirAgentChunks {
-			return directory || strings.HasSuffix(relative, suffixTemplate)
-		}
-		if tail[0] == dirAgentUpstream {
-			return directory || strings.HasSuffix(relative, suffixMarkdown) ||
-				strings.HasSuffix(relative, suffixMarkdownLong)
-		}
-		if len(tail) != 1 || directory {
-			return false
-		}
-
-		return tail[0] == config.FileProject || tail[0] == sourceIgnoreFile ||
-			strings.HasSuffix(tail[0], suffixTemplate)
-	}
-	return true
 }
 
 // ensureSourceIgnore refreshes bundled exclusions while holding the build lock.
@@ -286,8 +251,7 @@ func (m *indexManager) walkDirectory(ctx context.Context, root, relative string,
 		if matcher.Match(strings.Split(filepath.ToSlash(rel), "/"), entry.IsDir()) {
 			continue
 		}
-		if !authoredAgentFile(rel, entry.IsDir()) ||
-			exclusions.Match(strings.Split(filepath.ToSlash(rel), "/"), entry.IsDir()) {
+		if exclusions.Match(strings.Split(filepath.ToSlash(rel), "/"), entry.IsDir()) {
 			continue
 		}
 		if entry.IsDir() {
