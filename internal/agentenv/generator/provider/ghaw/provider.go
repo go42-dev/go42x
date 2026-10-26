@@ -33,13 +33,7 @@ const (
 
 const flagWorkDir = "--workdir"
 
-const (
-	mcpServerNamePrefix  = "mcp-"
-	mcpServerGitHub      = "github"
-	mcpServerSafeOutputs = "safeoutputs"
-	mcpServerMCPScripts  = "mcpscripts"
-	mcpServerEnclave     = "awf-enclave"
-)
+const mcpServerNamePrefix = "mcp-"
 
 var (
 	ghAWServerNamePattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
@@ -144,7 +138,7 @@ func (p *Provider) Prepare(plan *fspatch.Plan, _ map[string]any) error {
 			return fmt.Errorf("MCP server %s: %w", name, err)
 		}
 
-		fragment.MCPServers[mcpServerName(name)] = entry
+		fragment.MCPServers[mcpServerNamePrefix+name] = entry
 	}
 
 	var content bytes.Buffer
@@ -171,16 +165,6 @@ func (p *Provider) Prepare(plan *fspatch.Plan, _ map[string]any) error {
 	}
 
 	return nil
-}
-
-// mcpServerName preserves gh-aw infrastructure IDs and prefixes custom servers to avoid CLI name collisions.
-func mcpServerName(name string) string {
-	switch name {
-	case mcpServerGitHub, mcpServerSafeOutputs, mcpServerMCPScripts, mcpServerEnclave:
-		return name
-	default:
-		return mcpServerNamePrefix + name
-	}
 }
 
 func ghAWMCPServer(server provider.MCPServer) (MCPServer, error) {

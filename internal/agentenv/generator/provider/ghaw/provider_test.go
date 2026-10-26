@@ -153,10 +153,10 @@ func TestGHAWMCPServerNames(t *testing.T) {
 		"gopls":       "mcp-gopls",
 		"mise":        "mcp-mise",
 		"mcp-mise":    "mcp-mcp-mise",
-		"github":      "github",
-		"safeoutputs": "safeoutputs",
-		"mcpscripts":  "mcpscripts",
-		"awf-enclave": "awf-enclave",
+		"github":      "mcp-github",
+		"safeoutputs": "mcp-safeoutputs",
+		"mcpscripts":  "mcp-mcpscripts",
+		"awf-enclave": "mcp-awf-enclave",
 	}
 	root := t.TempDir()
 	settings := Settings{
