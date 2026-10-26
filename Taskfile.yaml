@@ -476,6 +476,16 @@ tasks:
           (cd etc && mise exec -- tombi format --offline "$file")
         done
 
+  fmt:markdown:
+    desc: "Fix explicit Markdown files (writes; remaining diagnostics can fail)"
+    summary: |-
+      Usage: task fmt:markdown -- FILE.md [FILE.md ...]
+    preconditions: *files
+    cmds:
+      - |
+        set -- {{.CLI_ARGS}}
+        mise exec -- markdownlint-cli2 --config etc/markdownlint-cli2.yaml --no-globs --fix "$@"
+
   # ╭────────────────────----------------──────────╮
   # │                   Linters                    │
   # ╰─────────────────────----------------─────────╯
@@ -518,7 +528,7 @@ tasks:
         mise exec -- golangci-lint run --config etc/golangci.yml "$@"
 
   lint:nilaway:
-    desc: "Run advisory nil-safety analysis on all Go packages"
+    desc: "Check all Go packages for potential nil panics with NilAway"
     cmds:
       - |
         go vet -vettool="$(mise which nilaway)" \
@@ -527,7 +537,7 @@ tasks:
           -include-errors-in-files="$(pwd -P)" \
           -pretty-print=false \
           -print-full-file-path=true \
-          ./... || true
+          ./...
 
   lint:gosec:
     desc: "Check Go code with gosec"

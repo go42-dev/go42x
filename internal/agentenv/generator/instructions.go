@@ -361,8 +361,8 @@ func (r *instructionReader) measure(path, engine string, visiting map[string]boo
 
 	content := r.shared
 	if path != provider.AgentsFile {
-		// #nosec G304 -- Instruction imports explicitly select files whose sizes must be checked.
 		var err error
+		// #nosec G304 -- Instruction imports explicitly select files whose sizes must be checked.
 		content, err = os.ReadFile(filepath.Join(r.root, path))
 		if err != nil {
 			return 0, fmt.Errorf("read instruction file %s: %w", path, err)

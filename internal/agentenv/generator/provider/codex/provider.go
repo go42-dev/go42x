@@ -155,7 +155,7 @@ func InstructionLimit(root string) (int, error) {
 
 	limit := DefaultInstructionBytes
 	for _, path := range []string{filepath.Join(home, filepath.Base(ConfigFile)), filepath.Join(root, ConfigFile)} {
-		// #nosec G304 -- Read the selected runtime's configuration to resolve its instruction budget.
+		// #nosec G304 G703 -- The trusted local project and CODEX_HOME select Codex configuration files.
 		content, err := os.ReadFile(path)
 		if errors.Is(err, fs.ErrNotExist) {
 			continue

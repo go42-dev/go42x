@@ -13,6 +13,8 @@ Use these rules when adding or changing a command. Keep command configuration,
 feature behavior, and result formatting with their owners. Follow
 [CLI output](cli-output.md) for streams, result formats, and exit status.
 
+Use [Verification](verification.md) for the project's required checks.
+
 ## Command files and ownership
 
 | Location                                    | Responsibility                                                    |
@@ -252,17 +254,3 @@ subcommands to classify argument and flag errors and suppress duplicate reports.
 
 See the [build runner](../../internal/cmd/kwb/build.go) and the
 [diagnostic runner](../../internal/cmd/kwb/check.go) for these two reporting cases.
-
-## Verification
-
-Choose tests that exercise the affected boundary:
-
-- Service tests cover feature behavior and partial results.
-- Reporter tests cover text and JSON output, write failures, and error ownership.
-- CLI tests cover validation before side effects, selected formats, redirected
-  streams, cancellation where relevant, and exit status.
-- Verify that changing the log level does not change or hide a command result.
-
-Use the [shared reporter tests](../../internal/cmdutil/result_test.go) and
-[CLI reporting tests](../../tests/e2e/reporting_test.go) as examples. Run the
-project's relevant checks and report what they verified.
