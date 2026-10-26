@@ -17,6 +17,16 @@ config:
     code_block_line_length: 120
     tables: false
 
+# Chunks are fragments inserted under the generated Instructions section.
+overrides:
+  - filter:
+      - 'assets/agentenv/chunks/**/*.tpl.md'
+      - '.go42x/chunks/**/*.tpl.md'
+    config:
+      MD041:
+        level: 3
+    combine: merge
+
 globs:
   - docs/**/*.md
 

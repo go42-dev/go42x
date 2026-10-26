@@ -29,6 +29,9 @@ Replace `FILE` in the commands below with the affected file paths.
 
 Run `task fmt:markdown` on changed Markdown files and correct any remaining diagnostics.
 
+Instruction chunks start with H3 because they appear under `## Instructions` in the generated document.
+The Markdown lint configuration sets that heading level for both chunk directories and keeps the default for full documents.
+
 ### Generated outputs
 
 Regenerate affected outputs through their owning tasks. Review the generated

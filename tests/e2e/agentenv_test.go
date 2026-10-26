@@ -353,11 +353,13 @@ func TestAgentEnvUpdateMergesOriginalBundle(t *testing.T) {
 	}
 	p.write(t, ".go42x/go42x.local.yaml", "project: {description: 'Local description'}\n")
 	p.write(t, ".go42x/chunks/project.tpl.md", "Additional project instructions\n")
+	p.write(t, ".go42x/resources/project.md", "Additional project resource\n")
 	p.write(t, ".go42x/upstream/project.md", "Additional project reference\n")
 	p.write(t, "AGENTS.md", "Existing generated instructions\n")
 	p.write(t, ".build/base/chunks/090-retired.tpl.md", "Removed upstream\n")
 	p.write(t, ".go42x/chunks/090-retired.tpl.md", "Removed upstream\n")
 	p.write(t, ".go42x/chunks/300-codestyle.tpl.md", "Customized style\n")
+	p.write(t, ".go42x/resources/go-codestyle.md", "Customized style resource\n")
 	p.write(t, ".go42x/upstream/go/package-names.md", "Customized reference\n")
 	p.write(t, ".go42x/"+vendoring.LockFile, "Customized lock\n")
 	for _, path := range []string{
@@ -388,6 +390,8 @@ func TestAgentEnvUpdateMergesOriginalBundle(t *testing.T) {
 		".go42x/go42x.local.yaml":            "project: {description: 'Local description'}\n",
 		".go42x/chunks/300-codestyle.tpl.md": "Customized style\n",
 		".go42x/chunks/project.tpl.md":       "Additional project instructions\n",
+		".go42x/resources/go-codestyle.md":   "Customized style resource\n",
+		".go42x/resources/project.md":        "Additional project resource\n",
 		".go42x/upstream/project.md":         "Additional project reference\n",
 		"AGENTS.md":                          "Existing generated instructions\n",
 	} {
@@ -534,7 +538,7 @@ func TestAgentEnvUpdateRejectsInvalidBaseAndMergedConfiguration(t *testing.T) {
 	p.assertUnchanged(t, before)
 }
 
-func TestAgentEnvUpstream(t *testing.T) {
+func TestAgentEnvBundledDocuments(t *testing.T) {
 	t.Parallel()
 	p := newProject(t)
 	// Init and update must use the bundle even when downloads cannot work.
@@ -547,6 +551,7 @@ func TestAgentEnvUpstream(t *testing.T) {
 		t.Fatal(err)
 	}
 	documents := []string{
+		"resources/go-codestyle.md",
 		"upstream/go/code-review-comments.md",
 		"upstream/go/package-names.md",
 		"upstream/go/effective-go.md",
@@ -593,8 +598,17 @@ func TestAgentEnvUpstream(t *testing.T) {
 			t.Errorf("generation inserted the full reference %s into the instructions", path)
 		}
 	}
-	const reference = ".go42x/upstream/go/code-review-comments.md"
-	const custom = ".go42x/upstream/custom.md"
+	if strings.Contains(instructions, "func TestNewServiceRejectsInvalidTimeout") {
+		t.Error("generation inserted a detailed style example into the instructions")
+	}
+	const (
+		resource       = ".go42x/resources/go-codestyle.md"
+		customResource = ".go42x/resources/project.md"
+		reference      = ".go42x/upstream/go/code-review-comments.md"
+		custom         = ".go42x/upstream/custom.md"
+	)
+	p.write(t, resource, "Customized style resource\n")
+	p.write(t, customResource, "Additional project resource\n")
 	p.write(t, reference, "Customized reference\n")
 	p.write(t, custom, "Additional project reference\n")
 	p.write(t, ".go42x/"+vendoring.ManifestFile, "Customized upstream manifest\n")
@@ -614,6 +628,16 @@ func TestAgentEnvUpstream(t *testing.T) {
 	}
 	if got := p.read(t, custom); got != "Additional project reference\n" {
 		t.Error("update changed an additional project reference")
+	}
+	wantResource, err := fs.ReadFile(templates, "resources/go-codestyle.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := p.read(t, resource); got != string(wantResource) {
+		t.Error("update did not restore the bundled resource")
+	}
+	if got := p.read(t, customResource); got != "Additional project resource\n" {
+		t.Error("update changed an additional project resource")
 	}
 	if got := p.read(t, vendoring.ManifestFile); got != projectManifest {
 		t.Fatal("update changed the project's own vendoring manifest")

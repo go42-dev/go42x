@@ -14,6 +14,32 @@ Write docs that help someone use, change, or troubleshoot go42x. Start at the
 
 Project contributors maintain the docs for this checkout, including its commands, settings, changes, and procedures.
 
+### Bundled agent material
+
+go42x ships agent material from `assets/agentenv/` and installs it under `.go42x/` in consuming projects.
+Choose its location by how it is maintained and used:
+
+| Directory    | Content                                                     | How agents use it                  |
+| ------------ | ----------------------------------------------------------- | ---------------------------------- |
+| `chunks/`    | Instruction templates maintained by go42x                   | Included in generated instructions |
+| `resources/` | Documents, examples, and supporting files authored in go42x | Read when needed for a task        |
+| `upstream/`  | External documents tracked by the vendoring manifest        | Read when needed for a task        |
+
+Keep chunks concise. Link to resources for detailed rules, explanations, and examples, and state when agents must
+read them. Resources are copied as files; their contents are not rendered into generated instructions.
+For example, `resources/go-codestyle.md` contains the Go defaults and examples used by the style chunk.
+
+Maintain shared resources in `assets/agentenv/resources/` and keep this checkout's `.go42x/resources/` copy in sync.
+Use ordinary Markdown with descriptive filenames and headings for documents. Resources support topics beyond
+code style and do not need entries in the vendoring manifest. The knowledge-base index includes supported resource
+files unless project exclusions omit them.
+
+`agentenv init` installs missing bundled files and preserves existing files. `agentenv export` includes resources
+in the exported bundle. `agentenv update --base` merges resource customizations with a previously exported bundle;
+conflicts leave project files unchanged and save candidates for review. Without `--base`, update replaces bundled
+resources. Both update modes preserve additional project files. Vendored upstream files follow their replacement
+policy in both modes.
+
 ## Shared writing rules
 
 Use these rules when writing or reviewing docs, including work done with AI assistance.
