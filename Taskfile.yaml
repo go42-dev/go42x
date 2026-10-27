@@ -623,12 +623,13 @@ tasks:
     desc: "Check plain YAML source formatting, or explicit files (read only)"
     summary: |-
       Usage: task lint:yaml [-- FILE.yaml ...]
-      Defaults to Git source YAML files, excluding compiled workflow locks.
+      Defaults to Git source YAML files, excluding compiled workflows and mise dependency locks.
     vars:
       SOURCE_FILES:
         sh: |
           {{if not .CLI_ARGS}}
-          git ls-files --cached --others --exclude-standard -z -- '*.yaml' '*.yml' ':!:.github/workflows/*.lock.yml'
+          git ls-files --cached --others --exclude-standard -z -- '*.yaml' '*.yml' \
+            ':!:.github/workflows/*.lock.yml' ':!:etc/.mise/locks/**'
           {{end}}
     preconditions:
       - *file_paths
