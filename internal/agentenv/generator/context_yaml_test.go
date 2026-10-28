@@ -85,7 +85,6 @@ func TestContextYAMLRoundTrip(t *testing.T) {
 			"os":          "darwin",
 			"arch":        "arm64",
 			"is_ci":       false,
-			"ci_mode":     "",
 			"working_dir": "/project",
 			"variables":   map[string]string{"CUSTOM": "false\nvalue: yes"},
 		},

@@ -38,8 +38,6 @@ func (c *Collector) Collect(_ context.Context) (map[string]any, error) {
 	result := make(map[string]any)
 
 	result["is_ci"] = os.Getenv("CI") == "true"
-	result["ci_mode"] = os.Getenv("CI")
-
 	result["os"] = runtime.GOOS
 	result["arch"] = runtime.GOARCH
 

@@ -498,9 +498,6 @@ func TestGeneratePrepareEnvInstructions(t *testing.T) {
 			if environment["is_ci"] != (tt.ci == "true") {
 				t.Errorf("incorrect CI flag: %+v", environment)
 			}
-			if len(tt.ci) > 0 && environment["ci_mode"] != tt.ci {
-				t.Errorf("incorrect raw CI value: %+v", environment)
-			}
 			if tt.actions == "true" {
 				ref := tt.ref
 

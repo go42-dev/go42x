@@ -47,7 +47,6 @@ jobs:
       - name: 'Install pinned packaging tools'
         uses: ./.github/actions/setup-tools
         with:
-          install-task: 'true'
           install-args: --locked goreleaser syft
       - name: 'Validate GoReleaser configuration'
         run: task release:check

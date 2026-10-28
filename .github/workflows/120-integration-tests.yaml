@@ -69,8 +69,6 @@ jobs:
             ${{ env.GO_CACHE_PREFIX }}-
       - name: 'Install mise and Task'
         uses: ./.github/actions/setup-tools
-        with:
-          install-task: 'true'
       - name: 'Download Go modules'
         run: go mod download
       - name: 'Run integration tests with coverage and race detector'

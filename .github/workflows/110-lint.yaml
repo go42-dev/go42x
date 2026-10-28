@@ -213,7 +213,6 @@ jobs:
       - name: 'Install pinned configuration linters'
         uses: ./.github/actions/setup-tools
         with:
-          install-task: 'true'
           install-args: --locked go:github.com/caarlos0/jsonfmt go:github.com/google/yamlfmt/cmd/yamlfmt tombi
       - name: 'Check JSON formatting'
         run: task --exit-code lint:json
@@ -289,7 +288,6 @@ jobs:
       - name: 'Install pinned agentic workflow tools'
         uses: ./.github/actions/setup-tools
         with:
-          install-task: 'true'
           install-args: --locked node actionlint gitleaks github:github/gh-aw
       - name: 'Generate and compile agentic workflows'
         env:
@@ -331,7 +329,6 @@ jobs:
       - name: 'Install pinned EditorConfig Checker'
         uses: ./.github/actions/setup-tools
         with:
-          install-task: 'true'
           install-args: --locked editorconfig-checker
       - name: 'Run editorconfig-checker'
         shell: bash
@@ -352,8 +349,6 @@ jobs:
           persist-credentials: false
       - name: 'Install mise and Task'
         uses: ./.github/actions/setup-tools
-        with:
-          install-task: 'true'
       - name: 'Set up documentation tools'
         run: task setup:docs
       - name: 'Check documentation'

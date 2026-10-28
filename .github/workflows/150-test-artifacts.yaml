@@ -55,8 +55,6 @@ jobs:
           go-version-file: 'go.mod'
       - name: 'Install mise and Task'
         uses: ./.github/actions/setup-tools
-        with:
-          install-task: 'true'
       - name: 'Validate native runner target'
         env:
           EXPECTED_GOOS: ${{ matrix.goos }}

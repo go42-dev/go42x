@@ -5,9 +5,6 @@ lockfile = true
 exec_auto_install = false
 disable_update_warning = true
 
-[env]
-GOTOOLCHAIN = "local"
-
 [tools]
 node = "26.7.0"
 markdownlint-cli2 = "0.23.2"

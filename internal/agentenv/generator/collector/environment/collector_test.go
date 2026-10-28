@@ -25,7 +25,6 @@ func TestEnvironmentCollector(t *testing.T) {
 	}
 	for key, want := range map[string]any{
 		"is_ci":       true,
-		"ci_mode":     "true",
 		"os":          runtime.GOOS,
 		"arch":        runtime.GOARCH,
 		"working_dir": wd,
@@ -46,7 +45,7 @@ func TestEnvironmentCollector(t *testing.T) {
 	}
 	t.Setenv("CI", "")
 	data, err = New(nil, ".").Collect(t.Context())
-	if err != nil || data["variables"] != nil || data["is_ci"] != false || data["ci_mode"] != "" {
+	if err != nil || data["variables"] != nil || data["is_ci"] != false {
 		t.Fatalf("unconfigured environment variables = %v, %v", data, err)
 	}
 }

@@ -200,7 +200,6 @@ jobs:
       - name: 'Install pinned release tools'
         uses: ./.github/actions/setup-tools
         with:
-          install-task: 'true'
           install-args: --locked goreleaser syft cosign
       - name: 'Validate GoReleaser configuration'
         run: task release:check
