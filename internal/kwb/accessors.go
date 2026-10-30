@@ -2,7 +2,7 @@ package kwb
 
 import "context"
 
-//go:generate mockgen -source $GOFILE -package mocks -destination mocks/mocks.go
+//go:generate go tool mockgen -source $GOFILE -package mocks -destination mocks/mocks.go
 
 // indexAccessor owns persisted generations and their read/write lifecycle.
 type indexAccessor interface {

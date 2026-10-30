@@ -6,7 +6,7 @@ import (
 	"github.com/go42-dev/go42x/internal/fspatch"
 )
 
-//go:generate mockgen -source $GOFILE -package mocks -destination mocks/mocks.go
+//go:generate go tool mockgen -source $GOFILE -package mocks -destination mocks/mocks.go
 
 type collectorAccessor interface {
 	Name() string

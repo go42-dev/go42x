@@ -95,7 +95,7 @@ jobs:
         run: |
           {
             echo "image_name=$(printf '%s' "$IMAGE_NAME" | LC_ALL=C tr '[:upper:]' '[:lower:]')"
-            echo "gopls_version=$(sed -n 's/^"go:golang.org\/x\/tools\/gopls" = "\(.*\)"$/\1/p' etc/mise.toml)"
+            echo "gopls_version=$(sed -n '/^\[tools\]$/,/^\[/s/^gopls = "\(.*\)"$/\1/p' etc/mise.toml)"
             echo "mise_version=$(sed -n 's/^min_version = "\(.*\)"$/\1/p' etc/mise.toml)"
             echo "go_version=$(awk '/^go / {print $2}' go.mod)"
             # Cache keys cannot contain commas from the multi-platform build list.

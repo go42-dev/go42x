@@ -88,7 +88,7 @@ tasks:
         version={{.VERSION | default "" | shellQuote}}
         if [ -z "$version" ]; then
           # Resolve new releases without the release-age delay or proxy metadata lag.
-          version=$(GOPROXY=direct mise latest --minimum-release-age 0s go:github.com/go42-dev/go42x)
+          version=$(mise latest --minimum-release-age 0s go42x)
         fi
         if [ -z "$version" ]; then
           printf 'mise did not resolve a go42x release.\n' >&2
@@ -108,7 +108,7 @@ tasks:
 
         # Bundle merging needs the installed release's original assets.
         task tool -- go42x agentenv export --output "$workspace/base"
-        if ! task bump TOOL=go:github.com/go42-dev/go42x "VERSION=$version"; then
+        if ! task bump TOOL=go42x "VERSION=$version"; then
           restore_pins
           exit 1
         fi
@@ -157,19 +157,34 @@ tasks:
       - 'mise exec -- vale --config etc/vale.ini sync'
       - "go mod download"
 
+  setup:gh-aw-description:
+    desc: "Install tools for description workflow preparation"
+    summary: |-
+      Usage: task setup:gh-aw-description
+      Installs instruction-generation and secret-scanning tools without the full development environment.
+      This repository still uses checked-out source through task x for instruction generation and indexing.
+    cmds:
+      - "mise install --locked go42x gitleaks"
+
   setup:generators:
     desc: "Install pinned code and agentic workflow generation tools"
+    summary: |-
+      Usage: task setup:generators
     cmds:
-      - "mise install --locked node actionlint go:go.uber.org/mock/mockgen github:github/gh-aw"
+      - "mise install --locked node actionlint gitleaks gh-aw"
 
   setup:docs:
     desc: "Install pinned documentation tools and Vale styles"
+    summary: |-
+      Usage: task setup:docs
     cmds:
       - "mise install --locked node markdownlint-cli2 vale"
       - 'mise exec -- vale --config etc/vale.ini sync'
 
   setup:release:
     desc: "Install pinned release tools and Go modules"
+    summary: |-
+      Usage: task setup:release
     cmds:
       - "mise install --locked goreleaser syft cosign"
       - "go mod download"
@@ -379,7 +394,7 @@ tasks:
         sh: "awk '/^go / {print $2}' go.mod"
       GOPLS_VERSION:
         sh: >-
-          sed -n 's/^"go:golang.org\/x\/tools\/gopls" = "\(.*\)"$/\1/p' etc/mise.toml
+          sed -n '/^\[tools\]$/,/^\[/s/^gopls = "\(.*\)"$/\1/p' etc/mise.toml
       MISE_VERSION:
         sh: >-
           sed -n 's/^min_version = "\(.*\)"$/\1/p' etc/mise.toml

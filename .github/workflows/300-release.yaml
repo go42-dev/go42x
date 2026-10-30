@@ -194,13 +194,11 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: 'Setup Go'
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: 'go.mod'
+        uses: ./.github/actions/setup-go
       - name: 'Install pinned release tools'
         uses: ./.github/actions/setup-tools
         with:
-          install-args: --locked goreleaser syft cosign
+          setup-task: setup:release
       - name: 'Validate GoReleaser configuration'
         run: task release:check
       - name: 'Prepare local release tag'

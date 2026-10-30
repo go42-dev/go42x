@@ -66,15 +66,11 @@ jobs:
         with:
           persist-credentials: false
       - name: 'Setup Go'
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: 'go.mod'
+        uses: ./.github/actions/setup-go
       - name: 'Install pinned security tools'
         uses: ./.github/actions/setup-tools
         with:
-          install-args: --locked go:github.com/securego/gosec/v2/cmd/gosec
-          # Rebuild the cached binary when the project's Go version changes.
-          cache-key-prefix: mise-gosec-v1-${{ hashFiles('go.mod') }}
+          install-args: --locked gosec
       - name: 'Run Gosec security scanner'
         shell: bash
         run: task lint:gosec
@@ -93,15 +89,11 @@ jobs:
         with:
           persist-credentials: false
       - name: 'Setup Go'
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: 'go.mod'
+        uses: ./.github/actions/setup-go
       - name: 'Install pinned govulncheck'
         uses: ./.github/actions/setup-tools
         with:
-          install-args: --locked go:golang.org/x/vuln/cmd/govulncheck
-          # Rebuild the cached binary when the project's Go version changes.
-          cache-key-prefix: mise-govulncheck-v1-${{ hashFiles('go.mod') }}
+          install-args: --locked govulncheck
       # Match the CLI entry point and all GoReleaser build platforms.
       - name: 'Run Go vulnerability check (linux/amd64)'
         shell: bash
@@ -132,9 +124,7 @@ jobs:
         with:
           persist-credentials: false
       - name: 'Setup Go'
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
+        uses: ./.github/actions/setup-go
       - name: 'Set up project tooling'
         uses: ./.github/actions/setup-tools
         with:

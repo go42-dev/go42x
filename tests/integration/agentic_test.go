@@ -72,7 +72,11 @@ func TestCompiledWorkflowBoundaries(t *testing.T) {
 					if fmt.Sprint(step.With["pull-mcp-image"]) != "true" {
 						t.Fatalf("agent preparation does not enable MCP image pulling: %v", step.With)
 					}
-					if setup, exists := step.With["setup-task"]; exists && setup != "setup" {
+					setup := fmt.Sprint(step.With["setup-task"])
+					if name == "910-aw-description" && setup != "setup:gh-aw-description" {
+						t.Fatalf("description preparation uses setup %q, want setup:gh-aw-description", setup)
+					}
+					if name == "920-aw-agent" && setup != "<nil>" && setup != "setup" {
 						t.Fatalf("agent preparation overrides the full development setup: %v", setup)
 					}
 				}

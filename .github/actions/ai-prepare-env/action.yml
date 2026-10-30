@@ -8,6 +8,10 @@ inputs:
     description: 'Task used to install project tools'
     required: false
     default: 'setup'
+  go-cache:
+    description: 'Restore Go caches; source-based task x requires them even for description preparation'
+    required: false
+    default: 'true'
   providers:
     description: 'Exact provider list; empty generates shared instructions only'
     required: false
@@ -28,6 +32,7 @@ runs:
       uses: ./.github/actions/prepare-env
       with:
         setup-task: ${{ inputs.setup-task }}
+        go-cache: ${{ inputs.go-cache }}
     # -----
     - name: 'Generate ai agent environment'
       env:
