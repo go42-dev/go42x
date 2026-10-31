@@ -427,6 +427,79 @@ func TestAgentEnvUpdateMergesOriginalBundle(t *testing.T) {
 	}
 }
 
+func TestAgentEnvUpdateMergesSchemaRevisions(t *testing.T) {
+	t.Parallel()
+	const directive = "# yaml-language-server: $schema="
+	const previousSchema = directive +
+		"https://raw.githubusercontent.com/go42-dev/go42x/aa1602e76e0a373536eb51643d153d985a86afc9/assets/schemas/go42x.schema.yaml"
+	for _, tt := range []struct {
+		name     string
+		header   string
+		managed  bool
+		conflict bool
+	}{
+		{
+			name:    "release tag and commit refs",
+			managed: true,
+			header: directive +
+				"https://raw.githubusercontent.com/go42-dev/go42x/v0.52.0/assets/schemas/go42x.schema.yaml",
+		},
+		{
+			name:   "custom schema",
+			header: directive + "https://example.com/project.schema.yaml",
+		},
+		{
+			name: "removed schema",
+		},
+		{
+			name:     "configuration conflict",
+			header:   previousSchema,
+			conflict: true,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			p := newMergeProject(t)
+			incoming := p.read(t, ".go42x/go42x.yaml")
+			_, schema, found := strings.Cut(incoming, directive)
+			if !found {
+				t.Fatal("bundled configuration has no schema directive")
+			}
+			schema, _, _ = strings.Cut(schema, "\n")
+			incomingHeader := directive + schema
+			base := strings.Replace(incoming, incomingHeader, previousSchema, 1)
+			base = strings.Replace(base, "temp-dir: .build", "temp-dir: .build-old", 1)
+			current := strings.Replace(base, previousSchema, tt.header, 1)
+			current = strings.Replace(current, "name: go42", "name: project-custom", 1)
+			if tt.conflict {
+				current = strings.Replace(current, "temp-dir: .build-old", "temp-dir: .build-local", 1)
+			}
+			p.write(t, ".build/base/go42x.yaml", base)
+			p.write(t, ".go42x/go42x.yaml", current)
+			before := mergeSourceSnapshot(t, p)
+			exitCode := 0
+			if tt.conflict {
+				exitCode = 1
+			}
+			result := p.run(t, exitCode, "agentenv", "update", "--base", ".build/base", "--json")
+			if tt.conflict {
+				if !strings.Contains(result.stdout, "conflicts in go42x.yaml") ||
+					!maps.Equal(before, mergeSourceSnapshot(t, p)) {
+					t.Fatalf("configuration conflict was not preserved: %s", result.stdout)
+				}
+				return
+			}
+			want := strings.Replace(incoming, "name: go42", "name: project-custom", 1)
+			if !tt.managed {
+				want = strings.Replace(want, incomingHeader, tt.header, 1)
+			}
+			if got := p.read(t, ".go42x/go42x.yaml"); got != want {
+				t.Fatalf("schema merge lost project or incoming changes:\n%s", got)
+			}
+		})
+	}
+}
+
 func TestAgentEnvUpdateMergeConflictsPreserveSources(t *testing.T) {
 	t.Parallel()
 	for _, conflict := range []string{"content", "add-add", "modify-delete", "delete-modify", "symlink", "missing-git"} {

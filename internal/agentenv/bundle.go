@@ -21,9 +21,9 @@ import (
 )
 
 const (
-	templateSchemaURLBase = "https://raw.githubusercontent.com/go42-dev/go42x/master/"
-	schemaPathProject     = "assets/schemas/go42x.schema.yaml"
-	schemaPathVendor      = "assets/schemas/vendor.schema.yaml"
+	bundledSchemaURLBase = "https://raw.githubusercontent.com/go42-dev/go42x/"
+	schemaPathProject    = "assets/schemas/go42x.schema.yaml"
+	schemaPathVendor     = "assets/schemas/vendor.schema.yaml"
 )
 
 const bundleMergeTimeout = 30 * time.Second
@@ -40,7 +40,8 @@ type bundleMerge struct {
 	conflict bool
 }
 
-// pinBundledSchemaURL pins a bundled configuration's editor schema to this binary's source revision.
+// pinBundledSchemaURL pins an official editor schema to this binary's source revision.
+// Custom schema directives and unrelated content are preserved.
 func pinBundledSchemaURL(path string, data []byte) []byte {
 	var schemaPath string
 	switch path {
@@ -51,12 +52,25 @@ func pinBundledSchemaURL(path string, data []byte) []byte {
 	default:
 		return data
 	}
-	return bytes.Replace(
-		data,
-		[]byte(templateSchemaURLBase+schemaPath),
-		[]byte(buildinfo.SourceURL(schemaPath)),
-		1,
-	)
+	lines := bytes.Split(data, []byte("\n"))
+	for i, line := range lines {
+		url, found := bytes.CutPrefix(line, []byte("# yaml-language-server: $schema="))
+		if !found {
+			continue
+		}
+		url = bytes.TrimSpace(url)
+		ref, found := strings.CutPrefix(string(url), bundledSchemaURLBase)
+		if !found {
+			continue
+		}
+		ref, found = strings.CutSuffix(ref, "/"+schemaPath)
+		if !found || len(ref) == 0 {
+			continue
+		}
+		lines[i] = bytes.Replace(line, url, []byte(buildinfo.SourceURL(schemaPath)), 1)
+		return bytes.Join(lines, []byte("\n"))
+	}
+	return data
 }
 
 func extractBundle(ctx context.Context, targetDir string) error {
@@ -267,6 +281,12 @@ func mergeBundleFile(
 	workspace, path string,
 	base, current, incoming bundleFile,
 ) (bundleMerge, error) {
+	if path == config.FileProject {
+		// Official schema refs follow the incoming release, rather than participating in content conflicts.
+		base.data = pinBundledSchemaURL(path, base.data)
+		current.data = pinBundledSchemaURL(path, current.data)
+		incoming.data = pinBundledSchemaURL(path, incoming.data)
+	}
 	if strings.HasPrefix(path, "upstream/") || path == vendoring.ManifestFile || path == vendoring.LockFile {
 		return bundleMerge{file: incoming}, nil
 	}

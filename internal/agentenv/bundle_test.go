@@ -28,20 +28,39 @@ func TestPinBundledSchemaURL(t *testing.T) {
 		},
 	} {
 		t.Run(tt.path, func(t *testing.T) {
-			data := []byte(
-				"# yaml-language-server: $schema=" + templateSchemaURLBase + tt.schema + "\nversion: \"1.0\"\n",
-			)
-			original := bytes.Clone(data)
-			pinned := pinBundledSchemaURL(tt.path, data)
-			want := "# yaml-language-server: $schema=" + buildinfo.SourceURL(tt.schema) + "\nversion: \"1.0\"\n"
+			for _, ref := range []string{"master", "v0.52.0", "aa1602e76e0a373536eb51643d153d985a86afc9"} {
+				t.Run(ref, func(t *testing.T) {
+					data := []byte(
+						"# yaml-language-server: $schema=https://raw.githubusercontent.com/go42-dev/go42x/" +
+							ref + "/" + tt.schema + "\nversion: \"1.0\"\n",
+					)
+					original := bytes.Clone(data)
+					pinned := pinBundledSchemaURL(tt.path, data)
+					want := "# yaml-language-server: $schema=" + buildinfo.SourceURL(tt.schema) + "\nversion: \"1.0\"\n"
 
-			if string(pinned) != want || !bytes.Equal(data, original) {
-				t.Fatalf("pinned schema = %q, original = %q", pinned, data)
-			}
-			if got := pinBundledSchemaURL("upstream/example.md", data); !bytes.Equal(got, original) {
-				t.Fatalf("rewrote a schema URL in an upstream document: %q", got)
+					if string(pinned) != want || !bytes.Equal(data, original) {
+						t.Fatalf("pinned schema = %q, original = %q", pinned, data)
+					}
+					if got := pinBundledSchemaURL("upstream/example.md", data); !bytes.Equal(got, original) {
+						t.Fatalf("rewrote a schema URL in an upstream document: %q", got)
+					}
+				})
 			}
 		})
+	}
+}
+
+func TestPinBundledSchemaURLPreservesCustomSchemas(t *testing.T) {
+	for _, data := range []string{
+		"# yaml-language-server: $schema=https://example.com/schema.yaml\n",
+		"# yaml-language-server: $schema=https://raw.githubusercontent.com/other/project/main/assets/schemas/go42x.schema.yaml\n",
+		"# yaml-language-server: $schema=https://raw.githubusercontent.com/go42-dev/go42x/main/assets/schemas/custom.schema.yaml\n",
+		"# Example: https://raw.githubusercontent.com/go42-dev/go42x/master/assets/schemas/go42x.schema.yaml\n",
+		"version: \"1.0\"\n",
+	} {
+		if got := pinBundledSchemaURL(config.FileProject, []byte(data)); string(got) != data {
+			t.Errorf("changed custom schema or unrelated content: %q", got)
+		}
 	}
 }
 
