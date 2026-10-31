@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -18,8 +19,12 @@ func TestGoCacheIdentity(t *testing.T) {
 	var action struct {
 		Runs struct {
 			Steps []struct {
-				ID  string
-				Run string
+				ID   string
+				Run  string
+				Uses string
+				With struct {
+					Path string
+				}
 			}
 		}
 	}
@@ -62,11 +67,17 @@ func TestGoCacheIdentity(t *testing.T) {
 	run := func(t *testing.T, changes map[string]string, wantError bool) map[string]string {
 		t.Helper()
 		outputPath := filepath.Join(t.TempDir(), "output")
+		envPath := filepath.Join(t.TempDir(), "environment")
+		if err := os.WriteFile(envPath, nil, 0600); err != nil {
+			t.Fatal(err)
+		}
 		env := map[string]string{
 			"GOTOOLCHAIN":               "local",
 			"GOCACHE":                   filepath.Join(root, "build cache"),
 			"GOMODCACHE":                filepath.Join(root, "module cache"),
 			"GITHUB_OUTPUT":             outputPath,
+			"GITHUB_ENV":                envPath,
+			"GITHUB_JOB":                "test-job",
 			"GITHUB_SHA":                strings.Repeat("f", 40),
 			"PROJECT_CACHE_ENABLED":     "true",
 			"PROJECT_CACHE_SCOPE":       "tests",
@@ -88,7 +99,7 @@ func TestGoCacheIdentity(t *testing.T) {
 		output, err := cmd.CombinedOutput()
 		if wantError {
 			if err == nil {
-				t.Fatal("invalid cache scope unexpectedly succeeded")
+				t.Fatal("invalid cache metadata unexpectedly succeeded")
 			}
 			return nil
 		}
@@ -112,6 +123,39 @@ func TestGoCacheIdentity(t *testing.T) {
 				values[name] = value
 			}
 		}
+		content, err = os.ReadFile(envPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		persistent := make(map[string]string)
+		for line := range strings.SplitSeq(string(content), "\n") {
+			if name, value, ok := strings.Cut(line, "="); ok {
+				persistent[name] = value
+			}
+		}
+		// Nested post steps retain the job environment but lose the steps context.
+		expression := regexp.MustCompile(`\$\{\{\s*([^{}]+?)\s*\}\}`)
+		expected := map[string]bool{
+			values["go-mod"]:   true,
+			values["go-build"]: true,
+		}
+		for _, step := range action.Runs.Steps {
+			if !strings.HasPrefix(step.Uses, "actions/cache@") {
+				continue
+			}
+			path := expression.ReplaceAllStringFunc(step.With.Path, func(value string) string {
+				name := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(value, "${{"), "}}"))
+				return persistent[strings.TrimPrefix(name, "env.")]
+			})
+			path = strings.TrimSpace(path)
+			if !expected[path] {
+				t.Fatalf("cache path did not survive post-job context loss: %q", path)
+			}
+			delete(expected, path)
+		}
+		if len(expected) > 0 {
+			t.Fatalf("missing persistent cache paths: %v", expected)
+		}
 		return values
 	}
 
@@ -123,6 +167,23 @@ func TestGoCacheIdentity(t *testing.T) {
 		original["go-mod"] != filepath.Join(root, "module cache") {
 		t.Fatal("cache paths with spaces were not preserved")
 	}
+	t.Run("default caller scope", func(t *testing.T) {
+		first := run(t, map[string]string{"PROJECT_CACHE_SCOPE": "", "GITHUB_JOB": "gosec"}, false)
+		second := run(t, map[string]string{"PROJECT_CACHE_SCOPE": "", "GITHUB_JOB": "agentic-lint"}, false)
+		if first["modules-key"] != second["modules-key"] || first["build-key"] == second["build-key"] {
+			t.Fatal("default job scopes must isolate compilation while sharing modules")
+		}
+		if !strings.Contains(first["build-key"], "-gosec-") ||
+			!strings.Contains(second["build-key"], "-agentic-lint-") {
+			t.Fatal("default compilation scopes do not identify their caller jobs")
+		}
+	})
+	t.Run("explicit sharing", func(t *testing.T) {
+		changed := run(t, map[string]string{"GITHUB_JOB": "another-job"}, false)
+		if original["modules-key"] != changed["modules-key"] || original["build-key"] != changed["build-key"] {
+			t.Fatal("explicit workload scope must allow cache sharing across jobs")
+		}
+	})
 
 	for _, tt := range []struct {
 		name        string
@@ -167,6 +228,14 @@ func TestGoCacheIdentity(t *testing.T) {
 		t.Fatal("source change cannot reuse the previous compilation cache")
 	}
 	run(t, map[string]string{"PROJECT_CACHE_SCOPE": "invalid/scope"}, true)
+	run(t, map[string]string{"PROJECT_CACHE_SCOPE": "", "GITHUB_JOB": ""}, true)
+	t.Run("missing cache paths", func(t *testing.T) {
+		bin := t.TempDir()
+		if err := os.WriteFile(filepath.Join(bin, "go"), []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil {
+			t.Fatal(err)
+		}
+		run(t, map[string]string{"PATH": bin + string(os.PathListSeparator) + os.Getenv("PATH")}, true)
+	})
 	disabled := run(
 		t,
 		map[string]string{"PROJECT_CACHE_ENABLED": "false", "PROJECT_CACHE_SCOPE": "invalid/scope"},

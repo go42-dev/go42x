@@ -247,6 +247,8 @@ jobs:
         uses: ./.github/actions/setup-go
         with:
           cache: true
+          # Build the source CLI used during agent preparation.
+          cache-scope: agent
       - name: 'Install pinned agentic workflow tools'
         uses: ./.github/actions/setup-tools
         with:
