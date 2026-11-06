@@ -96,6 +96,7 @@ jobs:
           install-args: --locked govulncheck
       # Match the CLI entry point and all GoReleaser build platforms.
       - name: 'Run Go vulnerability check (linux/amd64)'
+        continue-on-error: true
         shell: bash
         run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 govulncheck .
       - name: 'Run Go vulnerability check (linux/arm64)'

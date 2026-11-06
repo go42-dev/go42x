@@ -75,6 +75,15 @@ func probeMCP(ctx context.Context, server provider.MCPServer, timeout time.Durat
 
 	var c *client.Client
 	var err error
+	// Reject redirects so an MCP endpoint cannot send probes and configured credential headers to another destination.
+	// A timeout alone does not prevent the default HTTP client from following redirects.
+	// @see https://pkg.go.dev/vuln/GO-2026-6911
+	httpClient := &http.Client{
+		Timeout: timeout,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 	switch server.Transport() {
 	case provider.MCPServerTypeStdio:
 		command := server.Command
@@ -97,13 +106,13 @@ func probeMCP(ctx context.Context, server provider.MCPServer, timeout time.Durat
 		c, err = client.NewStreamableHttpClient(
 			url,
 			transport.WithHTTPHeaders(headers),
-			transport.WithHTTPBasicClient(&http.Client{Timeout: timeout}),
+			transport.WithHTTPBasicClient(httpClient),
 		)
 	case provider.MCPServerTypeSSE:
 		c, err = client.NewSSEMCPClient(
 			url,
 			client.WithHeaders(headers),
-			client.WithHTTPClient(&http.Client{Timeout: timeout}),
+			client.WithHTTPClient(httpClient),
 		)
 	}
 	failure := func() check.Result {
