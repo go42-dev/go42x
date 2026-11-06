@@ -92,10 +92,11 @@ RUN apk add --no-cache \
     gcc=15.2.0-r5 \
     git=2.54.0-r0 \
     libcrypto3=3.5.9-r0 \
+    libexpat=2.10.0-r0 \
     libssl3=3.5.9-r0 \
     musl-dev=1.2.6-r3 \
     tini=0.19.0-r3 \
-    tzdata=2026e-r0 \
+    tzdata=2026f-r0 \
     zlib=1.3.2-r1
 
 # Match GitHub's hosted Linux runner so mounted instructions and indexes remain accessible.
