@@ -100,6 +100,10 @@ func (g *Generator) Prepare(ctx context.Context, clean bool) (*fspatch.Plan, err
 		return nil, fmt.Errorf("failed to prepare shared instructions: %w", err)
 	}
 
+	if err := g.prepareSkills(plan, clean); err != nil {
+		return nil, fmt.Errorf("failed to prepare skills: %w", err)
+	}
+
 	var preparationErrors []error
 	for _, name := range slices.Sorted(maps.Keys(g.config.Providers)) {
 		if !g.config.ProviderEnabled(name) {

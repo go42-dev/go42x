@@ -644,7 +644,7 @@ func TestDefaultConfig(t *testing.T) {
 	if len(cfg.Providers) != 6 || len(cfg.MCP) != 8 {
 		t.Fatalf("default providers/servers = %d/%d", len(cfg.Providers), len(cfg.MCP))
 	}
-	paths := []string{cfg.Context.Template, cfg.Context.ChunksDir}
+	paths := []string{cfg.Context.Template, cfg.Context.ChunksDir, cfg.Context.SkillsDir}
 	for _, p := range cfg.Providers {
 		paths = append(paths, p.Agents...)
 	}

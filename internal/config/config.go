@@ -76,6 +76,7 @@ func (p Project) WithDefaults() Project {
 type Context struct {
 	Template  string   `yaml:"template"`
 	ChunksDir string   `yaml:"chunks-dir"`
+	SkillsDir string   `yaml:"skills-dir,omitempty"`
 	TempDir   string   `yaml:"temp-dir,omitempty"`
 	GoEnv     []string `yaml:"go-env,omitempty"`
 }

@@ -6,6 +6,7 @@
 .claude/
 .codex/
 .agents/plugins/project-tools/
+.agents/skills/
 .crush/
 .crush.json
 AGENTS.md

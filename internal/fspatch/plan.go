@@ -22,6 +22,7 @@ const (
 	KindInstructions Kind = "instructions"
 	KindSettings     Kind = "settings"
 	KindSources      Kind = "sources"
+	KindSkills       Kind = "skills"
 )
 
 // Kind groups files into backup subdirectories.
