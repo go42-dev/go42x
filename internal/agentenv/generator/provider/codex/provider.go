@@ -68,6 +68,11 @@ func New(
 	return &Provider{settings: settings}
 }
 
+// SkillDirs lists the project skill directory that Codex reads.
+func (p *Provider) SkillDirs() []string {
+	return []string{provider.SharedSkillsDir}
+}
+
 func (p *Provider) Prepare(plan *fspatch.Plan, _ map[string]any) error {
 	if err := p.prepareConfigFiles(plan); err != nil {
 		return fmt.Errorf("failed to prepare config files: %w", err)

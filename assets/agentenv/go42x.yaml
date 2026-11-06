@@ -31,8 +31,9 @@ context:
   template: agents.tpl.md
   chunks-dir: 'chunks/'
   # Agent skills, relative to .go42x: one subdirectory with a SKILL.md per skill.
-  # Generation copies them to .claude/skills for Claude and to .agents/skills for
-  # Codex, Antigravity, and Copilot when Claude is disabled. Omit to install no skills.
+  # Generation copies them to the skill directories of enabled providers: .claude/skills
+  # for Claude, .agents/skills for Codex, Antigravity, and Copilot, and both for gh-aw,
+  # whose workflows may run any engine. Omit to install no skills.
   skills-dir: 'skills/'
   # Directory for intermediate agent outputs; relative paths use the project root.
   # Omitted or empty defaults to .build. Templates use .context.TempDir.

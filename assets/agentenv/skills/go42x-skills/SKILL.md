@@ -11,11 +11,13 @@ and description until a task matches; then they load the rest.
 In a go42x project, skill sources live in `.go42x/skills/<name>/`, set by `context.skills-dir` in
 `.go42x/go42x.yaml`. `go42x agentenv generate` copies every skill to the directories that enabled agents read:
 
-| Agent              | Directory                                                             |
-| ------------------ | --------------------------------------------------------------------- |
-| Claude Code        | `.claude/skills/`                                                     |
-| Codex, Antigravity | `.agents/skills/`                                                     |
-| Copilot            | `.claude/skills/` when Claude is enabled, otherwise `.agents/skills/` |
+| Agent                       | Directory                              |
+| --------------------------- | -------------------------------------- |
+| Claude Code                 | `.claude/skills/`                      |
+| Codex, Antigravity, Copilot | `.agents/skills/`                      |
+| gh-aw workflows             | both, for whichever engine a run uses  |
+
+Copilot also reads `.claude/skills/`, so with Claude and Copilot both enabled it sees each skill twice.
 
 Edit the sources, not the copies. Generation replaces the copies it wrote, removes copies whose source is gone,
 and never touches skills added to those directories by hand. Each directory keeps a `.go42x-skills.json` list of

@@ -40,6 +40,7 @@ pre-agent-steps:
     uses: ./.github/actions/ai-prepare-env
     with:
       setup-task: setup:gh-aw-description
+      providers: gh-aw
       pull-mcp-image: true
 network:
   allowed: [defaults, github, mcp.context7.com]

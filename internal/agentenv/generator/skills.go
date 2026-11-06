@@ -17,11 +17,6 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/go42-dev/go42x/internal/agentenv/generator/provider"
-	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/antigravity"
-	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/claude"
-	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/codex"
-	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/copilot"
 	"github.com/go42-dev/go42x/internal/fspatch"
 )
 
@@ -72,21 +67,21 @@ func (g *Generator) prepareSkills(plan *fspatch.Plan, clean bool) error {
 	return nil
 }
 
-// skillTargets lists the project skill directories read by enabled providers.
-// Copilot also reads .claude/skills, so it needs the shared directory only without Claude.
+// skillTargets lists the project skill directories that enabled providers read,
+// each once, in provider name order.
 func (g *Generator) skillTargets() []string {
-	claudeEnabled := g.config.ProviderEnabled(claude.Name)
-
 	var targets []string
-	if claudeEnabled {
-		targets = append(targets, claude.SkillsDir)
+	for _, name := range slices.Sorted(maps.Keys(g.config.Providers)) {
+		p, exists := g.providers[name]
+		if !g.config.ProviderEnabled(name) || !exists {
+			continue
+		}
+		for _, dir := range p.SkillDirs() {
+			if !slices.Contains(targets, dir) {
+				targets = append(targets, dir)
+			}
+		}
 	}
-	if g.config.ProviderEnabled(codex.Name) ||
-		g.config.ProviderEnabled(antigravity.Name) ||
-		(g.config.ProviderEnabled(copilot.Name) && !claudeEnabled) {
-		targets = append(targets, provider.SharedSkillsDir)
-	}
-
 	return targets
 }
 

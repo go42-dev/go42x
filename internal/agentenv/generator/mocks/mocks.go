@@ -121,3 +121,17 @@ func (mr *MockproviderAccessorMockRecorder) Prepare(plan, ctxData any) *gomock.C
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Prepare", reflect.TypeOf((*MockproviderAccessor)(nil).Prepare), plan, ctxData)
 }
+
+// SkillDirs mocks base method.
+func (m *MockproviderAccessor) SkillDirs() []string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SkillDirs")
+	ret0, _ := ret[0].([]string)
+	return ret0
+}
+
+// SkillDirs indicates an expected call of SkillDirs.
+func (mr *MockproviderAccessorMockRecorder) SkillDirs() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SkillDirs", reflect.TypeOf((*MockproviderAccessor)(nil).SkillDirs))
+}

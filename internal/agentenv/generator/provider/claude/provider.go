@@ -92,6 +92,11 @@ func New(
 	}
 }
 
+// SkillDirs lists the project skill directory that Claude Code reads.
+func (p *Provider) SkillDirs() []string {
+	return []string{SkillsDir}
+}
+
 func (p *Provider) Prepare(
 	plan *fspatch.Plan,
 	ctxData map[string]any,

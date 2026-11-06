@@ -350,6 +350,7 @@ func TestGeneratorContextAndProviderErrors(t *testing.T) {
 	failures := []error{errors.New("claude failed"), errors.New("antigravity failed")}
 	for i, name := range []string{"claude", "antigravity"} {
 		p := mocks.NewMockproviderAccessor(ctrl)
+		p.EXPECT().SkillDirs().Return(nil).AnyTimes()
 		p.EXPECT().
 			Prepare(gomock.Any(), gomock.Any()).
 			DoAndReturn(func(_ *fspatch.Plan, data map[string]any) error {

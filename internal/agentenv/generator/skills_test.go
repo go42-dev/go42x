@@ -48,6 +48,7 @@ func generateSkills(root, skillsDir string, providers ...string) error {
 
 	logger := slog.New(slog.DiscardHandler)
 	g := NewGenerator(logger, cfg, filepath.Join(root, config.Directory), root)
+	g.registerProviders()
 	plan := fspatch.NewPlan(logger, root, filepath.Join(root, config.Directory, "backups"))
 	if err := g.prepareSkills(plan, false); err != nil {
 		return err
@@ -77,16 +78,26 @@ func TestPrepareSkillsTargetsEnabledProviders(t *testing.T) {
 		{name: "antigravity", providers: []string{antigravity.Name}, want: []string{provider.SharedSkillsDir}},
 		{name: "copilot", providers: []string{copilot.Name}, want: []string{provider.SharedSkillsDir}},
 		{
-			name:      "copilot reads claude skills",
+			name:      "claude and copilot",
 			providers: []string{claude.Name, copilot.Name},
-			want:      []string{claude.SkillsDir},
+			want:      []string{claude.SkillsDir, provider.SharedSkillsDir},
 		},
 		{
 			name:      "claude and codex",
 			providers: []string{claude.Name, codex.Name},
 			want:      []string{claude.SkillsDir, provider.SharedSkillsDir},
 		},
-		{name: "no skill support", providers: []string{crush.Name, ghaw.Name}},
+		{
+			name:      "gh-aw writes every directory",
+			providers: []string{ghaw.Name},
+			want:      []string{claude.SkillsDir, provider.SharedSkillsDir},
+		},
+		{
+			name:      "gh-aw with claude",
+			providers: []string{claude.Name, ghaw.Name},
+			want:      []string{claude.SkillsDir, provider.SharedSkillsDir},
+		},
+		{name: "no skill support", providers: []string{crush.Name}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()

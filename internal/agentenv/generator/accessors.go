@@ -16,4 +16,5 @@ type collectorAccessor interface {
 
 type providerAccessor interface {
 	Prepare(plan *fspatch.Plan, ctxData map[string]any) error
+	SkillDirs() []string
 }

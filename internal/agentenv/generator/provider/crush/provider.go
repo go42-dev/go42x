@@ -63,6 +63,11 @@ func New(
 	return &Provider{settings: settings}
 }
 
+// SkillDirs returns nil: Crush has no documented project skill directory.
+func (p *Provider) SkillDirs() []string {
+	return nil
+}
+
 func (p *Provider) Prepare(plan *fspatch.Plan, _ map[string]any) error {
 	if err := p.prepareConfigFiles(plan); err != nil {
 		return fmt.Errorf("failed to prepare config files: %w", err)

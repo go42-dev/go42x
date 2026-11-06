@@ -13,6 +13,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider"
+	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/claude"
 	"github.com/go42-dev/go42x/internal/fspatch"
 )
 
@@ -86,6 +87,11 @@ func New(
 	_ string,
 ) *Provider {
 	return &Provider{settings: settings}
+}
+
+// SkillDirs lists the skill directories of every engine a workflow may run.
+func (p *Provider) SkillDirs() []string {
+	return []string{claude.SkillsDir, provider.SharedSkillsDir}
 }
 
 func (p *Provider) Prepare(plan *fspatch.Plan, _ map[string]any) error {
