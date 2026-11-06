@@ -171,6 +171,58 @@ func TestPrepareSkillsRemovesOnlyGeneratedFiles(t *testing.T) {
 	}
 }
 
+func TestPrepareSkillsKeepsCopiesOutOfGit(t *testing.T) {
+	t.Parallel()
+	block := "# go42x -- START\n/.gitignore\n/.go42x-skills.json\n/alpha/\n# go42x -- END\n"
+	for _, tt := range []struct {
+		name        string
+		userRules   string
+		wantWith    string
+		wantWithout string // empty means the file is removed
+	}{
+		{name: "new file", wantWith: block},
+		{name: "user rules", userRules: "user-rule\n", wantWith: "user-rule\n\n" + block, wantWithout: "user-rule\n"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			files := map[string]string{
+				".go42x/skills/alpha/SKILL.md":   skillSource("alpha"),
+				".agents/skills/manual/SKILL.md": skillSource("manual"),
+			}
+			if len(tt.userRules) > 0 {
+				files[".agents/skills/.gitignore"] = tt.userRules
+			}
+			writeProjectFiles(t, root, files)
+			gitIgnore := filepath.Join(root, provider.SharedSkillsDir, ".gitignore")
+
+			if err := generateSkills(root, "skills/", codex.Name); err != nil {
+				t.Fatal(err)
+			}
+			if got, err := os.ReadFile(gitIgnore); err != nil || string(got) != tt.wantWith {
+				t.Fatalf(".gitignore = %q, %v; want %q", got, err, tt.wantWith)
+			}
+
+			if err := os.RemoveAll(filepath.Join(root, ".go42x/skills/alpha")); err != nil {
+				t.Fatal(err)
+			}
+			if err := generateSkills(root, "skills/", codex.Name); err != nil {
+				t.Fatal(err)
+			}
+			got, err := os.ReadFile(gitIgnore)
+			switch {
+			case len(tt.wantWithout) == 0 && !os.IsNotExist(err):
+				t.Fatalf(".gitignore = %q, %v; want it removed", got, err)
+			case len(tt.wantWithout) > 0 && (err != nil || string(got) != tt.wantWithout):
+				t.Fatalf(".gitignore = %q, %v; want %q", got, err, tt.wantWithout)
+			}
+			if !exists(t, root, provider.SharedSkillsDir+"/manual/SKILL.md") {
+				t.Error("generation removed a skill added by hand")
+			}
+		})
+	}
+}
+
 func TestPrepareSkillsPreservesDisabledProviderDirectories(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()

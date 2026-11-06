@@ -14,8 +14,8 @@ func TestAgentEnvSkills(t *testing.T) {
 	if !strings.Contains(p.read(t, ".go42x/skills/go42x-skills/SKILL.md"), "name: go42x-skills\n") {
 		t.Fatal("init did not install the bundled example skill")
 	}
-	if !strings.Contains(p.read(t, ".gitignore"), "\n.agents/skills/\n") {
-		t.Error("init did not ignore generated shared skills")
+	if strings.Contains(p.read(t, ".gitignore"), ".agents/skills") {
+		t.Error("the project .gitignore hides skills that users commit to .agents/skills")
 	}
 
 	config := strings.Replace(p.read(t, ".go42x/go42x.yaml"),
@@ -36,6 +36,9 @@ func TestAgentEnvSkills(t *testing.T) {
 			if p.read(t, dir+"/"+file) != p.read(t, ".go42x/skills/"+file) {
 				t.Errorf("%s/%s does not match its source", dir, file)
 			}
+		}
+		if !strings.Contains(p.read(t, dir+"/.gitignore"), "\n/go42x-skills/\n/review/\n") {
+			t.Errorf("%s/.gitignore does not list the generated skills", dir)
 		}
 	}
 

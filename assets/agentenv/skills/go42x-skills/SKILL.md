@@ -19,7 +19,8 @@ In a go42x project, skill sources live in `.go42x/skills/<name>/`, set by `conte
 
 Edit the sources, not the copies. Generation replaces the copies it wrote, removes copies whose source is gone,
 and never touches skills added to those directories by hand. Each directory keeps a `.go42x-skills.json` list of
-the files that generation wrote.
+the files that generation wrote and a `.gitignore` block that hides the copies from Git, so only skills added by
+hand show up as changes.
 
 ## Write a skill
 

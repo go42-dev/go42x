@@ -55,6 +55,38 @@ func (p *Plan) WriteManagedBlock(path, template string, kind Kind) error {
 	return p.Write(path, content, kind, false)
 }
 
+// RemoveManagedBlock schedules removal of the go42x-managed block, together with the
+// blank line that WriteManagedBlock inserts before an appended block. A file left
+// with only whitespace is removed. Missing files and files without markers are kept.
+func (p *Plan) RemoveManagedBlock(path string, kind Kind) error {
+	previous, exists, err := p.Read(path)
+	if err != nil {
+		return fmt.Errorf("prepare %s: %w", path, err)
+	}
+	if !exists {
+		return nil
+	}
+
+	start, end, err := managedBlockRange(previous)
+	if err != nil {
+		return fmt.Errorf("prepare %s: %w", path, err)
+	}
+	if start < 0 {
+		return nil
+	}
+
+	content := bytes.Clone(previous[:start])
+	if bytes.HasSuffix(content, []byte("\n\n")) {
+		content = content[:len(content)-1]
+	}
+	content = append(content, previous[end:]...)
+	if len(bytes.TrimSpace(content)) == 0 {
+		return p.Remove(path, kind)
+	}
+
+	return p.Write(path, content, kind, false)
+}
+
 func managedBlockRange(content []byte) (int, int, error) {
 	start, end, offset := -1, -1, 0
 	for line := range bytes.SplitAfterSeq(content, []byte("\n")) {

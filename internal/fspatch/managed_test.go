@@ -97,6 +97,64 @@ func TestWriteManagedBlock(t *testing.T) {
 	}
 }
 
+func TestRemoveManagedBlock(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		previous string
+		want     string // empty means the file is removed or stays missing
+	}{
+		{name: "missing file"},
+		{name: "only the block", previous: testManagedBlock},
+		{name: "only the block and blank lines", previous: "\n" + testManagedBlock + "\n"},
+		{name: "appended block", previous: "user-entry\n\n" + testManagedBlock, want: "user-entry\n"},
+		{
+			name:     "rules after the block",
+			previous: "before\n" + testManagedBlock + "after\n",
+			want:     "before\nafter\n",
+		},
+		{name: "unmarked file", previous: "user-entry\n", want: "user-entry\n"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			path := filepath.Join(root, "ignore")
+			if len(tt.previous) > 0 {
+				if err := os.WriteFile(path, []byte(tt.previous), 0644); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			plan := NewPlan(slog.New(slog.DiscardHandler), root, t.TempDir())
+			if err := plan.RemoveManagedBlock(path, KindSources); err != nil {
+				t.Fatal(err)
+			}
+			if err := plan.Apply(); err != nil {
+				t.Fatal(err)
+			}
+
+			got, err := os.ReadFile(path)
+			switch {
+			case len(tt.want) == 0 && !os.IsNotExist(err):
+				t.Fatalf("file = %q, %v; want it removed", got, err)
+			case len(tt.want) > 0 && (err != nil || string(got) != tt.want):
+				t.Fatalf("file = %q, %v; want %q", got, err, tt.want)
+			}
+		})
+	}
+}
+
+func TestRemoveManagedBlockRejectsMalformedMarkers(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "ignore")
+	if err := os.WriteFile(path, []byte("before\n# go42x -- START\nrules\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	plan := NewPlan(slog.New(slog.DiscardHandler), root, t.TempDir())
+	if err := plan.RemoveManagedBlock(path, KindSources); err == nil {
+		t.Fatal("RemoveManagedBlock accepted an unclosed block")
+	}
+}
+
 func TestWriteManagedBlockRejectsMalformedMarkers(t *testing.T) {
 	for _, input := range []string{"previous", "template"} {
 		t.Run(input, func(t *testing.T) {

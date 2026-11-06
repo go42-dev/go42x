@@ -28,6 +28,7 @@ import (
 const (
 	skillFile           = "SKILL.md"
 	skillManifestFile   = ".go42x-skills.json"
+	skillGitIgnoreFile  = ".gitignore"
 	maxSkillName        = 64
 	maxSkillDescription = 1024
 )
@@ -284,19 +285,36 @@ func prepareSkillTarget(plan *fspatch.Plan, dir string, skills []skill, clean bo
 		}
 	}
 
+	gitIgnorePath := filepath.Join(dir, skillGitIgnoreFile)
 	if len(current) == 0 {
 		if manifestExists {
-			return plan.Remove(manifestPath, fspatch.KindSkills)
+			if err := plan.Remove(manifestPath, fspatch.KindSkills); err != nil {
+				return err
+			}
 		}
-		return nil
+		return plan.RemoveManagedBlock(gitIgnorePath, fspatch.KindSkills)
 	}
 
 	content, err := json.MarshalIndent(skillManifest{Files: current}, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to encode %s: %w", skillManifestFile, err)
 	}
+	if err := plan.Write(manifestPath, append(content, '\n'), fspatch.KindSkills, clean); err != nil {
+		return err
+	}
 
-	return plan.Write(manifestPath, append(content, '\n'), fspatch.KindSkills, clean)
+	return plan.WriteManagedBlock(gitIgnorePath, skillGitIgnore(skills), fspatch.KindSkills)
+}
+
+// skillGitIgnore lists the generated skills, the manifest, and the .gitignore itself,
+// so Git reports none of them while skills added by hand stay visible.
+func skillGitIgnore(skills []skill) string {
+	entries := []string{"/" + skillGitIgnoreFile, "/" + skillManifestFile}
+	for _, s := range skills {
+		entries = append(entries, "/"+s.name+"/")
+	}
+
+	return "# go42x -- START\n" + strings.Join(entries, "\n") + "\n# go42x -- END\n"
 }
 
 func readSkillManifest(plan *fspatch.Plan, filename string) (skillManifest, bool, error) {
