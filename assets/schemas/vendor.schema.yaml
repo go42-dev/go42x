@@ -2,8 +2,8 @@
 $schema: http://json-schema.org/draft-07/schema#
 $id: https://github.com/go42-dev/go42x/vendor/schema/v1.0
 title: go42x vendoring manifest
-description: Selected upstream files and their destinations. Runtime validation also checks collisions, ownership and filesystem
-  safety.
+description: Selected upstream files and directories and their destinations. Runtime validation also checks collisions, ownership
+  and filesystem safety.
 type: object
 additionalProperties: false
 required:
@@ -25,7 +25,11 @@ definitions:
     additionalProperties: false
     required:
       - source
-      - files
+    anyOf:
+      - required:
+          - files
+      - required:
+          - directories
     properties:
       source:
         oneOf:
@@ -38,6 +42,12 @@ definitions:
         uniqueItems: true
         items:
           $ref: '#/definitions/fileMapping'
+      directories:
+        type: array
+        minItems: 1
+        uniqueItems: true
+        items:
+          $ref: '#/definitions/directoryMapping'
   gitSource:
     type: object
     additionalProperties: false
@@ -123,6 +133,19 @@ definitions:
           - html-to-markdown
         description: Named converter applied before hashing the destination. Omit to copy source bytes. HTML to Markdown converts
           the complete document and preserves link targets.
+  directoryMapping:
+    type: object
+    additionalProperties: false
+    description: Copies every file beneath from to the same relative path beneath to, skipping Git metadata. Symbolic links
+      are rejected; a mapping selects at most 1000 files.
+    required:
+      - from
+      - to
+    properties:
+      from:
+        $ref: '#/definitions/relativePath'
+      to:
+        $ref: '#/definitions/relativePath'
   relativePath:
     type: string
     description: Portable relative file path; destinations are relative to the manifest directory.

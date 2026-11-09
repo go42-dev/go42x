@@ -100,7 +100,7 @@ func (g *Generator) Prepare(ctx context.Context, clean bool) (*fspatch.Plan, err
 		return nil, fmt.Errorf("failed to prepare shared instructions: %w", err)
 	}
 
-	if err := g.prepareSkills(plan, clean); err != nil {
+	if err := g.prepareSkills(plan, tplCtx.ToMap(), clean); err != nil {
 		return nil, fmt.Errorf("failed to prepare skills: %w", err)
 	}
 
@@ -182,6 +182,8 @@ func (g *Generator) buildTemplateContext(ctx context.Context) (*Context, error) 
 	}
 
 	tplCtx.Set("mcp", servers)
+
+	tplCtx.Set("skills", g.skillContext())
 
 	tplCtx.Set("context", g.config.Context.WithDefaults())
 

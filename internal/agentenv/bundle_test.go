@@ -103,3 +103,117 @@ func TestBundledUpstreamInventory(t *testing.T) {
 		}
 	}
 }
+
+func TestReplaceBundleFile(t *testing.T) {
+	file := func(data string) bundleFile {
+		return bundleFile{
+			data:   []byte(data),
+			exists: true,
+		}
+	}
+	for _, tt := range []struct {
+		name        string
+		base        bundleFile
+		current     bundleFile
+		incoming    bundleFile
+		want        bundleFile
+		conflict    bool
+		overwritten bool
+	}{
+		{
+			name:     "unchanged",
+			base:     file("old"),
+			current:  file("old"),
+			incoming: file("new"),
+			want:     file("new"),
+		},
+		{
+			name:     "missing locally",
+			base:     file("old"),
+			incoming: file("new"),
+			want:     file("new"),
+		},
+		{
+			name:     "new in the release",
+			incoming: file("new"),
+			want:     file("new"),
+		},
+		{
+			name:     "local copy already current",
+			base:     file("old"),
+			current:  file("new"),
+			incoming: file("new"),
+			want:     file("new"),
+		},
+		{
+			name:        "local changes",
+			base:        file("old"),
+			current:     file("custom"),
+			incoming:    file("new"),
+			want:        file("new"),
+			overwritten: true,
+		},
+		{
+			name:    "retired",
+			base:    file("old"),
+			current: file("old"),
+		},
+		{
+			name:        "retired with local changes",
+			base:        file("old"),
+			current:     file("custom"),
+			overwritten: true,
+		},
+		{
+			name:     "project file at a newly bundled path",
+			current:  file("custom"),
+			incoming: file("new"),
+			want:     file("new"),
+			conflict: true,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got := replaceBundleFile(tt.base, tt.current, tt.incoming)
+			if got.file.exists != tt.want.exists || !bytes.Equal(got.file.data, tt.want.data) ||
+				got.conflict != tt.conflict || got.overwritten != tt.overwritten {
+				t.Fatalf("replaceBundleFile() = %+v, want file %q, conflict %t, overwritten %t",
+					got, tt.want.data, tt.conflict, tt.overwritten)
+			}
+		})
+	}
+}
+
+func TestMergeBundleFileReplacesReleaseOwnedDirectories(t *testing.T) {
+	base := bundleFile{
+		data:   []byte("bundled\n"),
+		exists: true,
+	}
+	current := bundleFile{
+		data:   []byte("customized\n"),
+		exists: true,
+	}
+	for path, wantReplaced := range map[string]bool{
+		"resources/go-codestyle.md":       true,
+		"skills/go42x-skills/SKILL.md":    true,
+		"upstream/go/package-names.md":    true,
+		"chunks/100-operation.tpl.md":     false,
+		"agents.tpl.md":                   false,
+		"resources-custom/example.md":     false,
+		"chunks/resources/example.tpl.md": false,
+	} {
+		t.Run(path, func(t *testing.T) {
+			got, err := mergeBundleFile(t.Context(), t.TempDir(), path, base, current, base)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			want := current
+			if wantReplaced {
+				want = base
+			}
+			if !bytes.Equal(got.file.data, want.data) || got.overwritten != wantReplaced || got.conflict {
+				t.Fatalf("mergeBundleFile() = %+v, want %q", got, want.data)
+			}
+		})
+	}
+}

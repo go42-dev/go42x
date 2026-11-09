@@ -2,6 +2,7 @@ package integration_test
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -79,9 +80,7 @@ func TestToolCacheFallbacks(t *testing.T) {
 			"SETUP_HASH":                 strings.Repeat("c", 64),
 			"GITHUB_OUTPUT":              filepath.Join(root, "outputs"),
 		}
-		for key, value := range changes {
-			env[key] = value
-		}
+		maps.Copy(env, changes)
 		cmd := exec.CommandContext(t.Context(), "bash", "-c", script)
 		cmd.Dir = root
 		for key, value := range env {
@@ -97,7 +96,7 @@ func TestToolCacheFallbacks(t *testing.T) {
 		}
 		var key string
 		var fallbacks []string
-		for _, line := range strings.Split(string(outputs), "\n") {
+		for line := range strings.SplitSeq(string(outputs), "\n") {
 			if value, found := strings.CutPrefix(line, "cache-key="); found {
 				key = value
 			}

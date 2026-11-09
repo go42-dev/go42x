@@ -3,8 +3,10 @@ package vendoring
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -72,5 +74,89 @@ func TestSelectFileConverter(t *testing.T) {
 				t.Fatalf("converter called %d times, want %d", calls, wantCalls)
 			}
 		})
+	}
+}
+
+func TestSelectDirectory(t *testing.T) {
+	root := t.TempDir()
+	for name, content := range map[string]string{
+		"skills/review/SKILL.md":         "skill",
+		"skills/review/scripts/check.sh": "script",
+		"skills/review/.hidden":          "hidden",
+		"skills/review/.git/config":      "[core]",
+		"skills/empty/.git/config":       "[core]",
+		"skills/file.md":                 "file",
+	} {
+		filename := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(filename), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filename, []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	files, err := selectDirectory(root, DirectoryMapping{
+		From: "skills/review",
+		To:   "vendor/review",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"vendor/review/SKILL.md":         "skill",
+		"vendor/review/scripts/check.sh": "script",
+		"vendor/review/.hidden":          "hidden",
+	}
+	if len(files) != len(want) {
+		t.Fatalf("selectDirectory() = %v, want %v", files, want)
+	}
+	for name, content := range want {
+		if string(files[name]) != content {
+			t.Errorf("%s = %q, want %q", name, files[name], content)
+		}
+	}
+
+	if err := os.Symlink(
+		filepath.Join(root, "skills/file.md"),
+		filepath.Join(root, "skills/review/link.md"),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(root, "skills/review"), filepath.Join(root, "linked")); err != nil {
+		t.Fatal(err)
+	}
+	for from, wantErr := range map[string]string{
+		"skills/review":  "expected a regular file",
+		"linked":         "symlink is unsupported",
+		"skills/empty":   "directory has no files",
+		"skills/file.md": "expected a directory",
+		"skills/missing": "no such file",
+	} {
+		t.Run(from, func(t *testing.T) {
+			_, err := selectDirectory(root, DirectoryMapping{
+				From: from,
+				To:   "vendor",
+			})
+			if err == nil || !strings.Contains(err.Error(), wantErr) {
+				t.Fatalf("selectDirectory(%s) error = %v, want %q", from, err, wantErr)
+			}
+		})
+	}
+}
+
+func TestSelectDirectoryLimitsFiles(t *testing.T) {
+	root := t.TempDir()
+	for i := range maxDirectoryFiles + 1 {
+		if err := os.WriteFile(filepath.Join(root, fmt.Sprintf("file-%04d", i)), nil, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, err := selectDirectory(filepath.Dir(root), DirectoryMapping{
+		From: filepath.Base(root),
+		To:   "vendor",
+	})
+	if err == nil || !strings.Contains(err.Error(), "more than 1000 files") {
+		t.Fatalf("selectDirectory() error = %v, want the file limit", err)
 	}
 }

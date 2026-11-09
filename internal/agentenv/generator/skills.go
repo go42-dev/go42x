@@ -22,6 +22,8 @@ import (
 
 const (
 	skillFile           = "SKILL.md"
+	skillTemplateFile   = "SKILL.tpl.md"
+	skillTemplateSuffix = ".tpl.md"
 	skillManifestFile   = ".go42x-skills.json"
 	skillGitIgnoreFile  = ".gitignore"
 	maxSkillName        = 64
@@ -34,8 +36,14 @@ var skillNamePattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
 type skill struct {
 	name string
-	// files maps slash-separated paths relative to the skill directory to their content.
+	// files maps slash-separated output paths relative to the skill directory to their content.
 	files map[string][]byte
+}
+
+// skillTarget is a project skill directory and the enabled providers that read it.
+type skillTarget struct {
+	dir       string
+	providers []string
 }
 
 type skillMetadata struct {
@@ -49,18 +57,18 @@ type skillManifest struct {
 	Files []string `json:"files"`
 }
 
-// prepareSkills validates the configured skills and copies them to the skill
-// directories of enabled providers. Directories of disabled providers are preserved.
-func (g *Generator) prepareSkills(plan *fspatch.Plan, clean bool) error {
-	skills, err := loadSkills(g.templateDir, g.config.Context.SkillsDir)
+// prepareSkills renders and validates the configured skills and copies them to the
+// skill directories of enabled providers. Directories of disabled providers are preserved.
+func (g *Generator) prepareSkills(plan *fspatch.Plan, ctxData map[string]any, clean bool) error {
+	skills, err := loadSkills(g.templateDir, g.config.Context.SkillsDir, ctxData)
 	if err != nil {
 		return err
 	}
 
 	for _, target := range g.skillTargets() {
-		dir := filepath.Join(g.outputDir, filepath.FromSlash(target))
+		dir := filepath.Join(g.outputDir, filepath.FromSlash(target.dir))
 		if err := prepareSkillTarget(plan, dir, skills, clean); err != nil {
-			return fmt.Errorf("%s: %w", target, err)
+			return fmt.Errorf("%s: %w", target.dir, err)
 		}
 	}
 
@@ -69,25 +77,50 @@ func (g *Generator) prepareSkills(plan *fspatch.Plan, clean bool) error {
 
 // skillTargets lists the project skill directories that enabled providers read,
 // each once, in provider name order.
-func (g *Generator) skillTargets() []string {
-	var targets []string
+func (g *Generator) skillTargets() []skillTarget {
+	targets := []skillTarget{}
 	for _, name := range slices.Sorted(maps.Keys(g.config.Providers)) {
 		p, exists := g.providers[name]
 		if !g.config.ProviderEnabled(name) || !exists {
 			continue
 		}
 		for _, dir := range p.SkillDirs() {
-			if !slices.Contains(targets, dir) {
-				targets = append(targets, dir)
+			i := slices.IndexFunc(targets, func(target skillTarget) bool {
+				return target.dir == dir
+			})
+			if i < 0 {
+				targets = append(targets, skillTarget{
+					dir:       dir,
+					providers: []string{name},
+				})
+				continue
 			}
+			targets[i].providers = append(targets[i].providers, name)
 		}
 	}
 	return targets
 }
 
-// loadSkills reads each immediate subdirectory of dir as a skill. A missing
-// directory holds no skills; hidden entries are skipped.
-func loadSkills(baseDir, dir string) ([]skill, error) {
+// skillContext describes skill installation for templates: .skills.dir is the skill
+// source directory relative to .go42x, without a trailing slash, and .skills.targets has
+// one entry per installation directory with its dir and the providers that read it.
+func (g *Generator) skillContext() map[string]any {
+	targets := []map[string]any{}
+	for _, target := range g.skillTargets() {
+		targets = append(targets, map[string]any{
+			"dir":       target.dir,
+			"providers": target.providers,
+		})
+	}
+	return map[string]any{
+		"dir":     path.Clean(filepath.ToSlash(g.config.Context.SkillsDir)),
+		"targets": targets,
+	}
+}
+
+// loadSkills reads each immediate subdirectory of dir as a skill and renders template
+// skills with ctxData. A missing directory holds no skills; hidden entries are skipped.
+func loadSkills(baseDir, dir string, ctxData map[string]any) ([]skill, error) {
 	if len(dir) == 0 {
 		return nil, nil
 	}
@@ -118,7 +151,7 @@ func loadSkills(baseDir, dir string) ([]skill, error) {
 			continue
 		}
 
-		s, err := loadSkill(filepath.Join(root, entry.Name()), entry.Name())
+		s, err := loadSkill(filepath.Join(root, entry.Name()), entry.Name(), ctxData)
 		if err != nil {
 			return nil, fmt.Errorf("skill %s: %w", entry.Name(), err)
 		}
@@ -129,7 +162,10 @@ func loadSkills(baseDir, dir string) ([]skill, error) {
 	return skills, nil
 }
 
-func loadSkill(dir, name string) (skill, error) {
+// loadSkill reads one skill directory. A skill with SKILL.tpl.md is a template skill:
+// each of its *.tpl.md files renders with ctxData to the same path ending in .md.
+// Other files, and every file of a skill with SKILL.md, are copied unchanged.
+func loadSkill(dir, name string, ctxData map[string]any) (skill, error) {
 	// Reads stay inside the skill directory even if a path is swapped for a symlink during the walk.
 	root, err := os.OpenRoot(dir)
 	if err != nil {
@@ -137,7 +173,7 @@ func loadSkill(dir, name string) (skill, error) {
 	}
 	defer root.Close() //nolint:errcheck
 
-	s := skill{name: name, files: make(map[string][]byte)}
+	sources := make(map[string][]byte)
 	err = fs.WalkDir(root.FS(), ".", func(rel string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -163,16 +199,21 @@ func loadSkill(dir, name string) (skill, error) {
 			return err
 		}
 
-		s.files[rel] = content
+		sources[rel] = content
 		return nil
 	})
 	if err != nil {
 		return skill{}, err
 	}
 
+	s, err := renderSkill(name, sources, ctxData)
+	if err != nil {
+		return skill{}, err
+	}
+
 	content, ok := s.files[skillFile]
 	if !ok {
-		return skill{}, fmt.Errorf("missing %s", skillFile)
+		return skill{}, fmt.Errorf("missing %s or %s", skillFile, skillTemplateFile)
 	}
 
 	metadata, err := parseSkillMetadata(content)
@@ -181,6 +222,36 @@ func loadSkill(dir, name string) (skill, error) {
 	}
 	if err := validateSkillMetadata(metadata, name); err != nil {
 		return skill{}, err
+	}
+
+	return s, nil
+}
+
+// renderSkill maps source files to output files, rendering the templates of a template skill.
+func renderSkill(name string, sources map[string][]byte, ctxData map[string]any) (skill, error) {
+	_, template := sources[skillTemplateFile]
+	if _, plain := sources[skillFile]; plain && template {
+		return skill{}, fmt.Errorf("has both %s and %s; keep one", skillFile, skillTemplateFile)
+	}
+
+	engine := newTemplateEngine("")
+	s := skill{name: name, files: make(map[string][]byte, len(sources))}
+	for _, rel := range slices.Sorted(maps.Keys(sources)) {
+		content := sources[rel]
+		if template && strings.HasSuffix(rel, skillTemplateSuffix) {
+			output := strings.TrimSuffix(rel, skillTemplateSuffix) + ".md"
+			if _, exists := sources[output]; exists {
+				return skill{}, fmt.Errorf("%s and %s both produce %s", rel, output, output)
+			}
+
+			rendered, err := engine.Process(string(content), ctxData)
+			if err != nil {
+				return skill{}, fmt.Errorf("%s: %w", rel, err)
+			}
+
+			rel, content = output, []byte(rendered)
+		}
+		s.files[rel] = content
 	}
 
 	return s, nil

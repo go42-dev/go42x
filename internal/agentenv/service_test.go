@@ -2,7 +2,6 @@ package agentenv
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"io/fs"
 	"log/slog"
@@ -75,82 +74,6 @@ func TestServiceSettingsAndLogger(t *testing.T) {
 	s, err = NewAgentEnvService(&Settings{}, WithLogger(nil))
 	if err != nil || s.logger == nil {
 		t.Fatalf("default logger = %v, %v", s, err)
-	}
-}
-
-func TestExportIsIndependentOfProjectConfiguration(t *testing.T) {
-	dir := t.TempDir()
-	svc := testService(t, dir, false)
-	configPath := filepath.Join(dir, ".go42x/go42x.yaml")
-	writeFile(t, configPath, "invalid: [project configuration\n")
-	output := filepath.Join(dir, ".build/original bundle")
-
-	result, err := svc.Export(t.Context(), output)
-	if err != nil || result.Directory != output {
-		t.Fatalf("export = %v, %v", result, err)
-	}
-
-	bundle, err := assets.AgentEnvTemplates()
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = fs.WalkDir(bundle, ".", func(path string, entry fs.DirEntry, err error) error {
-		if err != nil || entry.IsDir() {
-			return err
-		}
-
-		data, err := fs.ReadFile(bundle, path)
-		if err != nil {
-			return err
-		}
-
-		got := readFile(t, filepath.Join(output, filepath.FromSlash(path)))
-
-		if !bytes.Equal(got, pinBundledSchemaURL(path, data)) {
-			t.Errorf("exported asset differs: %s", path)
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(readFile(t, configPath)) != "invalid: [project configuration\n" {
-		t.Fatal("export changed project configuration")
-	}
-	if _, err := os.Stat(filepath.Join(dir, ".gitignore")); !os.IsNotExist(err) {
-		t.Fatalf("export touched the project gitignore: %v", err)
-	}
-	if _, err := svc.Export(t.Context(), output); !errors.Is(err, os.ErrExist) {
-		t.Fatalf("existing destination accepted: %v", err)
-	}
-}
-
-func TestExportRejectsInvalidDestinationsAndCancellation(t *testing.T) {
-	svc := testService(t, t.TempDir(), false)
-	for _, path := range []string{"", "  "} {
-		if _, err := svc.Export(t.Context(), path); err == nil {
-			t.Errorf("empty destination accepted: %q", path)
-		}
-	}
-
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
-	if _, err := svc.Export(ctx, "cancelled"); !errors.Is(err, context.Canceled) {
-		t.Fatalf("export with cancelled context = %v", err)
-	}
-	if _, err := os.Stat("cancelled"); !os.IsNotExist(err) {
-		t.Fatalf("cancelled export created output: %v", err)
-	}
-
-	writeFile(t, "original/keep.md", "keep\n")
-	if err := os.Symlink("original", "export-link"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := svc.Export(t.Context(), "export-link"); !errors.Is(err, os.ErrExist) {
-		t.Fatalf("symlink destination accepted: %v", err)
-	}
-	if string(readFile(t, "original/keep.md")) != "keep\n" {
-		t.Fatal("export changed a symlink target")
 	}
 }
 
@@ -444,11 +367,16 @@ func TestGenerateErrors(t *testing.T) {
 	}
 }
 
-func TestUpdateReplacesOnlyBundledSources(t *testing.T) {
+func TestInitForceReplacesOnlyBundledSources(t *testing.T) {
 	dir := t.TempDir()
 	service := testService(t, dir, false)
 	if _, err := service.Init(t.Context()); err != nil {
 		t.Fatal(err)
+	}
+	service.settings.Force = true
+	service.source = &buildinfo.Source{
+		Repository: "https://example.com/go42x.git",
+		Ref:        "v1.2.3",
 	}
 	local := "project:\n  name: local-project\nproviders:\n  claude:\n    enabled: true\n" +
 		"    agents: [agents/reviewer.tpl.md]\n"
@@ -480,9 +408,9 @@ func TestUpdateReplacesOnlyBundledSources(t *testing.T) {
 	for path, content := range originals {
 		writeFile(t, filepath.Join(dir, filepath.FromSlash(path)), content)
 	}
-	result, err := service.Update(t.Context())
-	if err != nil {
-		t.Fatal(err)
+	result, err := service.Init(t.Context())
+	if err != nil || result.UpdateResult == nil {
+		t.Fatalf("Init() = %+v, %v; want a reinstall result", result, err)
 	}
 	for path, want := range originals {
 		got := string(readFile(t, filepath.Join(result.BackupDir, "files", filepath.FromSlash(path))))
@@ -495,7 +423,7 @@ func TestUpdateReplacesOnlyBundledSources(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantSources := 1 // The managed .gitignore block is an additional source.
+	wantSources := 2 // The managed .gitignore block and the bundle record are additional sources.
 	err = fs.WalkDir(bundle, ".", func(path string, entry fs.DirEntry, err error) error {
 		if err != nil || entry.IsDir() {
 			return err
@@ -517,12 +445,16 @@ func TestUpdateReplacesOnlyBundledSources(t *testing.T) {
 		t.Fatal(err)
 	}
 	if result.Sources != wantSources || result.Applied != result.Sources {
-		t.Fatalf("update result = %+v, want %d sources", result, wantSources)
+		t.Fatalf("reinstall result = %+v, want %d sources", result, wantSources)
 	}
 	if got := string(
 		readFile(t, filepath.Join(dir, ".gitignore")),
 	); got != "before\n"+assets.AgentEnvGitIgnore()+"after\n" {
 		t.Fatalf("managed gitignore block was not refreshed: %s", got)
+	}
+	recorded, err := parseBundleSource(readFile(t, filepath.Join(dir, ".go42x", bundleSourceFile)))
+	if err != nil || !reflect.DeepEqual(recorded, service.source) {
+		t.Fatalf("bundle record = %+v, %v; want %+v", recorded, err, service.source)
 	}
 	for path, want := range preserved {
 		if got := string(readFile(t, filepath.Join(dir, filepath.FromSlash(path)))); got != want {
@@ -541,9 +473,9 @@ func TestUpdateReplacesOnlyBundledSources(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	repeated, err := service.Update(t.Context())
-	if err != nil {
-		t.Fatal(err)
+	repeated, err := service.Init(t.Context())
+	if err != nil || repeated.UpdateResult == nil {
+		t.Fatalf("repeated Init() = %+v, %v", repeated, err)
 	}
 	newInfo, err := os.Stat(configPath)
 	if err != nil || os.SameFile(oldInfo, newInfo) {
@@ -566,25 +498,26 @@ func TestUpdateReplacesOnlyBundledSources(t *testing.T) {
 	}
 }
 
-func TestUpdateDoesNotReadTemplatesOrUseBuildDirectory(t *testing.T) {
+func TestInitForceDoesNotReadTemplatesOrUseBuildDirectory(t *testing.T) {
 	dir := t.TempDir()
 	service := testService(t, dir, false)
 	if _, err := service.Init(t.Context()); err != nil {
 		t.Fatal(err)
 	}
+	service.settings.Force = true
 	writeFile(t, filepath.Join(dir, ".build"), "not a directory")
 	writeFile(t, filepath.Join(dir, ".go42x/go42x.local.yaml"),
 		"context:\n  template: ../missing/main.tpl.md\n  chunks-dir: ../missing/chunks\n"+
 			"providers:\n  claude:\n    enabled: true\n    agents: [../missing/reviewer.tpl.md]\n")
-	if _, err := service.Update(t.Context()); err != nil {
+	if _, err := service.Init(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	if got := string(readFile(t, filepath.Join(dir, ".build"))); got != "not a directory" {
-		t.Fatalf("update changed .build: %s", got)
+		t.Fatalf("reinstall changed .build: %s", got)
 	}
 	for _, path := range []string{"AGENTS.md", ".claude", ".mcp.json"} {
 		if _, err := os.Stat(filepath.Join(dir, path)); !os.IsNotExist(err) {
-			t.Errorf("update generated %s: %v", path, err)
+			t.Errorf("reinstall generated %s: %v", path, err)
 		}
 	}
 }
@@ -596,7 +529,7 @@ func TestUpdateRequiresInitialization(t *testing.T) {
 	}
 }
 
-func TestUpdateRejectsInvalidProviderConfiguration(t *testing.T) {
+func TestInitForceRejectsInvalidProviderConfiguration(t *testing.T) {
 	for _, local := range []string{
 		"providers: {typo: {enabled: false}}\n",
 		"providers: {codex: {approval-policy: invalid}}\n",
@@ -611,11 +544,12 @@ func TestUpdateRejectsInvalidProviderConfiguration(t *testing.T) {
 			}
 			writeFile(t, filepath.Join(root, ".go42x", config.FileLocal), local)
 			writeFile(t, filepath.Join(root, ".go42x/agents.tpl.md"), "existing instructions\n")
+			service.settings.Force = true
 			before := snapshotTree(t, root)
 
-			result, err := service.Update(t.Context())
+			result, err := service.Init(t.Context())
 			if err == nil || !strings.Contains(err.Error(), "validate updated configuration") || result != nil {
-				t.Fatalf("Update() = %+v, %v; want validation failure", result, err)
+				t.Fatalf("Init() = %+v, %v; want validation failure", result, err)
 			}
 			if !reflect.DeepEqual(before, snapshotTree(t, root)) {
 				t.Fatal("invalid provider configuration caused source or backup writes")

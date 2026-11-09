@@ -7,11 +7,10 @@ import (
 )
 
 const (
-	flagBase      = "base"
 	flagClean     = "clean"
+	flagForce     = "force"
 	flagJSON      = "json"
 	flagNoLocal   = "no-local"
-	flagOutput    = "output"
 	flagProviders = "providers"
 )
 
@@ -31,7 +30,6 @@ func NewAgentEnvCommand(f *cmdutil.Factory) *cobra.Command {
 
 	cmd.AddCommand(newInitCommand(f))
 	cmd.AddCommand(newUpdateCommand(f))
-	cmd.AddCommand(newExportCommand(f))
 	cmd.AddCommand(newGenerateCommand(f))
 
 	return cmd

@@ -2,6 +2,7 @@ package generator
 
 import (
 	"context"
+	"maps"
 )
 
 type Context struct {
@@ -21,9 +22,5 @@ func (c *Context) Set(key string, value any) {
 }
 
 func (c *Context) ToMap() map[string]any {
-	result := make(map[string]any)
-	for k, v := range c.data {
-		result[k] = v
-	}
-	return result
+	return maps.Clone(c.data)
 }

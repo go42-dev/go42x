@@ -33,14 +33,21 @@ type Manifest struct {
 }
 
 type Dependency struct {
-	Source source.Config `yaml:"source"`
-	Files  []FileMapping `yaml:"files"`
+	Source      source.Config      `yaml:"source"`
+	Files       []FileMapping      `yaml:"files"`
+	Directories []DirectoryMapping `yaml:"directories,omitempty"`
 }
 
 type FileMapping struct {
 	From      string `yaml:"from"`
 	To        string `yaml:"to"`
 	Converter string `yaml:"converter,omitempty"`
+}
+
+// DirectoryMapping copies every file beneath From to the same relative path beneath To.
+type DirectoryMapping struct {
+	From string `yaml:"from"`
+	To   string `yaml:"to"`
 }
 
 func ParseManifest(data []byte) (*Manifest, error) {
@@ -51,13 +58,22 @@ func ParseManifest(data []byte) (*Manifest, error) {
 
 	for id, d := range m.Dependencies {
 		d.Source = d.Source.WithDefaults()
-		d.Files = slices.Clone(d.Files)
-		slices.SortFunc(d.Files, func(a, b FileMapping) int {
-			return strings.Compare(a.To, b.To)
-		})
-		m.Dependencies[id] = d
+		m.Dependencies[id] = d.sorted()
 	}
 	return &m, m.Validate()
+}
+
+// sorted returns a copy with mappings in destination order.
+func (d Dependency) sorted() Dependency {
+	d.Files = slices.Clone(d.Files)
+	slices.SortFunc(d.Files, func(a, b FileMapping) int {
+		return strings.Compare(a.To, b.To)
+	})
+	d.Directories = slices.Clone(d.Directories)
+	slices.SortFunc(d.Directories, func(a, b DirectoryMapping) int {
+		return strings.Compare(a.To, b.To)
+	})
+	return d
 }
 
 // parseMetadata checks YAML syntax before decoding or applying defaults.
@@ -131,11 +147,7 @@ func (m *Manifest) Digest() (string, error) {
 	canonical := *m
 	canonical.Dependencies = make(map[string]Dependency, len(m.Dependencies))
 	for id, d := range m.Dependencies {
-		d.Files = slices.Clone(d.Files)
-		slices.SortFunc(d.Files, func(a, b FileMapping) int {
-			return strings.Compare(a.To, b.To)
-		})
-		canonical.Dependencies[id] = d
+		canonical.Dependencies[id] = d.sorted()
 	}
 	data, err := yaml.Marshal(canonical)
 	if err != nil {
@@ -169,8 +181,8 @@ func (m *Manifest) Validate() error {
 		if err := d.Source.Validate(); err != nil {
 			return fmt.Errorf("dependency %s: %w", id, err)
 		}
-		if len(d.Files) == 0 {
-			return fmt.Errorf("dependency %s requires file mappings", id)
+		if len(d.Files) == 0 && len(d.Directories) == 0 {
+			return fmt.Errorf("dependency %s requires file or directory mappings", id)
 		}
 
 		for _, f := range d.Files {
@@ -187,6 +199,17 @@ func (m *Manifest) Validate() error {
 			}
 
 			targets = append(targets, f.To)
+		}
+		for _, dir := range d.Directories {
+			if err := source.ValidatePath(dir.From); err != nil {
+				return fmt.Errorf("dependency %s directory from: %w", id, err)
+			}
+
+			if err := source.ValidatePath(dir.To); err != nil {
+				return fmt.Errorf("dependency %s directory to: %w", id, err)
+			}
+
+			targets = append(targets, dir.To)
 		}
 	}
 	return validateCollisions(targets)

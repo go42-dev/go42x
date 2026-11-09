@@ -1,6 +1,7 @@
 package integration_test
 
 import (
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -87,9 +88,7 @@ func TestGoCacheIdentity(t *testing.T) {
 			"PROJECT_DEPENDENCIES_HASH": "dependencies-v1",
 			"ImageOS":                   "ubuntu24",
 		}
-		for name, value := range changes {
-			env[name] = value
-		}
+		maps.Copy(env, changes)
 		cmd := exec.CommandContext(t.Context(), "bash", "-euo", "pipefail", "-c", script)
 		cmd.Dir = root
 		cmd.Env = os.Environ()
@@ -207,7 +206,7 @@ func TestGoCacheIdentity(t *testing.T) {
 				t.Fatal("changed build requirements reused the exact compilation cache")
 			}
 			reusable := false
-			for _, prefix := range strings.Split(changed["build-restore"], "\n") {
+			for prefix := range strings.SplitSeq(changed["build-restore"], "\n") {
 				reusable = reusable || strings.HasPrefix(original["build-key"], prefix)
 			}
 			if reusable != tt.reuseBuild {

@@ -7,8 +7,10 @@ import (
 	"maps"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"runtime"
 	"slices"
 	"strings"
@@ -18,6 +20,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/go42-dev/go42x/assets"
+	"github.com/go42-dev/go42x/internal/agentenv"
 	"github.com/go42-dev/go42x/internal/fspatch"
 	"github.com/go42-dev/go42x/internal/vendoring"
 )
@@ -274,49 +277,8 @@ func TestAgentEnvRejectsInvalidHeadings(t *testing.T) {
 	}
 }
 
-func TestAgentEnvExport(t *testing.T) {
-	t.Parallel()
-	p := newProject(t)
-	p.write(t, ".go42x/go42x.yaml", "invalid: [configuration\n")
-	before := p.snapshot(t)
-	for _, args := range [][]string{
-		{"agentenv", "export"},
-		{"agentenv", "export", "--output="},
-		{"agentenv", "export", "--output=  "},
-	} {
-		p.run(t, 2, args...)
-	}
-	p.assertUnchanged(t, before)
-
-	output := ".build/exported bundle"
-	result := p.run(t, 0, "agentenv", "export", "--output", output, "--json")
-	var report struct {
-		Directory string `json:"directory"`
-	}
-	if err := json.Unmarshal([]byte(result.stdout), &report); err != nil || report.Directory != output {
-		t.Fatalf("export report = %s, %v", result.stdout, err)
-	}
-	if len(result.stderr) > 0 {
-		t.Fatalf("unexpected export stderr: %s", result.stderr)
-	}
-	if !strings.Contains(p.read(t, output+"/go42x.yaml"), "providers:") ||
-		!strings.Contains(p.read(t, output+"/chunks/200-search.tpl.md"), "Knowledge-base configuration") {
-		t.Fatal("export omitted bundled configuration or templates")
-	}
-	if got := p.read(t, ".go42x/go42x.yaml"); got != "invalid: [configuration\n" {
-		t.Fatalf("export changed project configuration: %s", got)
-	}
-
-	before = p.snapshot(t)
-	result = p.run(t, 1, "agentenv", "export", "--output", output, "--json")
-	var failure struct {
-		Error string `json:"error"`
-	}
-	if err := json.Unmarshal([]byte(result.stdout), &failure); err != nil || len(failure.Error) == 0 {
-		t.Fatalf("export failure = %s, %v", result.stdout, err)
-	}
-	p.assertUnchanged(t, before)
-}
+// bundleRecord names the record of the bundle that a project's sources came from.
+const bundleRecord = ".bundle.lock.yaml"
 
 func newMergeProject(t *testing.T) *project {
 	t.Helper()
@@ -327,8 +289,82 @@ func newMergeProject(t *testing.T) *project {
 	p := newProject(t)
 	p.env = append(p.env, "PATH="+filepath.Dir(git)+string(os.PathListSeparator)+filepath.Dir(binaryPath))
 	p.run(t, 0, "agentenv", "init")
-	p.run(t, 0, "agentenv", "export", "--output", ".build/base")
+	// Tests edit .build/base, the previous release's bundle, before publishBase records it.
+	bundle, err := assets.AgentEnvTemplates()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.CopyFS(filepath.Join(p.root, ".build/base"), bundle); err != nil {
+		t.Fatal(err)
+	}
 	return p
+}
+
+// publishBase commits .build/base as the bundle of a previous release in a new Git
+// repository and records that revision as the project's bundle. It returns the
+// repository directory and a function that runs Git in it.
+func publishBase(t *testing.T, p *project) (string, func(args ...string) string) {
+	t.Helper()
+	repository := t.TempDir()
+	git := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{
+			"-C", repository, "-c", "user.name=go42x", "-c", "user.email=go42x@example.com",
+		}, args...)...)
+		// User and system settings, such as signed commits, must not change the fixture.
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1")
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %s: %v: %s", strings.Join(args, " "), err, output)
+		}
+		return strings.TrimSpace(string(output))
+	}
+	if err := os.CopyFS(
+		filepath.Join(repository, "assets/agentenv"),
+		os.DirFS(filepath.Join(p.root, ".build/base")),
+	); err != nil {
+		t.Fatal(err)
+	}
+	git("init", "--quiet")
+	git("add", "--all")
+	git("commit", "--quiet", "--no-gpg-sign", "--message", "previous release")
+	recordBase(t, p, repository, git("rev-parse", "HEAD"))
+	return repository, git
+}
+
+// recordBase writes the project's bundle record for ref in a local repository.
+func recordBase(t *testing.T, p *project, repository, ref string) {
+	t.Helper()
+	url := "file://" + path.Clean("/"+filepath.ToSlash(repository))
+	p.write(t, ".go42x/"+bundleRecord, fmt.Sprintf("repository: %s\nref: %s\n", url, ref))
+}
+
+// assertRecordedRelease checks the record after a successful update: this binary's
+// bundle, or no record for a development build, whose bundle no update can fetch.
+func assertRecordedRelease(t *testing.T, p *project) {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(p.root, ".go42x", bundleRecord))
+	if binaryVersion == "dev" {
+		if !os.IsNotExist(err) {
+			t.Errorf("development build kept a bundle record: %s, %v", data, err)
+		}
+		return
+	}
+	if err != nil || !strings.Contains(string(data), "repository: https://github.com/go42-dev/go42x.git\n") {
+		t.Errorf("bundle record = %s, %v; want this release", data, err)
+	}
+}
+
+// setConfigValue replaces the value on the first line that sets key, whatever its
+// quoting. It fails when no line sets key, so a fixture cannot silently stop changing it.
+func setConfigValue(t *testing.T, config, key, value string) string {
+	t.Helper()
+	line := regexp.MustCompile(`(?m)^([ \t]*` + regexp.QuoteMeta(key) + `:)[ \t].*$`)
+	loc := line.FindStringSubmatchIndex(config)
+	if loc == nil {
+		t.Fatalf("configuration does not set %s", key)
+	}
+	return config[:loc[3]] + " " + value + config[loc[1]:]
 }
 
 func mergeSourceSnapshot(t *testing.T, p *project) map[string]fileState {
@@ -344,8 +380,8 @@ func TestAgentEnvUpdateMergesOriginalBundle(t *testing.T) {
 	t.Parallel()
 	p := newMergeProject(t)
 	incoming := p.read(t, ".go42x/go42x.yaml")
-	base := strings.Replace(incoming, "temp-dir: .build", "temp-dir: .build-old", 1)
-	current := strings.Replace(base, "name: go42", "name: project-custom", 1)
+	base := setConfigValue(t, incoming, "temp-dir", ".build-old")
+	current := setConfigValue(t, base, "name", "project-custom")
 	p.write(t, ".build/base/go42x.yaml", base)
 	p.write(t, ".go42x/go42x.yaml", current)
 	if err := os.Chmod(filepath.Join(p.root, ".go42x/go42x.yaml"), 0600); err != nil {
@@ -372,9 +408,10 @@ func TestAgentEnvUpdateMergesOriginalBundle(t *testing.T) {
 		}
 	}
 
-	result := p.run(t, 0, "agentenv", "update", "--base", ".build/base", "--json")
+	publishBase(t, p)
+	result := p.run(t, 0, "agentenv", "update", "--json")
 
-	var report fspatch.UpdateResult
+	var report agentenv.UpdateResult
 	if err := json.Unmarshal(
 		[]byte(result.stdout),
 		&report,
@@ -382,7 +419,11 @@ func TestAgentEnvUpdateMergesOriginalBundle(t *testing.T) {
 		len(report.BackupDir) == 0 {
 		t.Fatalf("update result = %s, %v", result.stdout, err)
 	}
-	wantConfig := strings.Replace(incoming, "name: go42", "name: project-custom", 1)
+	wantOverwritten := []string{".go42x/resources/go-codestyle.md", ".go42x/upstream/go/package-names.md"}
+	if !slices.Equal(report.Overwritten, wantOverwritten) {
+		t.Errorf("overwritten = %q, want %q", report.Overwritten, wantOverwritten)
+	}
+	wantConfig := setConfigValue(t, incoming, "name", "project-custom")
 	if got := p.read(t, ".go42x/go42x.yaml"); got != wantConfig {
 		t.Fatalf("configuration did not merge local and upstream changes:\n%s", got)
 	}
@@ -390,7 +431,6 @@ func TestAgentEnvUpdateMergesOriginalBundle(t *testing.T) {
 		".go42x/go42x.local.yaml":            "project: {description: 'Local description'}\n",
 		".go42x/chunks/300-codestyle.tpl.md": "Customized style\n",
 		".go42x/chunks/project.tpl.md":       "Additional project instructions\n",
-		".go42x/resources/go-codestyle.md":   "Customized style resource\n",
 		".go42x/resources/project.md":        "Additional project resource\n",
 		".go42x/upstream/project.md":         "Additional project reference\n",
 		"AGENTS.md":                          "Existing generated instructions\n",
@@ -408,7 +448,12 @@ func TestAgentEnvUpdateMergesOriginalBundle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{"chunks/200-search.tpl.md", "upstream/go/package-names.md", vendoring.LockFile} {
+	for _, path := range []string{
+		"chunks/200-search.tpl.md",
+		"resources/go-codestyle.md",
+		"upstream/go/package-names.md",
+		vendoring.LockFile,
+	} {
 		want, err := fs.ReadFile(bundle, path)
 		if err != nil {
 			t.Fatal(err)
@@ -425,6 +470,7 @@ func TestAgentEnvUpdateMergesOriginalBundle(t *testing.T) {
 	if err != nil || info.Mode().Perm() != 0600 {
 		t.Fatalf("configuration permissions were changed: %v, %v", info, err)
 	}
+	assertRecordedRelease(t, p)
 }
 
 func TestAgentEnvUpdateMergesSchemaRevisions(t *testing.T) {
@@ -468,20 +514,21 @@ func TestAgentEnvUpdateMergesSchemaRevisions(t *testing.T) {
 			schema, _, _ = strings.Cut(schema, "\n")
 			incomingHeader := directive + schema
 			base := strings.Replace(incoming, incomingHeader, previousSchema, 1)
-			base = strings.Replace(base, "temp-dir: .build", "temp-dir: .build-old", 1)
+			base = setConfigValue(t, base, "temp-dir", ".build-old")
 			current := strings.Replace(base, previousSchema, tt.header, 1)
-			current = strings.Replace(current, "name: go42", "name: project-custom", 1)
+			current = setConfigValue(t, current, "name", "project-custom")
 			if tt.conflict {
-				current = strings.Replace(current, "temp-dir: .build-old", "temp-dir: .build-local", 1)
+				current = setConfigValue(t, current, "temp-dir", ".build-local")
 			}
 			p.write(t, ".build/base/go42x.yaml", base)
 			p.write(t, ".go42x/go42x.yaml", current)
+			publishBase(t, p)
 			before := mergeSourceSnapshot(t, p)
 			exitCode := 0
 			if tt.conflict {
 				exitCode = 1
 			}
-			result := p.run(t, exitCode, "agentenv", "update", "--base", ".build/base", "--json")
+			result := p.run(t, exitCode, "agentenv", "update", "--json")
 			if tt.conflict {
 				if !strings.Contains(result.stdout, "conflicts in go42x.yaml") ||
 					!maps.Equal(before, mergeSourceSnapshot(t, p)) {
@@ -489,31 +536,38 @@ func TestAgentEnvUpdateMergesSchemaRevisions(t *testing.T) {
 				}
 				return
 			}
-			want := strings.Replace(incoming, "name: go42", "name: project-custom", 1)
+			want := setConfigValue(t, incoming, "name", "project-custom")
 			if !tt.managed {
 				want = strings.Replace(want, incomingHeader, tt.header, 1)
 			}
 			if got := p.read(t, ".go42x/go42x.yaml"); got != want {
 				t.Fatalf("schema merge lost project or incoming changes:\n%s", got)
 			}
+			assertRecordedRelease(t, p)
 		})
 	}
 }
 
 func TestAgentEnvUpdateMergeConflictsPreserveSources(t *testing.T) {
 	t.Parallel()
-	for _, conflict := range []string{"content", "add-add", "modify-delete", "delete-modify", "symlink", "missing-git"} {
+	for _, conflict := range []string{
+		"content", "add-add", "release-owned-add", "modify-delete", "delete-modify", "symlink", "missing-git",
+	} {
 		t.Run(conflict, func(t *testing.T) {
 			t.Parallel()
 			p := newMergeProject(t)
 			path := "agents.tpl.md"
 
-			if conflict == "modify-delete" {
+			switch conflict {
+			case "modify-delete":
 				path = "chunks/090-retired.tpl.md"
+			case "release-owned-add":
+				// A project file at a path that the release starts to own is never replaced.
+				path = "resources/go-codestyle.md"
 			}
 			p.write(t, ".build/base/"+path, "Previous bundled content\n")
 			p.write(t, ".go42x/"+path, "Customized project content\n")
-			if conflict == "add-add" {
+			if conflict == "add-add" || conflict == "release-owned-add" {
 				if err := os.Remove(filepath.Join(p.root, ".build/base", path)); err != nil {
 					t.Fatal(err)
 				}
@@ -535,9 +589,10 @@ func TestAgentEnvUpdateMergeConflictsPreserveSources(t *testing.T) {
 			if conflict == "missing-git" {
 				p.env = append(p.env, "PATH="+filepath.Dir(binaryPath))
 			}
+			publishBase(t, p)
 			before := mergeSourceSnapshot(t, p)
 
-			result := p.run(t, 1, "agentenv", "update", "--base", ".build/base", "--json")
+			result := p.run(t, 1, "agentenv", "update", "--json")
 
 			var failure struct {
 				Error  string               `json:"error"`
@@ -567,54 +622,59 @@ func TestAgentEnvUpdateMergeConflictsPreserveSources(t *testing.T) {
 	}
 }
 
-func TestAgentEnvUpdateRejectsInvalidBaseAndMergedConfiguration(t *testing.T) {
+func TestAgentEnvUpdateRejectsUnusablePreviousBundle(t *testing.T) {
 	t.Parallel()
-	for _, invalid := range []string{"missing", "empty-directory", "symlink-base", "symlink-file", "configuration"} {
+	for _, invalid := range []string{
+		"missing-record", "invalid-record", "unknown-ref", "missing-configuration", "symlink-file", "configuration",
+	} {
 		t.Run(invalid, func(t *testing.T) {
 			t.Parallel()
 			p := newMergeProject(t)
-			base := ".build/base"
 			switch invalid {
-			case "missing":
-				base = ".build/missing"
-			case "empty-directory":
-				base = ".build/empty"
-				if err := os.Mkdir(filepath.Join(p.root, base), 0700); err != nil {
+			case "missing-record":
+			case "invalid-record":
+				p.write(t, ".go42x/"+bundleRecord, "repository: ext::sh -c true\nref: v1.0.0\n")
+			case "unknown-ref":
+				repository, _ := publishBase(t, p)
+				recordBase(t, p, repository, "v9.9.9")
+			case "missing-configuration":
+				if err := os.Remove(filepath.Join(p.root, ".build/base/go42x.yaml")); err != nil {
 					t.Fatal(err)
 				}
-			case "symlink-base":
-				base = filepath.Join(t.TempDir(), "base-link")
-				if err := os.Symlink(filepath.Join(p.root, ".build/base"), base); err != nil {
-					t.Fatal(err)
-				}
+				publishBase(t, p)
 			case "symlink-file":
-				if err := os.Symlink("go42x.yaml", filepath.Join(p.root, base, "linked.yaml")); err != nil {
+				repository, git := publishBase(t, p)
+				if err := os.Symlink(
+					"go42x.yaml",
+					filepath.Join(repository, "assets/agentenv/linked.yaml"),
+				); err != nil {
 					t.Fatal(err)
 				}
+				git("add", "--all")
+				git("commit", "--quiet", "--no-gpg-sign", "--message", "link")
+				recordBase(t, p, repository, git("rev-parse", "HEAD"))
 			case "configuration":
+				publishBase(t, p)
 				p.write(t, ".go42x/go42x.yaml", "version: [invalid\n")
 			}
 			before := mergeSourceSnapshot(t, p)
 
-			p.run(t, 1, "agentenv", "update", "--base", base, "--json")
+			result := p.run(t, 1, "agentenv", "update", "--json")
 
+			if invalid == "missing-record" && !strings.Contains(result.stdout, "agentenv init --force") {
+				t.Errorf("missing record error does not name the recovery: %s", result.stdout)
+			}
 			if !maps.Equal(before, mergeSourceSnapshot(t, p)) {
 				t.Fatal("invalid input changed project sources or backups")
 			}
 		})
 	}
-	p := newProject(t)
-	before := p.snapshot(t)
-	for _, base := range []string{"", "  "} {
-		p.run(t, 2, "agentenv", "update", "--base", base)
-	}
-	p.assertUnchanged(t, before)
 }
 
 func TestAgentEnvBundledDocuments(t *testing.T) {
 	t.Parallel()
 	p := newProject(t)
-	// Init and update must use the bundle even when downloads cannot work.
+	// Init and a forced reinstall must use the bundle even when downloads cannot work.
 	p.env = append(p.env, "HTTP_PROXY=http://127.0.0.1:1", "HTTPS_PROXY=http://127.0.0.1:1")
 	p.configure(t)
 	p.write(t, ".go42x/agents.tpl.md", "# {{ .project.name }}\n\n## Instructions\n\n{{ .chunks }}\n")
@@ -691,35 +751,35 @@ func TestAgentEnvBundledDocuments(t *testing.T) {
 	beforeInit := p.snapshot(t)
 	p.run(t, 0, "agentenv", "init")
 	p.assertUnchanged(t, beforeInit)
-	p.run(t, 0, "agentenv", "update")
+	p.run(t, 0, "agentenv", "init", "--force")
 	want, err := fs.ReadFile(templates, "upstream/go/code-review-comments.md")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := p.read(t, reference); got != string(want) {
-		t.Error("update did not restore the bundled reference")
+		t.Error("reinstall did not restore the bundled reference")
 	}
 	if got := p.read(t, custom); got != "Additional project reference\n" {
-		t.Error("update changed an additional project reference")
+		t.Error("reinstall changed an additional project reference")
 	}
 	wantResource, err := fs.ReadFile(templates, "resources/go-codestyle.md")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := p.read(t, resource); got != string(wantResource) {
-		t.Error("update did not restore the bundled resource")
+		t.Error("reinstall did not restore the bundled resource")
 	}
 	if got := p.read(t, customResource); got != "Additional project resource\n" {
-		t.Error("update changed an additional project resource")
+		t.Error("reinstall changed an additional project resource")
 	}
 	if got := p.read(t, vendoring.ManifestFile); got != projectManifest {
-		t.Fatal("update changed the project's own vendoring manifest")
+		t.Fatal("reinstall changed the project's own vendoring manifest")
 	}
 	if got := p.read(t, ".go42x/"+vendoring.ManifestFile); got != manifest {
-		t.Fatal("update did not restore the bundled upstream manifest")
+		t.Fatal("reinstall did not restore the bundled upstream manifest")
 	}
 	if got := p.read(t, ".go42x/"+vendoring.LockFile); got != string(lock) {
-		t.Fatal("update did not restore the bundled upstream lock")
+		t.Fatal("reinstall did not restore the bundled upstream lock")
 	}
 	backups, err := filepath.Glob(
 		filepath.Join(p.root, ".go42x/backups/updates/*/files", filepath.FromSlash(reference)),
@@ -732,7 +792,7 @@ func TestAgentEnvBundledDocuments(t *testing.T) {
 		t.Errorf("reference backup = %q, %v", backup, err)
 	}
 	if got := p.read(t, "AGENTS.md"); got != instructions {
-		t.Error("update regenerated instructions")
+		t.Error("reinstall regenerated instructions")
 	}
 	for path, want := range map[string]string{
 		".go42x/" + vendoring.ManifestFile: "Customized upstream manifest\n",
@@ -1074,13 +1134,13 @@ func TestAgentEnvDoesNotCreateKnowledgeBaseExclusions(t *testing.T) {
 	t.Parallel()
 	p := newProject(t)
 	p.configure(t)
-	p.run(t, 0, "agentenv", "update")
+	p.run(t, 0, "agentenv", "init", "--force")
 	if _, err := os.Stat(filepath.Join(p.root, ".go42x", "kwb.ignore")); !os.IsNotExist(err) {
 		t.Fatalf("agentenv created knowledge-base exclusions: %v", err)
 	}
 }
 
-func TestAgentEnvUpdate(t *testing.T) {
+func TestAgentEnvInitForce(t *testing.T) {
 	t.Parallel()
 	p := newProject(t)
 	p.configure(t)
@@ -1101,7 +1161,7 @@ func TestAgentEnvUpdate(t *testing.T) {
 	p.write(t, ".gitignore", originalGitIgnore)
 	p.write(t, ".go42x/chunks/100-operation.tpl.md", "Customized bundled chunk")
 	originalConfig := p.read(t, ".go42x/go42x.yaml")
-	result := p.run(t, 0, "agentenv", "update")
+	result := p.run(t, 0, "agentenv", "init", "--force")
 	templates, err := assets.AgentEnvTemplates()
 	if err != nil {
 		t.Fatal(err)
@@ -1119,13 +1179,13 @@ func TestAgentEnvUpdate(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(result.stdout, "Backup: ") ||
-		!strings.Contains(result.stdout, fmt.Sprintf("Updated %d source files.", sourceCount)) ||
+		!strings.Contains(result.stdout, fmt.Sprintf("Reinstalled %d source files in .go42x.", sourceCount)) ||
 		!strings.Contains(result.stdout, "Run go42x agentenv generate") {
 		t.Fatalf("missing update summary: %s", result.stdout)
 	}
 	backups, err := filepath.Glob(filepath.Join(p.root, ".go42x/backups/updates/*"))
 	if err != nil || len(backups) != 1 {
-		t.Fatalf("update backup = %v, %v", backups, err)
+		t.Fatalf("reinstall backup = %v, %v", backups, err)
 	}
 	for path, want := range map[string]string{
 		".gitignore":                         originalGitIgnore,
@@ -1145,28 +1205,28 @@ func TestAgentEnvUpdate(t *testing.T) {
 	if !strings.HasPrefix(gitignore, "before\n# go42x -- START\n") ||
 		!strings.HasSuffix(gitignore, "# go42x -- END\nafter\n") ||
 		strings.Contains(gitignore, "obsolete") || !strings.Contains(gitignore, ".go42x/backups/\n") {
-		t.Fatalf("update did not replace the managed gitignore block: %s", gitignore)
+		t.Fatalf("reinstall did not replace the managed gitignore block: %s", gitignore)
 	}
 	for path, want := range preserved {
 		if got := p.read(t, path); got != want {
-			t.Errorf("update changed %s: %q, want %q", path, got, want)
+			t.Errorf("reinstall changed %s: %q, want %q", path, got, want)
 		}
 		if _, err := os.Stat(filepath.Join(backups[0], "files", filepath.FromSlash(path))); !os.IsNotExist(err) {
-			t.Errorf("update backed up an unchanged custom file or generated output %s: %v", path, err)
+			t.Errorf("reinstall backed up an unchanged custom file or generated output %s: %v", path, err)
 		}
 	}
 	if _, err := os.Stat(filepath.Join(p.root, "CLAUDE.md")); !os.IsNotExist(err) {
-		t.Fatalf("update generated obsolete Claude wrapper: %v", err)
+		t.Fatalf("reinstall generated obsolete Claude wrapper: %v", err)
 	}
 	for _, path := range []string{".build", ".mcp.json", ".codex"} {
 		if _, err := os.Stat(filepath.Join(p.root, path)); !os.IsNotExist(err) {
-			t.Errorf("update created %s: %v", path, err)
+			t.Errorf("reinstall created %s: %v", path, err)
 		}
 	}
-	p.run(t, 0, "agentenv", "update")
+	p.run(t, 0, "agentenv", "init", "--force")
 	backups, err = filepath.Glob(filepath.Join(p.root, ".go42x/backups/updates/*"))
 	if err != nil || len(backups) != 2 {
-		t.Fatalf("repeated update did not create another backup: %v, %v", backups, err)
+		t.Fatalf("repeated reinstall did not create another backup: %v, %v", backups, err)
 	}
 	p.run(t, 0, "agentenv", "generate", "--providers=claude")
 	instructions := p.read(t, "AGENTS.md")
@@ -1177,7 +1237,7 @@ func TestAgentEnvUpdate(t *testing.T) {
 	}
 }
 
-func TestAgentEnvUpdateFailureBeforeApplication(t *testing.T) {
+func TestAgentEnvInitForceFailureBeforeApplication(t *testing.T) {
 	t.Parallel()
 	for _, scenario := range []struct {
 		name    string
@@ -1222,13 +1282,13 @@ func TestAgentEnvUpdateFailureBeforeApplication(t *testing.T) {
 			p.write(t, "AGENTS.md", "Original instructions")
 			p.write(t, scenario.path, scenario.content)
 			before := p.snapshot(t)
-			p.run(t, 1, "agentenv", "update")
+			p.run(t, 1, "agentenv", "init", "--force")
 			p.assertUnchanged(t, before)
 		})
 	}
 }
 
-func TestAgentEnvUpdateDoesNotReadProviderSettingsOrTemplates(t *testing.T) {
+func TestAgentEnvInitForceDoesNotReadProviderSettingsOrTemplates(t *testing.T) {
 	t.Parallel()
 	p := newProject(t)
 	p.configure(t)
@@ -1244,14 +1304,14 @@ func TestAgentEnvUpdateDoesNotReadProviderSettingsOrTemplates(t *testing.T) {
 	for path, content := range preserved {
 		p.write(t, path, content)
 	}
-	p.run(t, 0, "agentenv", "update")
+	p.run(t, 0, "agentenv", "init", "--force")
 	for path, want := range preserved {
 		if got := p.read(t, path); got != want {
-			t.Errorf("update changed %s: %q, want %q", path, got, want)
+			t.Errorf("reinstall changed %s: %q, want %q", path, got, want)
 		}
 	}
 	if _, err := os.Stat(filepath.Join(p.root, "AGENTS.md")); !os.IsNotExist(err) {
-		t.Fatalf("update generated instructions: %v", err)
+		t.Fatalf("reinstall generated instructions: %v", err)
 	}
 }
 
@@ -1259,7 +1319,8 @@ func TestAgentEnvUpdateUsage(t *testing.T) {
 	t.Parallel()
 	p := newProject(t)
 	for _, option := range []string{
-		"--dry-run", "--no-generate", "--providers=codex", "--keep", "--replace", "unexpected-argument",
+		"--dry-run", "--no-generate", "--providers=codex", "--keep", "--replace", "--base=.build/base", "--force",
+		"unexpected-argument",
 	} {
 		before := p.snapshot(t)
 		p.run(t, 2, "agentenv", "update", option)

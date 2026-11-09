@@ -546,3 +546,101 @@ func TestManifestConverter(t *testing.T) {
 		t.Fatalf("converter was omitted from the manifest digest: %s %v", converted, err)
 	}
 }
+
+const validDirectories = `version: "1.0"
+dependencies:
+  skills:
+    source:
+      type: git
+      url: https://example.com/skills.git
+      ref: main
+    directories:
+      - from: skills/review
+        to: skills/review
+      - from: skills/notes
+        to: skills/notes
+`
+
+func TestManifestDirectories(t *testing.T) {
+	m, err := ParseManifest([]byte(validDirectories))
+	if err != nil {
+		t.Fatal(err)
+	}
+	directories := m.Dependencies["skills"].Directories
+	if len(directories) != 2 || directories[0].To != "skills/notes" || directories[1].To != "skills/review" {
+		t.Fatalf("directories = %+v, want both in destination order", directories)
+	}
+	reordered := strings.Replace(
+		validDirectories,
+		"      - from: skills/review\n        to: skills/review\n      - from: skills/notes\n        to: skills/notes\n",
+		"      - from: skills/notes\n        to: skills/notes\n      - from: skills/review\n        to: skills/review\n",
+		1,
+	)
+	other, err := ParseManifest([]byte(reordered))
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := m.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := other.Digest()
+	if err != nil || first != second {
+		t.Fatalf("directory order changed the digest: %s, %s, %v", first, second, err)
+	}
+
+	mixed := validDirectories + "    files:\n      - from: README.md\n        to: skills/README.md\n"
+	if _, err := ParseManifest([]byte(mixed)); err != nil {
+		t.Fatalf("file beside mapped directories rejected: %v", err)
+	}
+}
+
+func TestManifestRejectsInvalidDirectories(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		data string
+		want string
+	}{
+		{
+			name: "file inside a directory",
+			data: validDirectories + "    files:\n      - from: extra.md\n        to: skills/review/extra.md\n",
+			want: "file/directory destination collision",
+		},
+		{
+			name: "nested directories",
+			data: validDirectories + "      - from: other\n        to: skills/review/other\n",
+			want: "file/directory destination collision",
+		},
+		{
+			name: "case-folded directories",
+			data: validDirectories + "      - from: other\n        to: skills/Review\n",
+			want: "destination collision",
+		},
+		{
+			name: "traversal",
+			data: strings.Replace(validDirectories, "to: skills/review", "to: ../review", 1),
+			want: "directory to",
+		},
+		{
+			name: "source root",
+			data: strings.Replace(validDirectories, "from: skills/review", "from: .", 1),
+			want: "directory from",
+		},
+		{
+			name: "converter",
+			data: strings.Replace(validDirectories, "to: skills/review\n", "to: skills/review\n        converter: html-to-markdown\n", 1),
+			want: "decode",
+		},
+		{
+			name: "no mappings",
+			data: "version: '1.0'\ndependencies: {a: {source: {type: http, url: https://example.com/file}, directories: []}}",
+			want: "requires file or directory mappings",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := ParseManifest([]byte(tc.data)); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("ParseManifest() error = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}

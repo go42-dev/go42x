@@ -144,3 +144,55 @@ func TestLockResolvedIdentityValidation(t *testing.T) {
 		})
 	}
 }
+
+func TestLockMatchesDirectoryInventory(t *testing.T) {
+	m, err := ParseManifest(
+		[]byte(validDirectories + "    files:\n      - from: README.md\n        to: skills/README.md\n"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest, err := m.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash := hash([]byte("content"))
+	locked := func(files ...string) *Lock {
+		inventory := map[string]string{}
+		for _, file := range files {
+			inventory[file] = hash
+		}
+		return &Lock{
+			Manifest:       ManifestFile,
+			ManifestSHA256: digest,
+			Dependencies: map[string]LockedDependency{
+				"skills": {
+					Resolved: source.Resolved{Commit: strings.Repeat("ab", 20)},
+					Files:    inventory,
+				},
+			},
+		}
+	}
+	complete := []string{
+		"skills/README.md",
+		"skills/notes/SKILL.md",
+		"skills/review/SKILL.md",
+		"skills/review/scripts/check.sh",
+	}
+	if err := locked(complete...).Matches(m); err != nil {
+		t.Fatalf("complete inventory rejected: %v", err)
+	}
+	for name, files := range map[string][]string{
+		"missing mapped file":     complete[1:],
+		"empty directory":         {"skills/README.md", "skills/review/SKILL.md"},
+		"file outside a mapping":  append([]string{"skills/other/SKILL.md"}, complete...),
+		"directory name prefix":   append([]string{"skills/reviewer/SKILL.md"}, complete...),
+		"directory itself locked": append([]string{"skills/notes"}, complete[0], complete[2], complete[3]),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := locked(files...).Matches(m); err == nil {
+				t.Fatalf("inventory %v accepted", files)
+			}
+		})
+	}
+}

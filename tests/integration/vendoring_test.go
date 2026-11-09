@@ -623,11 +623,13 @@ func TestNpmExactAndDistTagLockedSync(t *testing.T) {
 	}
 }
 
-func TestGitBranchUpdateAndLockedRestore(t *testing.T) {
+// gitFixture creates an empty Git repository on branch main and returns its file URL
+// and a function that runs Git in it without user or system configuration.
+func gitFixture(t *testing.T, repository string) (string, func(args ...string) string) {
+	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("Git is unavailable")
 	}
-	repository, root := t.TempDir(), t.TempDir()
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(t.TempDir(), "absent"))
 	git := func(args ...string) string {
@@ -655,15 +657,20 @@ func TestGitBranchUpdateAndLockedRestore(t *testing.T) {
 		return strings.TrimSpace(string(output))
 	}
 	git("init", "-b", "main")
-	writeFixture(t, filepath.Join(repository, "nested", "file.txt"), []byte("first"))
-	git("add", ".")
-	git("commit", "-m", "fixture one")
-	first := git("rev-parse", "HEAD")
 	repositoryURL := &url.URL{
 		Scheme: "file",
 		Path:   repository,
 	}
-	remote := repositoryURL.String()
+	return repositoryURL.String(), git
+}
+
+func TestGitBranchUpdateAndLockedRestore(t *testing.T) {
+	repository, root := t.TempDir(), t.TempDir()
+	remote, git := gitFixture(t, repository)
+	writeFixture(t, filepath.Join(repository, "nested", "file.txt"), []byte("first"))
+	git("add", ".")
+	git("commit", "-m", "fixture one")
+	first := git("rev-parse", "HEAD")
 	manifest := fmt.Sprintf(
 		"version: \"1.0\"\ndependencies:\n  git:\n    source:\n      type: git\n      url: %s\n      ref: main\n    files:\n      - from: nested/file.txt\n        to: nested/file.txt\n",
 		remote,
@@ -694,6 +701,81 @@ func TestGitBranchUpdateAndLockedRestore(t *testing.T) {
 	}
 	if string(readFixture(t, filepath.Join(root, "nested", "file.txt"))) != "second" {
 		t.Fatal("explicit update did not advance branch")
+	}
+}
+
+func TestGitDirectoryFollowsUpstreamInventory(t *testing.T) {
+	repository, root := t.TempDir(), t.TempDir()
+	remote, git := gitFixture(t, repository)
+	writeFixture(t, filepath.Join(repository, "skills", "review", "SKILL.md"), []byte("first"))
+	writeFixture(t, filepath.Join(repository, "skills", "review", "scripts", "old.sh"), []byte("old"))
+	writeFixture(t, filepath.Join(repository, "skills", "other", "SKILL.md"), []byte("other"))
+	git("add", ".")
+	git("commit", "-m", "fixture one")
+	manifest := fmt.Sprintf(
+		"version: \"1.0\"\ndependencies:\n  skills:\n    source:\n      type: git\n      url: %s\n      ref: main\n"+
+			"    directories:\n      - from: skills/review\n        to: .go42x/skills/review\n",
+		remote,
+	)
+	writeFixture(t, filepath.Join(root, vendoring.ManifestFile), []byte(manifest))
+	writeFixture(t, filepath.Join(root, ".go42x", "skills", "review", "local.md"), []byte("local"))
+	s := fixtureService(t, root, vendoring.ManifestFile)
+	if _, err := s.Update(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	skill := filepath.Join(root, ".go42x", "skills", "review")
+	for name, want := range map[string]string{
+		"SKILL.md":       "first",
+		"scripts/old.sh": "old",
+		"local.md":       "local",
+	} {
+		if got := string(readFixture(t, filepath.Join(skill, filepath.FromSlash(name)))); got != want {
+			t.Fatalf("%s = %q, want %q", name, got, want)
+		}
+	}
+	lock, err := vendoring.ParseLock(readFixture(t, filepath.Join(root, vendoring.LockFile)))
+	if err != nil || len(lock.Dependencies["skills"].Files) != 2 {
+		t.Fatalf("lock = %+v, %v; want the two directory files", lock, err)
+	}
+
+	// Upstream adds and removes files; sync keeps the locked inventory and update follows upstream.
+	if err := os.Remove(filepath.Join(repository, "skills", "review", "scripts", "old.sh")); err != nil {
+		t.Fatal(err)
+	}
+	writeFixture(t, filepath.Join(repository, "skills", "review", "references", "new.md"), []byte("new"))
+	writeFixture(t, filepath.Join(repository, "skills", "review", "SKILL.md"), []byte("second"))
+	git("add", "-A")
+	git("commit", "-m", "fixture two")
+	if err := os.Remove(filepath.Join(skill, "SKILL.md")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Sync(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if got := string(readFixture(t, filepath.Join(skill, "SKILL.md"))); got != "first" {
+		t.Fatalf("sync restored %q, want the locked file", got)
+	}
+	if _, err := s.Update(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]string{
+		"SKILL.md":          "second",
+		"references/new.md": "new",
+		"local.md":          "local",
+	} {
+		if got := string(readFixture(t, filepath.Join(skill, filepath.FromSlash(name)))); got != want {
+			t.Errorf("%s = %q, want %q", name, got, want)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(skill, "scripts", "old.sh")); !os.IsNotExist(err) {
+		t.Errorf("file removed upstream was kept: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".go42x", "skills", "other")); !os.IsNotExist(err) {
+		t.Errorf("unmapped upstream directory was vendored: %v", err)
+	}
+	result, err := s.Check(t.Context())
+	if err != nil || !result.Valid {
+		t.Fatalf("check after directory update = %+v, %v", result, err)
 	}
 }
 

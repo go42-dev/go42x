@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -50,7 +51,7 @@ func generateSkills(root, skillsDir string, providers ...string) error {
 	g := NewGenerator(logger, cfg, filepath.Join(root, config.Directory), root)
 	g.registerProviders()
 	plan := fspatch.NewPlan(logger, root, filepath.Join(root, config.Directory, "backups"))
-	if err := g.prepareSkills(plan, false); err != nil {
+	if err := g.prepareSkills(plan, map[string]any{"skills": g.skillContext()}, false); err != nil {
 		return err
 	}
 
@@ -306,7 +307,7 @@ func TestLoadSkillsRejectsInvalidSkills(t *testing.T) {
 		content string
 		want    string
 	}{
-		{name: "missing skill file", dir: "alpha", want: "missing SKILL.md"},
+		{name: "missing skill file", dir: "alpha", want: "missing SKILL.md or SKILL.tpl.md"},
 		{name: "no front matter", dir: "alpha", content: "# Alpha\n", want: "must start with YAML front matter"},
 		{name: "unclosed front matter", dir: "alpha", content: "---\nname: alpha\n", want: "is not closed"},
 		{name: "invalid yaml", dir: "alpha", content: "---\nname: [\n---\n", want: "invalid SKILL.md front matter"},
@@ -338,7 +339,7 @@ func TestLoadSkillsRejectsInvalidSkills(t *testing.T) {
 			}
 			writeProjectFiles(t, root, files)
 
-			_, err := loadSkills(root, ".")
+			_, err := loadSkills(root, ".", nil)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("loadSkills() error = %v, want %q", err, tt.want)
 			}
@@ -361,7 +362,7 @@ func TestLoadSkillsReadsSkillDirectories(t *testing.T) {
 		"skills/alpha/scripts/run.sh": "#!/bin/sh\n",
 	})
 
-	skills, err := loadSkills(root, "skills")
+	skills, err := loadSkills(root, "skills", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -377,8 +378,153 @@ func TestLoadSkillsReadsSkillDirectories(t *testing.T) {
 		t.Errorf("skill files = %v, want %v", files, want)
 	}
 
-	missing, err := loadSkills(root, "absent")
+	missing, err := loadSkills(root, "absent", nil)
 	if err != nil || len(missing) != 0 {
 		t.Errorf("loadSkills(absent) = %v, %v; want no skills", missing, err)
+	}
+}
+
+func TestLoadSkillsRendersTemplateSkills(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeProjectFiles(t, root, map[string]string{
+		"skills/alpha/SKILL.tpl.md": "---\nname: alpha\ndescription: Review {{ .project.name }}.\n---\n" +
+			"{{ range .skills.targets }}{{ .dir }}: {{ join .providers \", \" }}\n{{ end }}",
+		"skills/alpha/references/guide.tpl.md":  "Guide for {{ .project.name }}\n",
+		"skills/alpha/scripts/run.sh":           "echo {{ .project.name }}\n",
+		"skills/vendored/SKILL.md":              skillSource("vendored") + "Literal {{ .project.name }}\n",
+		"skills/vendored/templates/note.tpl.md": "Literal {{ .project.name }}\n",
+	})
+	data := map[string]any{
+		"project": map[string]any{"name": "demo"},
+		"skills": map[string]any{
+			"targets": []map[string]any{
+				{
+					"dir":       ".claude/skills",
+					"providers": []string{"claude", "gh-aw"},
+				},
+			},
+		},
+	}
+
+	skills, err := loadSkills(root, "skills", data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(skills) != 2 {
+		t.Fatalf("loadSkills() = %+v, want alpha and vendored", skills)
+	}
+	for _, tt := range []struct {
+		skill int
+		file  string
+		want  string
+	}{
+		{
+			skill: 0,
+			file:  "SKILL.md",
+			want:  "---\nname: alpha\ndescription: Review demo.\n---\n.claude/skills: claude, gh-aw\n",
+		},
+		{skill: 0, file: "references/guide.md", want: "Guide for demo\n"},
+		{skill: 0, file: "scripts/run.sh", want: "echo {{ .project.name }}\n"},
+		{skill: 1, file: "SKILL.md", want: skillSource("vendored") + "Literal {{ .project.name }}\n"},
+		{skill: 1, file: "templates/note.tpl.md", want: "Literal {{ .project.name }}\n"},
+	} {
+		if got := string(skills[tt.skill].files[tt.file]); got != tt.want {
+			t.Errorf("%s/%s = %q, want %q", skills[tt.skill].name, tt.file, got, tt.want)
+		}
+	}
+	for _, file := range []string{"SKILL.tpl.md", "references/guide.tpl.md"} {
+		if _, exists := skills[0].files[file]; exists {
+			t.Errorf("template source %s was copied", file)
+		}
+	}
+}
+
+func TestLoadSkillsRejectsInvalidTemplateSkills(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name  string
+		files map[string]string
+		want  string
+	}{
+		{
+			name: "plain and template skill files",
+			files: map[string]string{
+				"alpha/SKILL.md":     skillSource("alpha"),
+				"alpha/SKILL.tpl.md": skillSource("alpha"),
+			},
+			want: "has both SKILL.md and SKILL.tpl.md",
+		},
+		{
+			name: "template and output side by side",
+			files: map[string]string{
+				"alpha/SKILL.tpl.md":      skillSource("alpha"),
+				"alpha/docs/guide.md":     "Guide\n",
+				"alpha/docs/guide.tpl.md": "Guide\n",
+			},
+			want: "docs/guide.tpl.md and docs/guide.md both produce docs/guide.md",
+		},
+		{
+			name:  "template syntax",
+			files: map[string]string{"alpha/SKILL.tpl.md": skillSource("alpha") + "{{ if }}\n"},
+			want:  "SKILL.tpl.md: failed to parse template",
+		},
+		{
+			name: "template execution",
+			files: map[string]string{
+				"alpha/SKILL.tpl.md":      skillSource("alpha"),
+				"alpha/docs/guide.tpl.md": "{{ join .project.name \", \" }}\n",
+			},
+			want: "docs/guide.tpl.md: failed to execute template",
+		},
+		{
+			name:  "rendered front matter",
+			files: map[string]string{"alpha/SKILL.tpl.md": skillSource("{{ .project.name }}")},
+			want:  "name \"demo\" must match the directory name",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			writeProjectFiles(t, root, tt.files)
+
+			_, err := loadSkills(root, ".", map[string]any{"project": map[string]any{"name": "demo"}})
+			if err == nil || !strings.Contains(err.Error(), tt.want) || !strings.Contains(err.Error(), "skill alpha:") {
+				t.Fatalf("loadSkills() error = %v, want %q for skill alpha", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestSkillContextListsTargetsWithProviders(t *testing.T) {
+	t.Parallel()
+	cfg := &config.Config{
+		Context: config.Context{SkillsDir: "skills/"},
+		Providers: map[string]config.Provider{
+			claude.Name: {},
+			codex.Name:  {},
+			ghaw.Name:   {},
+			crush.Name:  {},
+		},
+	}
+	g := NewGenerator(slog.New(slog.DiscardHandler), cfg, t.TempDir(), t.TempDir())
+	g.registerProviders()
+
+	got := g.skillContext()
+	want := map[string]any{
+		"dir": "skills",
+		"targets": []map[string]any{
+			{
+				"dir":       claude.SkillsDir,
+				"providers": []string{claude.Name, ghaw.Name},
+			},
+			{
+				"dir":       provider.SharedSkillsDir,
+				"providers": []string{codex.Name, ghaw.Name},
+			},
+		},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("skillContext() = %v, want %v", got, want)
 	}
 }

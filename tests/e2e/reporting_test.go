@@ -86,14 +86,14 @@ func TestAgentEnvAndBuildJSONResults(t *testing.T) {
 	if err := json.Unmarshal([]byte(built.stdout), &build); err != nil || build.Files == 0 || build.Indexed == 0 {
 		t.Fatalf("invalid build result: %+v, %v", built, err)
 	}
-	updated := p.run(t, 0, "agentenv", "update", "--json", "--log-level=debug")
+	reinstalled := p.run(t, 0, "agentenv", "init", "--force", "--json", "--log-level=debug")
 	var update fspatch.UpdateResult
 	if err := json.Unmarshal(
-		[]byte(updated.stdout),
+		[]byte(reinstalled.stdout),
 		&update,
 	); err != nil || len(update.BackupDir) == 0 || update.Sources == 0 ||
 		update.Applied == 0 {
-		t.Fatalf("invalid update result: %+v, %v", updated, err)
+		t.Fatalf("invalid reinstall result: %+v, %v", reinstalled, err)
 	}
 	if _, err := os.Stat(update.BackupDir); err != nil {
 		t.Fatalf("reported backup is unavailable: %v", err)

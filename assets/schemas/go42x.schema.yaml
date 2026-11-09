@@ -143,8 +143,9 @@ properties:
           no chunks.
       skills-dir:
         type: string
-        description: Agent skill directory relative to .go42x; each immediate subdirectory with a SKILL.md is copied to the
-          skill directories of enabled providers. Omit to install no skills.
+        description: Agent skill directory relative to .go42x; each immediate subdirectory with a SKILL.md, or with a SKILL.tpl.md
+          whose *.tpl.md files render as templates, is installed in the skill directories of enabled providers. Omit to install
+          no skills.
       temp-dir:
         type: string
         description: Directory for intermediate agent outputs in generated instructions, available as .context.TempDir. Relative

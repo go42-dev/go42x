@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"maps"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -173,6 +174,11 @@ func (s *Service) load(requireLock bool) (*inputs, error) {
 				return nil, err
 			}
 		}
+		for _, dir := range d.Directories {
+			if err := s.validateDirectoryTarget(dir.To); err != nil {
+				return nil, err
+			}
+		}
 	}
 	for name := range in.owned {
 		if err := s.validateTarget(name); err != nil {
@@ -194,6 +200,16 @@ func (s *Service) validateTarget(relative string) error {
 	}
 
 	return safePath(filepath.Dir(s.settings.ManifestPath), filename)
+}
+
+// validateDirectoryTarget applies validateTarget rules to a mapped destination directory.
+func (s *Service) validateDirectoryTarget(relative string) error {
+	dir := s.target(relative)
+	if overlap(dir, s.settings.ManifestPath) || overlap(dir, s.settings.LockPath) || s.reserved(dir) {
+		return fmt.Errorf("destination collides with control paths: %s", relative)
+	}
+
+	return safeDirectory(filepath.Dir(s.settings.ManifestPath), dir)
 }
 
 func within(root, filename string) bool {
@@ -478,20 +494,44 @@ func (s *Service) fetch(
 			Resolved: fetched.Resolved,
 			Files:    make(map[string]string, len(d.Files)),
 		}
+		add := func(from, destination string, data []byte) error {
+			hash := hash(data)
+			if operation == OperationSync && hash != in.owned[destination] {
+				return fmt.Errorf("locked source file hash differs: %s", from)
+			}
+
+			entry.Files[destination] = hash
+			contents[destination] = data
+			return nil
+		}
 		for _, f := range d.Files {
 			data, err := s.selectFile(fetched.Root, f)
 			if err != nil {
 				return nil, nil, fmt.Errorf("select %s:%s: %w", id, f.From, err)
 			}
 
-			hash := hash(data)
-			if operation == OperationSync && hash != in.owned[f.To] {
-				return nil, nil, fmt.Errorf("locked source file hash differs: %s", f.From)
+			if err := add(f.From, f.To, data); err != nil {
+				return nil, nil, err
+			}
+		}
+		for _, dir := range d.Directories {
+			files, err := selectDirectory(fetched.Root, dir)
+			if err != nil {
+				return nil, nil, fmt.Errorf("select %s:%s: %w", id, dir.From, err)
 			}
 
-			entry.Files[f.To] = hash
-			contents[f.To] = data
+			for _, destination := range slices.Sorted(maps.Keys(files)) {
+				from := path.Join(dir.From, strings.TrimPrefix(destination, dir.To+"/"))
+				if err := add(from, destination, files[destination]); err != nil {
+					return nil, nil, err
+				}
+			}
 		}
+		// A pinned source must yield the locked inventory, including files beneath directories.
+		if operation == OperationSync && len(entry.Files) != len(in.lock.Dependencies[id].Files) {
+			return nil, nil, fmt.Errorf("locked file inventory differs for %s", id)
+		}
+
 		lock.Dependencies[id] = entry
 	}
 	return lock, contents, lock.Validate()

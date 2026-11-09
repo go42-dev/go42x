@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -16,6 +17,9 @@ import (
 )
 
 const maxFileBytes int64 = 64 << 20
+
+// maxDirectoryFiles bounds the files that one directory mapping selects.
+const maxDirectoryFiles = 1000
 
 func hash(data []byte) string {
 	value := sha256.Sum256(data)
@@ -25,6 +29,15 @@ func hash(data []byte) string {
 // safePath rejects symlinks in every existing component beneath root. Missing
 // components are allowed when preparing destination files.
 func safePath(root, filename string) error {
+	return safeComponents(root, filename, false)
+}
+
+// safeDirectory applies the safePath rules to a directory.
+func safeDirectory(root, dir string) error {
+	return safeComponents(root, dir, true)
+}
+
+func safeComponents(root, filename string, directory bool) error {
 	relative, err := filepath.Rel(root, filename)
 	if err != nil || !filepath.IsLocal(relative) || relative == "." {
 		return fmt.Errorf("path must be inside %s: %s", root, filename)
@@ -47,7 +60,10 @@ func safePath(root, filename string) error {
 		if i < len(parts)-1 && !info.IsDir() {
 			return fmt.Errorf("parent must be a directory: %s", current)
 		}
-		if i == len(parts)-1 && !info.Mode().IsRegular() {
+		if i == len(parts)-1 && directory && !info.IsDir() {
+			return fmt.Errorf("expected a directory: %s", current)
+		}
+		if i == len(parts)-1 && !directory && !info.Mode().IsRegular() {
 			return fmt.Errorf("expected a regular file: %s", current)
 		}
 	}
@@ -100,6 +116,62 @@ func (s *Service) selectFile(root string, mapping FileMapping) ([]byte, error) {
 	return converted, nil
 }
 
+// selectDirectory reads every regular file beneath mapping.From, keyed by its
+// destination beneath mapping.To. Git metadata is skipped; symlinks and other special
+// files are rejected.
+func selectDirectory(root string, mapping DirectoryMapping) (map[string][]byte, error) {
+	dir := filepath.Join(root, filepath.FromSlash(mapping.From))
+	if err := safeDirectory(root, dir); err != nil {
+		return nil, err
+	}
+	if _, err := os.Stat(dir); err != nil {
+		return nil, err
+	}
+
+	files := map[string][]byte{}
+	err := filepath.WalkDir(dir, func(filename string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.Name() == ".git" && filename != dir {
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		if !entry.Type().IsRegular() {
+			return fmt.Errorf("expected a regular file: %s", filename)
+		}
+		if len(files) == maxDirectoryFiles {
+			return fmt.Errorf("directory has more than %d files: %s", maxDirectoryFiles, mapping.From)
+		}
+
+		relative, err := filepath.Rel(dir, filename)
+		if err != nil {
+			return err
+		}
+
+		data, err := readFile(filename)
+		if err != nil {
+			return err
+		}
+
+		files[path.Join(mapping.To, filepath.ToSlash(relative))] = data
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(files) == 0 {
+		return nil, fmt.Errorf("directory has no files: %s", mapping.From)
+	}
+
+	return files, nil
+}
+
 func checkConflict(
 	filename string,
 	original []byte,
@@ -130,6 +202,9 @@ func (s *Service) checkOwnership(ctx context.Context, in *inputs) error {
 	for _, d := range in.manifest.Dependencies {
 		for _, f := range d.Files {
 			ours = append(ours, s.target(f.To))
+		}
+		for _, dir := range d.Directories {
+			ours = append(ours, s.target(dir.To))
 		}
 	}
 	for name := range in.owned {
@@ -224,6 +299,9 @@ func (s *Service) checkOwnership(ctx context.Context, in *inputs) error {
 			for _, d := range m.Dependencies {
 				for _, f := range d.Files {
 					foreign = append(foreign, filepath.Join(filepath.Dir(filename), filepath.FromSlash(f.To)))
+				}
+				for _, dir := range d.Directories {
+					foreign = append(foreign, filepath.Join(filepath.Dir(filename), filepath.FromSlash(dir.To)))
 				}
 			}
 		}

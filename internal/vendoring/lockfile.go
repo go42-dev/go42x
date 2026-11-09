@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"path"
+	"slices"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -116,7 +117,7 @@ func (l *Lock) Matches(m *Manifest) error {
 
 	for id, d := range m.Dependencies {
 		locked, ok := l.Dependencies[id]
-		if !ok || len(d.Files) != len(locked.Files) {
+		if !ok || d.lockedInventory(locked.Files) != nil {
 			return fmt.Errorf("inconsistent lock inventory for %s", id)
 		}
 
@@ -135,10 +136,38 @@ func (l *Lock) Matches(m *Manifest) error {
 			return fmt.Errorf("locked npm version differs from exact selector: %s", id)
 		}
 
-		for _, f := range d.Files {
-			if _, ok := locked.Files[f.To]; !ok {
-				return fmt.Errorf("inconsistent locked mapping for %s", id)
-			}
+	}
+	return nil
+}
+
+// lockedInventory checks that locked destinations are exactly the mapped files plus
+// at least one file beneath each mapped directory.
+func (d Dependency) lockedInventory(files map[string]string) error {
+	for _, f := range d.Files {
+		if _, ok := files[f.To]; !ok {
+			return fmt.Errorf("file %s is not locked", f.To)
+		}
+	}
+
+	expanded := make(map[string]int, len(d.Directories))
+	for destination := range files {
+		if slices.ContainsFunc(d.Files, func(f FileMapping) bool {
+			return f.To == destination
+		}) {
+			continue
+		}
+
+		i := slices.IndexFunc(d.Directories, func(dir DirectoryMapping) bool {
+			return strings.HasPrefix(destination, dir.To+"/")
+		})
+		if i < 0 {
+			return fmt.Errorf("locked file %s has no mapping", destination)
+		}
+		expanded[d.Directories[i].To]++
+	}
+	for _, dir := range d.Directories {
+		if expanded[dir.To] == 0 {
+			return fmt.Errorf("directory %s has no locked files", dir.To)
 		}
 	}
 	return nil

@@ -102,3 +102,53 @@ func TestSchemaSourceVariants(t *testing.T) {
 		})
 	}
 }
+
+func TestSchemaMappings(t *testing.T) {
+	compiled := compileVendorSchema(t)
+	for _, tc := range []struct {
+		name     string
+		mappings string
+		valid    bool
+	}{
+		{
+			"files",
+			"files: [{from: file, to: file}]",
+			true,
+		},
+		{
+			"directories",
+			"directories: [{from: skills/review, to: skills/review}]",
+			true,
+		},
+		{
+			"files and directories",
+			"files: [{from: file, to: file}], directories: [{from: dir, to: dir}]",
+			true,
+		},
+		{
+			"no mappings",
+			"",
+			false,
+		},
+		{
+			"empty directories",
+			"directories: []",
+			false,
+		},
+		{
+			"directory converter",
+			"directories: [{from: dir, to: dir, converter: html-to-markdown}]",
+			false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mappings := ""
+			if len(tc.mappings) > 0 {
+				mappings = ", " + tc.mappings
+			}
+			data := "version: '1.0'\ndependencies:\n  assets: {source: {type: git, url: https://example.com/r.git, ref: main}" +
+				mappings + "}\n"
+			assertVendorSchema(t, compiled, data, tc.valid)
+		})
+	}
+}

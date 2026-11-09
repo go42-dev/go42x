@@ -1,6 +1,6 @@
 ---
 
-# yaml-language-server: $schema=https://raw.githubusercontent.com/go42-dev/go42x/0c5462f9f37f7c7e2ca4d5e1b861bb22e27f7445/assets/schemas/go42x.schema.yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/go42-dev/go42x/90b4d2360747d243889b56f31c4978d0fb228f0b/assets/schemas/go42x.schema.yaml
 
 version: "1.0"
 
@@ -29,14 +29,15 @@ env: []
 context:
   template: agents.tpl.md
   chunks-dir: 'chunks/'
-  # Agent skills, relative to .go42x: one subdirectory with a SKILL.md per skill.
-  # Generation copies them to the skill directories of enabled providers: .claude/skills
+  # Agent skills, relative to .go42x: one subdirectory per skill with a SKILL.md, or with
+  # a SKILL.tpl.md to render the skill's *.tpl.md files as templates with chunk data.
+  # Generation installs them in the skill directories of enabled providers: .claude/skills
   # for Claude, .agents/skills for Codex, Antigravity, and Copilot, and both for gh-aw,
   # whose workflows may run any engine. Omit to install no skills.
   skills-dir: 'skills/'
   # Directory for intermediate agent outputs; relative paths use the project root.
   # Omitted or empty defaults to .build. Templates use .context.TempDir.
-  temp-dir: .build
+  temp-dir: '.build'
   # Extra go env variables, e.g. [GOFLAGS, GOPRIVATE]. Values appear in shared context.
   # Defaults: GOVERSION, GOTOOLCHAIN, GOROOT, GOPATH, GOBIN, GOCACHE, GOMODCACHE,
   # GOMOD, GOWORK, GOOS, GOARCH, CGO_ENABLED. Empty values are omitted.
