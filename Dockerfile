@@ -97,7 +97,7 @@ RUN apk add --no-cache \
     musl-dev=1.2.6-r3 \
     tini=0.19.0-r3 \
     tzdata=2026f-r0 \
-    zlib=1.3.2-r1
+    zlib=1.4-r0
 
 # Match GitHub's hosted Linux runner so mounted instructions and indexes remain accessible.
 RUN addgroup -g 1001 appuser && \
