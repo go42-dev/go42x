@@ -632,6 +632,11 @@ func TestAgentEnvUpdateRejectsUnusablePreviousBundle(t *testing.T) {
 			p := newMergeProject(t)
 			switch invalid {
 			case "missing-record":
+				// A release build records its own bundle during initialization.
+				err := os.Remove(filepath.Join(p.root, ".go42x", bundleRecord))
+				if err != nil && !os.IsNotExist(err) {
+					t.Fatal(err)
+				}
 			case "invalid-record":
 				p.write(t, ".go42x/"+bundleRecord, "repository: ext::sh -c true\nref: v1.0.0\n")
 			case "unknown-ref":
