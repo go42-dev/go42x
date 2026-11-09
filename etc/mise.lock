@@ -114,11 +114,6 @@ checksum = "sha256:126c8fa83500389078f6b2072a04170f063787ec9905e5d1ab69a5a62ee5b
 url = "https://github.com/editorconfig-checker/editorconfig-checker/releases/download/v3.11.3/ec-darwin-amd64.tar.gz"
 url_api = "https://api.github.com/repos/editorconfig-checker/editorconfig-checker/releases/assets/543324099"
 
-[[tools.gci]]
-version = "0.14.0"
-backend = "go:github.com/daixiang0/gci"
-specifiers = ["0.14.0"]
-
 [[tools.gh-aw]]
 version = "0.93.5"
 backend = "github:github/gh-aw"
@@ -174,32 +169,32 @@ url = "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8
 url_api = "https://api.github.com/repos/gitleaks/gitleaks/releases/assets/378332053"
 
 [[tools.go42x]]
-version = "0.55.0"
+version = "0.56.0"
 backend = "github:go42-dev/go42x"
-specifiers = ["0.55.0"]
+specifiers = ["0.56.0"]
 
 [tools.go42x."platforms.linux-arm64"]
-checksum = "sha256:c9247c0a3b1750cc2a51de9099f8f5b08b6de4ea003e4bf77ae12174b1f10831"
-url = "https://github.com/go42-dev/go42x/releases/download/v0.55.0/go42x_0.55.0_linux_arm64.tar.gz"
-url_api = "https://api.github.com/repos/go42-dev/go42x/releases/assets/717711225"
+checksum = "sha256:dc51d625a9ebb674caeaaf0214b106007b8ba2a14d4d2e91f7bc24e84328235f"
+url = "https://github.com/go42-dev/go42x/releases/download/v0.56.0/go42x_0.56.0_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/go42-dev/go42x/releases/assets/727384340"
 provenance = "github-attestations"
 
 [tools.go42x."platforms.linux-x64"]
-checksum = "sha256:4804a9b3e19cf97c3e4542fbab62b9c4490b42b7f226b864ad6c65609d231406"
-url = "https://github.com/go42-dev/go42x/releases/download/v0.55.0/go42x_0.55.0_linux_x86_64.tar.gz"
-url_api = "https://api.github.com/repos/go42-dev/go42x/releases/assets/717711227"
+checksum = "sha256:d7ea8ee73a5ec443e25bd69e4af6e554888702f188cfd69c04a71220b33f4e03"
+url = "https://github.com/go42-dev/go42x/releases/download/v0.56.0/go42x_0.56.0_linux_x86_64.tar.gz"
+url_api = "https://api.github.com/repos/go42-dev/go42x/releases/assets/727384327"
 provenance = "github-attestations"
 
 [tools.go42x."platforms.macos-arm64"]
-checksum = "sha256:9c9dea3ca4f590168fc2df96a0adb188d603f6d3b4d37db465dc3406b0b8a190"
-url = "https://github.com/go42-dev/go42x/releases/download/v0.55.0/go42x_0.55.0_macOS_arm64.tar.gz"
-url_api = "https://api.github.com/repos/go42-dev/go42x/releases/assets/717711223"
+checksum = "sha256:bbc26eaee860e0a3b073f65337ce089e34b05435d51ae5ff4753789aa4d33c65"
+url = "https://github.com/go42-dev/go42x/releases/download/v0.56.0/go42x_0.56.0_macOS_arm64.tar.gz"
+url_api = "https://api.github.com/repos/go42-dev/go42x/releases/assets/727384330"
 provenance = "github-attestations"
 
 [tools.go42x."platforms.macos-x64"]
-checksum = "sha256:34b72192226ac11cede1e75e8cd3b73b4e578823608a052d80d0985ed0a042b6"
-url = "https://github.com/go42-dev/go42x/releases/download/v0.55.0/go42x_0.55.0_macOS_x86_64.tar.gz"
-url_api = "https://api.github.com/repos/go42-dev/go42x/releases/assets/717711226"
+checksum = "sha256:50a27fcee17ad083b6420cd0fa4e1605b54e4df9db865abf6c8db639bddb3ed7"
+url = "https://github.com/go42-dev/go42x/releases/download/v0.56.0/go42x_0.56.0_macOS_x86_64.tar.gz"
+url_api = "https://api.github.com/repos/go42-dev/go42x/releases/assets/727384324"
 provenance = "github-attestations"
 
 [[tools.golangci-lint]]
@@ -230,31 +225,6 @@ checksum = "sha256:767b899a28285e88ded2823d5dcc4bc5ef681173eb2d80f029a7b17ee4ece
 url = "https://github.com/golangci/golangci-lint/releases/download/v2.15.0/golangci-lint-2.15.0-darwin-amd64.tar.gz"
 url_api = "https://api.github.com/repos/golangci/golangci-lint/releases/assets/647132753"
 provenance = "github-attestations"
-
-[[tools.golines]]
-version = "0.13.0"
-backend = "aqua:segmentio/golines"
-specifiers = ["0.13.0"]
-
-[tools.golines."platforms.linux-arm64"]
-checksum = "sha256:97c92dd8c94bcffda79422d4260d41d067b164debefbd1fae0f8551ba04bec94"
-url = "https://github.com/segmentio/golines/releases/download/v0.13.0/golines_0.13.0_linux_arm64.tar.gz"
-url_api = "https://api.github.com/repos/segmentio/golines/releases/assets/284914863"
-
-[tools.golines."platforms.linux-x64"]
-checksum = "sha256:8b29855348124097036b8d3f90dc27e9d5ed6f6b6d1c5bb4fdc6557ce01f02e9"
-url = "https://github.com/segmentio/golines/releases/download/v0.13.0/golines_0.13.0_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/segmentio/golines/releases/assets/284914860"
-
-[tools.golines."platforms.macos-arm64"]
-checksum = "sha256:82fb27c00940beade79a6bce44dcb7b60fee7fe8a9c0f933876dad74196ea6ba"
-url = "https://github.com/segmentio/golines/releases/download/v0.13.0/golines_0.13.0_darwin_all.tar.gz"
-url_api = "https://api.github.com/repos/segmentio/golines/releases/assets/284914861"
-
-[tools.golines."platforms.macos-x64"]
-checksum = "sha256:82fb27c00940beade79a6bce44dcb7b60fee7fe8a9c0f933876dad74196ea6ba"
-url = "https://github.com/segmentio/golines/releases/download/v0.13.0/golines_0.13.0_darwin_all.tar.gz"
-url_api = "https://api.github.com/repos/segmentio/golines/releases/assets/284914861"
 
 [[tools.gopls]]
 version = "0.24.0"

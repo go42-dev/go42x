@@ -159,10 +159,10 @@ tasks:
     desc: "Install tools for description workflow preparation"
     summary: |-
       Usage: task setup:gh-aw-description
-      Installs instruction-generation and secret-scanning tools without the full development environment.
-      This repository still uses checked-out source through task x for instruction generation and indexing.
+      Installs the secret-scanning tool without the full development environment.
+      Instruction generation and indexing use checked-out source through task x.
     cmds:
-      - "mise install --locked go42x gitleaks"
+      - "mise install --locked gitleaks"
 
   setup:generators:
     desc: "Install pinned code and agentic workflow generation tools"
