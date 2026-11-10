@@ -48,8 +48,9 @@ type updateBackupFile struct {
 }
 
 // ApplyUpdate backs up all originals before applying writes and removals in
-// scheduling order. Unchanged writes are skipped unless forced. Snapshots include
-// read-only inputs. Each replacement is atomic; the batch is not a transaction.
+// scheduling order, then removes directories left empty by removals. Unchanged
+// writes are skipped unless forced. Snapshots include read-only inputs. Each
+// replacement is atomic; the batch is not a transaction.
 func (p *Plan) ApplyUpdate(ctx context.Context, cliVersion string) (*UpdateResult, error) {
 	var files []*file
 	result := &UpdateResult{}
@@ -192,6 +193,9 @@ func (p *Plan) ApplyUpdate(ctx context.Context, cliVersion string) (*UpdateResul
 			slog.String("file", f.path),
 			slog.String("operation", manifest.Files[i].Operation),
 		)
+	}
+	if err := p.removeEmptyParents(); err != nil {
+		return result, err
 	}
 	manifest.Status = updateStatusComplete
 	return result, manifest.save(backupDir)

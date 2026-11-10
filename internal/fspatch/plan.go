@@ -196,8 +196,9 @@ func (p *Plan) Validate() error {
 }
 
 // Apply checks every snapshot before changing any output, then checks each file
-// again before replacing or removing it. Replacement is atomic per file; an I/O
-// failure during application can still leave some files updated.
+// again before replacing or removing it. Directories left empty by removals are
+// removed afterwards. Replacement is atomic per file; an I/O failure during
+// application can still leave some files updated.
 func (p *Plan) Apply() error {
 	if err := p.Validate(); err != nil {
 		return err
@@ -221,6 +222,44 @@ func (p *Plan) Apply() error {
 				return err
 			}
 			p.logger.Info("Wrote file", slog.String("file", f.path))
+		}
+	}
+	return p.removeEmptyParents()
+}
+
+// removeEmptyParents removes the directories of removed files that are now empty,
+// walking up to but excluding the output directory. It runs after all operations,
+// so a directory that a later write reuses is kept with its permissions.
+func (p *Plan) removeEmptyParents() error {
+	for _, f := range p.operations {
+		if !f.remove || !f.exists {
+			continue
+		}
+
+		for dir := filepath.Dir(f.path); dir != f.root; dir = filepath.Dir(dir) {
+			info, err := os.Lstat(dir)
+			if os.IsNotExist(err) {
+				continue
+			}
+			if err != nil {
+				return fmt.Errorf("failed to inspect output directory %s: %w", dir, err)
+			}
+			if !info.IsDir() {
+				break
+			}
+
+			entries, err := os.ReadDir(dir)
+			if err != nil {
+				return fmt.Errorf("failed to read output directory %s: %w", dir, err)
+			}
+			if len(entries) > 0 {
+				break
+			}
+
+			if err := os.Remove(dir); err != nil {
+				return fmt.Errorf("failed to remove empty output directory %s: %w", dir, err)
+			}
+			p.logger.Info("Removed empty directory", slog.String("directory", dir))
 		}
 	}
 	return nil

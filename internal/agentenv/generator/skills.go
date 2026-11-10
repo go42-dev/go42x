@@ -119,7 +119,8 @@ func (g *Generator) skillContext() map[string]any {
 }
 
 // loadSkills reads each immediate subdirectory of dir as a skill and renders template
-// skills with ctxData. A missing directory holds no skills; hidden entries are skipped.
+// skills with ctxData. A missing directory holds no skills; hidden entries and
+// directories without files are skipped.
 func loadSkills(baseDir, dir string, ctxData map[string]any) ([]skill, error) {
 	if len(dir) == 0 {
 		return nil, nil
@@ -151,9 +152,12 @@ func loadSkills(baseDir, dir string, ctxData map[string]any) ([]skill, error) {
 			continue
 		}
 
-		s, err := loadSkill(filepath.Join(root, entry.Name()), entry.Name(), ctxData)
+		s, ok, err := loadSkill(filepath.Join(root, entry.Name()), entry.Name(), ctxData)
 		if err != nil {
 			return nil, fmt.Errorf("skill %s: %w", entry.Name(), err)
+		}
+		if !ok {
+			continue
 		}
 
 		skills = append(skills, s)
@@ -165,11 +169,12 @@ func loadSkills(baseDir, dir string, ctxData map[string]any) ([]skill, error) {
 // loadSkill reads one skill directory. A skill with SKILL.tpl.md is a template skill:
 // each of its *.tpl.md files renders with ctxData to the same path ending in .md.
 // Other files, and every file of a skill with SKILL.md, are copied unchanged.
-func loadSkill(dir, name string, ctxData map[string]any) (skill, error) {
+// A directory without files, such as one left by a removed skill, holds no skill.
+func loadSkill(dir, name string, ctxData map[string]any) (skill, bool, error) {
 	// Reads stay inside the skill directory even if a path is swapped for a symlink during the walk.
 	root, err := os.OpenRoot(dir)
 	if err != nil {
-		return skill{}, err
+		return skill{}, false, err
 	}
 	defer root.Close() //nolint:errcheck
 
@@ -203,28 +208,31 @@ func loadSkill(dir, name string, ctxData map[string]any) (skill, error) {
 		return nil
 	})
 	if err != nil {
-		return skill{}, err
+		return skill{}, false, err
+	}
+	if len(sources) == 0 {
+		return skill{}, false, nil
 	}
 
 	s, err := renderSkill(name, sources, ctxData)
 	if err != nil {
-		return skill{}, err
+		return skill{}, false, err
 	}
 
 	content, ok := s.files[skillFile]
 	if !ok {
-		return skill{}, fmt.Errorf("missing %s or %s", skillFile, skillTemplateFile)
+		return skill{}, false, fmt.Errorf("missing %s or %s", skillFile, skillTemplateFile)
 	}
 
 	metadata, err := parseSkillMetadata(content)
 	if err != nil {
-		return skill{}, err
+		return skill{}, false, err
 	}
 	if err := validateSkillMetadata(metadata, name); err != nil {
-		return skill{}, err
+		return skill{}, false, err
 	}
 
-	return s, nil
+	return s, true, nil
 }
 
 // renderSkill maps source files to output files, rendering the templates of a template skill.

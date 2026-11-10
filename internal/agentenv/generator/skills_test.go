@@ -152,7 +152,7 @@ func TestPrepareSkillsRemovesOnlyGeneratedFiles(t *testing.T) {
 		"alpha/SKILL.md":  true,
 		"alpha/notes.md":  false,
 		"alpha/user.md":   true,
-		"beta/SKILL.md":   false,
+		"beta":            false,
 		"manual/SKILL.md": true,
 	} {
 		if got := exists(t, root, ".claude/skills/"+file); got != want {
@@ -360,7 +360,11 @@ func TestLoadSkillsReadsSkillDirectories(t *testing.T) {
 		"skills/alpha/.DS_Store":      "junk",
 		"skills/alpha/.cache/x":       "junk",
 		"skills/alpha/scripts/run.sh": "#!/bin/sh\n",
+		"skills/removed/.DS_Store":    "junk",
 	})
+	if err := os.Mkdir(filepath.Join(root, "skills", "empty"), 0700); err != nil {
+		t.Fatal(err)
+	}
 
 	skills, err := loadSkills(root, "skills", nil)
 	if err != nil {
