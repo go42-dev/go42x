@@ -169,32 +169,32 @@ url = "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8
 url_api = "https://api.github.com/repos/gitleaks/gitleaks/releases/assets/378332053"
 
 [[tools.go42x]]
-version = "0.56.0"
+version = "0.57.0"
 backend = "github:go42-dev/go42x"
-specifiers = ["0.56.0"]
+specifiers = ["0.57.0"]
 
 [tools.go42x."platforms.linux-arm64"]
-checksum = "sha256:dc51d625a9ebb674caeaaf0214b106007b8ba2a14d4d2e91f7bc24e84328235f"
-url = "https://github.com/go42-dev/go42x/releases/download/v0.56.0/go42x_0.56.0_linux_arm64.tar.gz"
-url_api = "https://api.github.com/repos/go42-dev/go42x/releases/assets/727384340"
+checksum = "sha256:885ffa2414025a7b267ba35fcd29306639850700365eccfd3930a579b6ebc1db"
+url = "https://github.com/go42-dev/go42x/releases/download/v0.57.0/go42x_0.57.0_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/go42-dev/go42x/releases/assets/755808371"
 provenance = "github-attestations"
 
 [tools.go42x."platforms.linux-x64"]
-checksum = "sha256:d7ea8ee73a5ec443e25bd69e4af6e554888702f188cfd69c04a71220b33f4e03"
-url = "https://github.com/go42-dev/go42x/releases/download/v0.56.0/go42x_0.56.0_linux_x86_64.tar.gz"
-url_api = "https://api.github.com/repos/go42-dev/go42x/releases/assets/727384327"
+checksum = "sha256:f1ebc21efa5b29a106c1ca5f2571f5b3d69fa5ea3181066db08c1d51fa1a9d10"
+url = "https://github.com/go42-dev/go42x/releases/download/v0.57.0/go42x_0.57.0_linux_x86_64.tar.gz"
+url_api = "https://api.github.com/repos/go42-dev/go42x/releases/assets/755808377"
 provenance = "github-attestations"
 
 [tools.go42x."platforms.macos-arm64"]
-checksum = "sha256:bbc26eaee860e0a3b073f65337ce089e34b05435d51ae5ff4753789aa4d33c65"
-url = "https://github.com/go42-dev/go42x/releases/download/v0.56.0/go42x_0.56.0_macOS_arm64.tar.gz"
-url_api = "https://api.github.com/repos/go42-dev/go42x/releases/assets/727384330"
+checksum = "sha256:45c78dd98138fdc352420a65d9313ab905df60379f56a56a327dd0ffd3e44eab"
+url = "https://github.com/go42-dev/go42x/releases/download/v0.57.0/go42x_0.57.0_macOS_arm64.tar.gz"
+url_api = "https://api.github.com/repos/go42-dev/go42x/releases/assets/755808376"
 provenance = "github-attestations"
 
 [tools.go42x."platforms.macos-x64"]
-checksum = "sha256:50a27fcee17ad083b6420cd0fa4e1605b54e4df9db865abf6c8db639bddb3ed7"
-url = "https://github.com/go42-dev/go42x/releases/download/v0.56.0/go42x_0.56.0_macOS_x86_64.tar.gz"
-url_api = "https://api.github.com/repos/go42-dev/go42x/releases/assets/727384324"
+checksum = "sha256:6bc655f8c8564283431377e53a4b5e8cc8e873154fd91bf82f016ef6bd8b2f27"
+url = "https://github.com/go42-dev/go42x/releases/download/v0.57.0/go42x_0.57.0_macOS_x86_64.tar.gz"
+url_api = "https://api.github.com/repos/go42-dev/go42x/releases/assets/755808372"
 provenance = "github-attestations"
 
 [[tools.golangci-lint]]

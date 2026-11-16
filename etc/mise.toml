@@ -38,4 +38,4 @@ gopls = "0.24.0"
 govulncheck = "1.7.0"
 jsonfmt = "0.5.2"
 gh-aw = { version = "0.93.5", bin = "gh-aw" }
-go42x = "0.56.0"
+go42x = "0.57.0"

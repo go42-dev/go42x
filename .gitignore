@@ -1,7 +1,8 @@
 .DS_Store
 .idea/
-.vscode
+.vscode/
 .tools/
+.task/
 
 # go42x -- START
 .go42x/go42x.local.yaml
