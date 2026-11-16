@@ -200,9 +200,11 @@ func validateUpdatedConfig(plan *fspatch.Plan, root string, updatedConfig []byte
 // Update merges bundled sources and refreshes the managed .gitignore block without
 // generating outputs. It fetches the previous bundle that the project's bundle record
 // names and merges project changes with this binary's bundle in three ways. Bundled
-// resources, skills, and upstream files are replaced, the vendoring lock is rebuilt from
-// the merged manifest, and the record names this binary's bundle afterward. Originals
-// are backed up before application. Local configuration and additional sources are kept.
+// resources, schemas, skills, and upstream files are replaced, the vendoring lock is
+// rebuilt from the merged manifest, and the record names this binary's bundle afterward.
+// Conflicts change no project files and save candidates under
+// <build-dir>/tmp/agentenv-update-*/merged. Originals are backed up before application.
+// Local configuration and additional sources are kept.
 func (s *Service) Update(ctx context.Context) (*UpdateResult, error) {
 	root, err := os.Getwd()
 	if err != nil {

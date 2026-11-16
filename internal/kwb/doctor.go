@@ -2,11 +2,15 @@ package kwb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 
 	"github.com/go42-dev/go42x/internal/doctor/check"
 )
+
+// DoctorIDIndex is the ID of the knowledge-base index diagnostic.
+const DoctorIDIndex = "kwb.index"
 
 // DoctorChecks supplies knowledge-base diagnostics for registration with doctor.Service.
 func DoctorChecks(root, indexPath string) []check.Check {
@@ -14,7 +18,7 @@ func DoctorChecks(root, indexPath string) []check.Check {
 		indexPath = filepath.Join(root, NewSettings().IndexPath)
 	}
 	return []check.Check{{
-		ID: "kwb.index",
+		ID: DoctorIDIndex,
 		Run: func(ctx context.Context) check.Result {
 			settings := NewSettings()
 			settings.RootPath = root
@@ -31,11 +35,15 @@ func DoctorChecks(root, indexPath string) []check.Check {
 			freshness, err := service.CheckFreshness(ctx)
 			if err != nil {
 				if freshness != nil && len(freshness.Generation) > 0 {
+					remediation := "go42x kwb build"
+					if errors.Is(err, context.DeadlineExceeded) {
+						remediation = "go42x kwb check --json --search-timeout=30s"
+					}
 					return check.Result{
 						Status:      check.StatusWarn,
 						Message:     "Index freshness scan could not complete",
-						Remediation: "go42x kwb check --json --search-timeout=30s",
-						Evidence:    []string{freshness.Generation},
+						Remediation: remediation,
+						Evidence:    []string{freshness.Generation, err.Error()},
 					}
 				}
 

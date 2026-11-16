@@ -31,6 +31,15 @@ set:
   - errexit
   - pipefail
 
+vars:
+  # Relative to the repository root: tasks and CI join it to $PWD or $GITHUB_WORKSPACE.
+  BUILD_DIR: .build
+  BUILD_BIN_DIR: '{{.BUILD_DIR}}/bin'
+  BUILD_DIST_DIR: '{{.BUILD_DIR}}/dist'
+  BUILD_REPORTS_DIR: '{{.BUILD_DIR}}/reports'
+  BUILD_CACHE_DIR: '{{.BUILD_DIR}}/cache'
+  BUILD_TMP_DIR: '{{.BUILD_DIR}}/tmp'
+
 env:
   GOTOOLCHAIN: local
   MISE_DEFAULT_CONFIG_FILENAME: etc/mise.toml
@@ -38,6 +47,12 @@ env:
   MISE_CACHE_DIR: '{{.ROOT_DIR}}/.tools/cache'
   MISE_STATE_DIR: '{{.ROOT_DIR}}/.tools/state'
   TASK_TEMP_DIR: '{{.ROOT_DIR}}/.tools/task'
+  BUILD_DIR: '{{.BUILD_DIR}}'
+  BUILD_BIN_DIR: '{{.BUILD_BIN_DIR}}'
+  BUILD_DIST_DIR: '{{.BUILD_DIST_DIR}}'
+  BUILD_REPORTS_DIR: '{{.BUILD_REPORTS_DIR}}'
+  BUILD_CACHE_DIR: '{{.BUILD_CACHE_DIR}}'
+  BUILD_TMP_DIR: '{{.BUILD_TMP_DIR}}'
 
 tasks:
 
@@ -52,7 +67,7 @@ tasks:
     desc: "Print the project tooling environment as KEY=value lines"
     summary: |-
       Usage: task env:export
-      Prints only the project tooling variables for CI setup and editor configuration.
+      Prints project variables for CI setup and editor configuration.
     silent: true
     cmds:
       - |
@@ -62,7 +77,13 @@ tasks:
           "MISE_DATA_DIR=$MISE_DATA_DIR" \
           "MISE_CACHE_DIR=$MISE_CACHE_DIR" \
           "MISE_STATE_DIR=$MISE_STATE_DIR" \
-          "TASK_TEMP_DIR=$TASK_TEMP_DIR"
+          "TASK_TEMP_DIR=$TASK_TEMP_DIR" \
+          "BUILD_DIR=$BUILD_DIR" \
+          "BUILD_BIN_DIR=$BUILD_BIN_DIR" \
+          "BUILD_DIST_DIR=$BUILD_DIST_DIR" \
+          "BUILD_REPORTS_DIR=$BUILD_REPORTS_DIR" \
+          "BUILD_CACHE_DIR=$BUILD_CACHE_DIR" \
+          "BUILD_TMP_DIR=$BUILD_TMP_DIR"
 
   x:
     desc: "Run go42x from checked-out source"
@@ -95,8 +116,8 @@ tasks:
           exit 1
         fi
 
-        mkdir -p .build
-        workspace=$(mktemp -d "$PWD/.build/go42x-update.XXXXXX")
+        mkdir -p "$BUILD_TMP_DIR"
+        workspace=$(mktemp -d "$PWD/$BUILD_TMP_DIR/go42x-update.XXXXXX")
         printf 'Updating go42x to %s; workspace: %s\n' "$version" "$workspace"
         cp -p etc/mise.toml "$workspace/mise.toml"
         cp -p etc/mise.lock "$workspace/mise.lock"
@@ -238,7 +259,7 @@ tasks:
           exec go test -count=1 -race -skip '^Fuzz' "$@"
         fi
 
-        mkdir -p .build
+        mkdir -p "$BUILD_REPORTS_DIR"
 
         unit_packages=$(go list ./...)
         unit_exclude_pattern=$(printf '%s\n' mocks tests | paste -sd '|' -)
@@ -248,29 +269,29 @@ tasks:
         # shellcheck disable=SC2086
         go test -count=1 -v -race -skip '^Fuzz' -covermode=atomic \
           -coverpkg="$(printf '%s\n' "$unit_packages" | paste -sd, -)" \
-          -coverprofile=.build/coverage.out $unit_packages \
+          -coverprofile="$BUILD_REPORTS_DIR/coverage.out" $unit_packages \
           | sed -E 's/(coverage: [0-9.]+% of statements) in .*/\1/'
 
-        go tool cover -html=.build/coverage.out -o=.build/coverage.html
-        go tool cover -func=.build/coverage.out | grep '^total:'
+        go tool cover -html="$BUILD_REPORTS_DIR/coverage.out" -o="$BUILD_REPORTS_DIR/coverage.html"
+        go tool cover -func="$BUILD_REPORTS_DIR/coverage.out" | grep '^total:'
 
   test:integration:
     desc: "Run integration tests with race detection and coverage"
     cmds:
       - |
         set -eo pipefail
-        mkdir -p .build
+        mkdir -p "$BUILD_REPORTS_DIR"
 
         coverage_packages=$(go list -deps -test -f '{{`{{if .Module}}{{if .Module.Main}}{{.ImportPath}}{{end}}{{end}}`}}' ./tests/integration/...)
         coverage_exclude_pattern=$(printf '%s\n' mocks tests | paste -sd '|' -)
         coverage_packages=$(printf '%s\n' "$coverage_packages" | grep -vE "/($coverage_exclude_pattern)(/|$)" | paste -sd, -)
 
         go test -count=1 -v -race -timeout=5m -covermode=atomic -coverpkg="$coverage_packages" \
-          -coverprofile=.build/coverage-integration.out ./tests/integration/... \
+          -coverprofile="$BUILD_REPORTS_DIR/coverage-integration.out" ./tests/integration/... \
           | sed -E 's/(coverage: [0-9.]+% of statements) in .*/\1/'
 
-        go tool cover -html=.build/coverage-integration.out -o=.build/coverage-integration.html
-        go tool cover -func=.build/coverage-integration.out | grep '^total:'
+        go tool cover -html="$BUILD_REPORTS_DIR/coverage-integration.out" -o="$BUILD_REPORTS_DIR/coverage-integration.html"
+        go tool cover -func="$BUILD_REPORTS_DIR/coverage-integration.out" | grep '^total:'
 
   test:e2e:
     desc: "Test the compiled CLI in isolated temporary projects"
@@ -286,35 +307,36 @@ tasks:
           exec go test -count=1 -v -race -timeout=5m ./tests/e2e/...
         fi
 
-        rm -rf .build/coverage-e2e{.out,.out.tmp,.html,-tests,-app}
-        mkdir -p .build/coverage-e2e-{tests,app}
+        rm -rf "$BUILD_REPORTS_DIR"/coverage-e2e{.out,.out.tmp,.html,-tests,-app}
+        mkdir -p "$BUILD_REPORTS_DIR"/coverage-e2e-{tests,app}
 
         coverage_packages=$(go list -deps -test -f '{{`{{if .Module}}{{if .Module.Main}}{{.ImportPath}}{{end}}{{end}}`}}' ./tests/e2e/...)
         coverage_exclude_pattern=$(printf '%s\n' mocks tests | paste -sd '|' -)
         coverage_packages=$(printf '%s\n' "$coverage_packages" | grep -vE "/($coverage_exclude_pattern)(/|$)" | paste -sd, -)
 
-        export GO42X_E2E_COVERDIR="${PWD}/.build/coverage-e2e-app"
+        export GO42X_E2E_COVERDIR="${PWD}/$BUILD_REPORTS_DIR/coverage-e2e-app"
         go test -count=1 -v -race -timeout=5m -cover -covermode=atomic -coverpkg="$coverage_packages" ./tests/e2e/... \
-          -args -test.gocoverdir="${PWD}/.build/coverage-e2e-tests" \
+          -args -test.gocoverdir="${PWD}/$BUILD_REPORTS_DIR/coverage-e2e-tests" \
           | sed -E 's/(coverage: [0-9.]+% of statements) in .*/\1/'
 
-        ls .build/coverage-e2e-{tests,app}/cov{meta,counters}.* > /dev/null
+        ls "$BUILD_REPORTS_DIR"/coverage-e2e-{tests,app}/cov{meta,counters}.* > /dev/null
         go tool covdata textfmt \
-          -i=.build/coverage-e2e-tests,.build/coverage-e2e-app \
-          -o=.build/coverage-e2e.out.tmp
-        mv .build/coverage-e2e.out.tmp .build/coverage-e2e.out
+          -i="$BUILD_REPORTS_DIR/coverage-e2e-tests,$BUILD_REPORTS_DIR/coverage-e2e-app" \
+          -o="$BUILD_REPORTS_DIR/coverage-e2e.out.tmp"
+        mv "$BUILD_REPORTS_DIR/coverage-e2e.out.tmp" "$BUILD_REPORTS_DIR/coverage-e2e.out"
 
-        go tool cover -html=.build/coverage-e2e.out -o=.build/coverage-e2e.html
-        go tool cover -func=.build/coverage-e2e.out | grep '^total:'
+        go tool cover -html="$BUILD_REPORTS_DIR/coverage-e2e.out" -o="$BUILD_REPORTS_DIR/coverage-e2e.html"
+        go tool cover -func="$BUILD_REPORTS_DIR/coverage-e2e.out" | grep '^total:'
 
   test:release:
     desc: "Verify release artifacts and test the native archive"
     summary: |-
-      Usage: task test:release [GO42X_RELEASE_DIST=.build/dist]
+      Usage: task test:release [GO42X_RELEASE_DIST=<dir>]
+      Defaults to BUILD_DIST_DIR.
       Create artifacts first with task release:snapshot. Relative paths resolve from the repository root. Do not combine
       GO42X_RELEASE_DIST with GO42X_E2E_BINARY or GO42X_E2E_VERSION.
     env:
-      GO42X_RELEASE_DIST: '{{.GO42X_RELEASE_DIST | default ".build/dist"}}'
+      GO42X_RELEASE_DIST: '{{.GO42X_RELEASE_DIST | default .BUILD_DIST_DIR}}'
     cmds:
       - "go test -count=1 -v -race -timeout=5m ./tests/e2e/..."
 
@@ -361,24 +383,25 @@ tasks:
       Connect your debugger to localhost:2345.
     interactive: true
     cmds:
-      - "mkdir -p .build"
+      - 'mkdir -p "$BUILD_BIN_DIR"'
       - >-
         mise exec -- dlv debug .
         --headless --listen=127.0.0.1:2345 --accept-multiclient --api-version=2
-        --output=.build/go42x-debug -- {{.CLI_ARGS}}
+        --output="$BUILD_BIN_DIR/go42x-debug" -- {{.CLI_ARGS}}
 
   build:
-    desc: "Build a development binary in .build"
+    desc: "Build a development binary in BUILD_BIN_DIR"
     summary: |-
       Usage: task build [-- BUILD_FLAGS...]
       Builds with race detection and compiler optimizations disabled.
     cmds:
-      - "mkdir -p .build"
+      - 'mkdir -p "$BUILD_BIN_DIR"'
       - >-
         go build -gcflags="all=-N -l" -race -v
-        {{.CLI_ARGS}} -o .build/go42x .
+        {{.CLI_ARGS}} -o "$BUILD_BIN_DIR/go42x" .
       - >-
-        file -h .build/go42x && du -h .build/go42x && sha256sum .build/go42x && go tool buildid .build/go42x
+        file -h "$BUILD_BIN_DIR/go42x" && du -h "$BUILD_BIN_DIR/go42x" && sha256sum "$BUILD_BIN_DIR/go42x" &&
+        go tool buildid "$BUILD_BIN_DIR/go42x"
 
   image:
     desc: "Build and load the local MCP tools image"
@@ -783,7 +806,7 @@ tasks:
     desc: "Build release artifacts without publishing or signing"
     summary: |-
       Usage: task release:snapshot
-      Run task setup:release first; writes unsigned snapshot artifacts to .build/dist.
+      Run task setup:release first; writes unsigned snapshot artifacts to BUILD_DIST_DIR.
     cmds:
       - 'mise exec -- goreleaser release --config etc/goreleaser.yaml --snapshot --clean --skip=publish,sign'
 
@@ -792,7 +815,7 @@ tasks:
     summary: |-
       Usage: task release:local
       Run task setup:release first; requires a release tag and Cosign authentication. Writes signed artifacts to
-      .build/dist.
+      BUILD_DIST_DIR.
     cmds:
       - 'mise exec -- goreleaser release --config etc/goreleaser.yaml --clean --skip=publish'
 

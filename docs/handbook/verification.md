@@ -103,10 +103,11 @@ Use explicit packages for focused unit tests, for example:
 task test:unit -- ./internal/agentenv/...
 ```
 
-Full unit, integration, and end-to-end runs write coverage reports under
-`.build/`; explicit unit packages skip coverage reports. End-to-end tests build
-the CLI once for the run. Follow the Taskfile declarations to test an existing
-binary or to select another release-artifact directory.
+Full unit, integration, and end-to-end runs write coverage reports to the
+directory that `BUILD_REPORTS_DIR` in `Taskfile.yaml` names; explicit unit
+packages skip coverage reports. End-to-end tests build the CLI once for the
+run. Follow the Taskfile declarations to test an existing binary or to select
+another release-artifact directory.
 
 ### Build and artifact checks
 

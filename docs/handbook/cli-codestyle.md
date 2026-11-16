@@ -21,9 +21,11 @@ Use [Verification](verification.md) for the project's required checks.
 | ------------------------------------------- | ----------------------------------------------------------------- |
 | `internal/cmd/<feature>/cmd.go`             | Command group, shared flags, and subcommand registration          |
 | `internal/cmd/<feature>/<operation>.go`     | Command definition, typed settings, and its execution helper      |
+| `internal/cmd/<feature>/<group>/`           | Nested command group, such as `agentenv journal`                  |
 | `internal/<feature>/settings.go`            | Feature settings, defaults, validation, and settings resolution   |
 | `internal/<feature>/service.go`             | Feature operations and their result types                         |
 | `internal/<feature>/adapters/cli/report.go` | Text rendering and translation of results into CLI reports        |
+| `internal/<feature>/<subfeature>/`          | Nested feature with the same layout, such as `agentenv/journal`   |
 | `internal/cmdutil/`                         | Shared CLI infrastructure, streams, reporting, and error handling |
 
 - Keep a command constructor and its matching execution helper in the same file.
@@ -43,7 +45,9 @@ Describe what a command accomplishes and what the user needs to know to use it.
   significant defaults, or behavior that might surprise them. Omit it when it
   adds nothing useful beyond `Short`.
 - Put invocation examples in `Example` and explain individual options in their
-  flag descriptions.
+  flag descriptions. Indent each example line by two spaces: Cobra prints `Example`
+  as written under an unindented `Examples:` heading, and the indent aligns it with
+  the usage and flag lines.
 - Keep detailed behavior, routine file maintenance, backup mechanics, and
   implementation details in the handbook. Include them in help only when they
   affect a user's decision about running the command.
@@ -68,13 +72,12 @@ Name flag constants with the shared `flag` prefix, such as `flagOutput` and
 Register flags in a separate block after the command literal. Format each call
 across three lines: the method and opening parenthesis, the flag name and default
 value, then the help text and closing parenthesis. Include any shorthand beside
-the flag name. Leave a blank line between the flag block and `return cmd`.
+the flag name.
 
 ```go
 cmd.Flags().String(
     "output", "",
     "new directory for the exported bundle (required)")
-
 return cmd
 ```
 
@@ -108,11 +111,9 @@ func newGenerateCommand(f *cmdutil.Factory) *cobra.Command {
                 Clean: viper.GetBool(flagClean),
                 JSON:  viper.GetBool(flagJSON),
             }
-
             if err := settings.Validate(); err != nil {
                 return cmdutil.UsageError(err)
             }
-
             return runGenerateCommand(f, settings)
         },
     }
@@ -120,7 +121,6 @@ func newGenerateCommand(f *cmdutil.Factory) *cobra.Command {
     cmd.Flags().Bool(
         flagClean, false,
         "regenerate owned instruction files")
-
     return cmd
 }
 ```
@@ -162,7 +162,6 @@ func runGenerateCommand(f *cmdutil.Factory, settings *agentenv.Settings) error {
             fmt.Errorf("failed to initialize agentenv service: %w", err),
         )
     }
-
     result, err := service.Generate(f.Context())
     return cli.ReportGenerate(f.Output(), settings, result, err)
 }
@@ -193,13 +192,11 @@ func ReportGenerate(
             if runErr != nil {
                 return nil
             }
-
             _, err := fmt.Fprintf(w,
                 "Generated agentenv; %d file changes applied.\n", len(result.Changes))
             return err
         }
     }
-
     return cmdutil.Report(output, result, runErr, text)
 }
 ```
@@ -237,7 +234,6 @@ func runBuildCommand(f *cmdutil.Factory, settings *kwb.Settings) error {
     if err != nil {
         return kwbcli.ReportBuild(f.Output(), settings, nil, err)
     }
-
     result, err := service.BuildIndex(f.Context(), settings.RootPath)
     err = errors.Join(err, service.Close())
     return kwbcli.ReportBuild(f.Output(), settings, &result, err)

@@ -9,6 +9,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	"github.com/go42-dev/go42x/internal/agentenv/journal"
+	journalmcp "github.com/go42-dev/go42x/internal/agentenv/journal/adapters/mcp"
 	"github.com/go42-dev/go42x/internal/buildinfo"
 	"github.com/go42-dev/go42x/internal/cmdutil"
 	"github.com/go42-dev/go42x/internal/kwb"
@@ -22,7 +24,7 @@ func NewMCPCommand(f *cmdutil.Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "mcp",
 		Short: "Start the go42x MCP server over stdio",
-		Long: `Expose project search, documentation, and context tools to MCP clients over stdio.
+		Long: `Expose project search, documentation, context, and journal tools to MCP clients over stdio.
 Run 'go42x kwb build' to create or refresh the search index.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -84,7 +86,18 @@ func runMCPCommand(f *cmdutil.Factory, settings *mcpserver.Settings) (retErr err
 		return err
 	}
 
-	if _, err := service.ProjectRoot(); err != nil {
+	root, err := service.ProjectRoot()
+	if err != nil {
+		return err
+	}
+
+	journalSettings := journal.NewSettings()
+	journalSettings.RootPath = root
+	journalService, err := journal.NewService(journalSettings, journal.WithLogger(slog.Default()))
+	if err != nil {
+		return fmt.Errorf("creating journal service: %w", err)
+	}
+	if err := runtime.AddToolset(journalmcp.New(journalService)); err != nil {
 		return err
 	}
 

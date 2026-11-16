@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io/fs"
+	"strings"
 	"testing"
 
 	"github.com/go42-dev/go42x/assets"
@@ -20,7 +21,7 @@ func TestPinBundledSchemaURL(t *testing.T) {
 	}{
 		{
 			config.FileProject,
-			"assets/schemas/go42x.schema.yaml",
+			"assets/agentenv/schemas/go42x.schema.yaml",
 		},
 		{
 			vendoring.ManifestFile,
@@ -60,6 +61,23 @@ func TestPinBundledSchemaURLPreservesCustomSchemas(t *testing.T) {
 	} {
 		if got := pinBundledSchemaURL(config.FileProject, []byte(data)); string(got) != data {
 			t.Errorf("changed custom schema or unrelated content: %q", got)
+		}
+	}
+}
+
+// Projects name their own chunks 999-<name>.tpl.md, so bundled chunks never use that prefix.
+func TestBundledChunksLeaveProjectPrefixFree(t *testing.T) {
+	bundle, err := assets.AgentEnvTemplates()
+	if err != nil {
+		t.Fatal(err)
+	}
+	chunks, err := fs.ReadDir(bundle, "chunks")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, chunk := range chunks {
+		if strings.HasPrefix(chunk.Name(), "999-") {
+			t.Errorf("bundled chunk %s uses the prefix reserved for project chunks", chunk.Name())
 		}
 	}
 }

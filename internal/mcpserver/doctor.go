@@ -14,6 +14,9 @@ import (
 	"github.com/go42-dev/go42x/internal/doctor/check"
 )
 
+// DoctorIDServers is the ID of the MCP server diagnostic.
+const DoctorIDServers = "mcp.servers"
+
 // DoctorCheck reads server definitions when it runs, allowing the caller to
 // register a dependency on its configuration check before any connections start.
 func DoctorCheck(root string, servers func() map[string]provider.MCPServer, options DoctorOptions) check.Check {
@@ -21,7 +24,7 @@ func DoctorCheck(root string, servers func() map[string]provider.MCPServer, opti
 		options.Timeout = 10 * time.Second
 	}
 	return check.Check{
-		ID: "mcp.servers",
+		ID: DoctorIDServers,
 		Run: func(ctx context.Context) check.Result {
 			configured := servers()
 			var serverChecks []check.Check

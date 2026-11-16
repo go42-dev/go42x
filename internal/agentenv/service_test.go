@@ -99,12 +99,8 @@ func TestInitExtractsTemplatesAndPreservesCustomFiles(t *testing.T) {
 			t.Errorf("removed template directory %s was installed: %v", removed, err)
 		}
 	}
-	schemaPath := filepath.Join(dir, ".go42x/go42x.schema.yaml")
-	if _, err := os.Stat(schemaPath); !os.IsNotExist(err) {
-		t.Fatalf("init installed a local editor schema: %v", err)
-	}
 	if !strings.Contains(string(readFile(t, filepath.Join(dir, ".go42x/go42x.yaml"))),
-		"# yaml-language-server: $schema="+buildinfo.SourceURL("assets/schemas/go42x.schema.yaml")) {
+		"# yaml-language-server: $schema="+buildinfo.SourceURL("assets/agentenv/schemas/go42x.schema.yaml")) {
 		t.Fatal("default configuration must reference the remote editor schema")
 	}
 	templateFS, err := assets.AgentEnvTemplates()
@@ -157,7 +153,6 @@ func TestInitExtractsTemplatesAndPreservesCustomFiles(t *testing.T) {
 	writeFile(t, filepath.Join(dir, ".go42x/go42x.yaml"), "custom configuration")
 	customTemplate := filepath.Join(dir, ".go42x/agents.tpl.md")
 	writeFile(t, customTemplate, "custom instructions")
-	writeFile(t, schemaPath, "outdated schema")
 	manifestPath := filepath.Join(dir, ".go42x/"+vendoring.ManifestFile)
 	lockPath := filepath.Join(dir, ".go42x/"+vendoring.LockFile)
 	writeFile(t, manifestPath, "custom upstream manifest")
@@ -170,9 +165,6 @@ func TestInitExtractsTemplatesAndPreservesCustomFiles(t *testing.T) {
 	}
 	if string(readFile(t, customTemplate)) != "custom instructions" {
 		t.Fatal("existing template overwritten")
-	}
-	if string(readFile(t, schemaPath)) != "outdated schema" {
-		t.Fatal("existing editor schema was changed")
 	}
 	if string(readFile(t, manifestPath)) != "custom upstream manifest" ||
 		string(readFile(t, lockPath)) != "custom upstream lock" {

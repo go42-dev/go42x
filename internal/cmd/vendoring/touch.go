@@ -25,7 +25,7 @@ Relative directories resolve from --root. With no directory, use --root itself.`
 				RootPath:     viper.GetString(flagRoot),
 				ManifestPath: viper.GetString(flagManifest),
 				LockPath:     viper.GetString(flagLock),
-				TempDir:      defaults.TempDir,
+				BuildDir:     defaults.BuildDir,
 				Timeout:      defaults.Timeout,
 				JSON:         viper.GetBool(flagJSON),
 			}

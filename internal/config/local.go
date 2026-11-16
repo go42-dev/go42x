@@ -109,6 +109,31 @@ func ParseProjectConfig(baseData, localData []byte, providers []string, variable
 	return cfg, nil
 }
 
+// ProjectBuildDir returns the absolute build directory of the project at root, as its
+// configuration and local overrides set it. A project without a configuration uses
+// DefaultBuildDir.
+func ProjectBuildDir(root string) (string, error) {
+	root, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+
+	cfg, err := LoadProjectConfig(filepath.Join(root, Directory, FileProject), nil)
+	if errors.Is(err, os.ErrNotExist) {
+		return filepath.Join(root, DefaultBuildDir), nil
+	}
+	if err != nil {
+		return "", err
+	}
+
+	dir := cfg.Context.WithDefaults().BuildDir
+	if !filepath.IsAbs(dir) {
+		dir = filepath.Join(root, dir)
+	}
+
+	return filepath.Clean(dir), nil
+}
+
 func decodeConfigMap(data []byte) (map[string]any, error) {
 	// Check each source independently, so an override cannot hide a misspelled
 	// field, duplicate YAML key, or incorrectly typed value in another source.

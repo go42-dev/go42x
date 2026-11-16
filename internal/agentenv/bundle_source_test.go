@@ -306,7 +306,7 @@ func TestUpdateMergesWithFetchedBundle(t *testing.T) {
 				!reflect.DeepEqual(recorded, next) {
 				t.Errorf("bundle record = %+v, %v; want %+v", recorded, err, next)
 			}
-			workspaces, err := filepath.Glob(filepath.Join(dir, ".build/agentenv-update-*"))
+			workspaces, err := filepath.Glob(filepath.Join(dir, ".build/tmp/agentenv-update-*"))
 			if err != nil || len(workspaces) != 0 {
 				t.Errorf("merge workspaces remain: %v, %v", workspaces, err)
 			}

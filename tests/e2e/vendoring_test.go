@@ -312,7 +312,7 @@ func TestVendorLifecycleAndJSON(t *testing.T) {
 	p.assertUnchanged(t, before)
 }
 
-func TestVendorNestedManifestAndTempConfiguration(t *testing.T) {
+func TestVendorNestedManifestAndBuildConfiguration(t *testing.T) {
 	t.Parallel()
 	server := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -323,7 +323,7 @@ func TestVendorNestedManifestAndTempConfiguration(t *testing.T) {
 
 	for _, tc := range []struct {
 		name   string
-		temp   string
+		build  string
 		local  string
 		want   string
 		config bool
@@ -333,53 +333,53 @@ func TestVendorNestedManifestAndTempConfiguration(t *testing.T) {
 			want: ".build",
 		},
 		{
-			name:   "omitted temp",
+			name:   "omitted build directory",
 			config: true,
 			want:   ".build",
 		},
 		{
-			name:   "empty temp",
-			temp:   `""`,
+			name:   "empty build directory",
+			build:  `""`,
 			config: true,
 			want:   ".build",
 		},
 		{
-			name:   "relative temp",
-			temp:   ".scratch",
+			name:   "relative build directory",
+			build:  ".scratch",
 			config: true,
 			want:   ".scratch",
 		},
 		{
 			name:   "local override",
-			temp:   ".base",
+			build:  ".base",
 			local:  ".local-scratch",
 			config: true,
 			want:   ".local-scratch",
 		},
 		{
-			name:   "absolute temp",
-			temp:   "absolute",
+			name:   "absolute build directory",
+			build:  "absolute",
 			config: true,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p := newProject(t)
-			temp, want := tc.temp, filepath.Join(p.root, tc.want)
+			build, want := tc.build, filepath.Join(p.root, tc.want)
 
-			if temp == "absolute" {
+			if build == "absolute" {
 				want = filepath.Dir(p.root)
-				temp = fmt.Sprintf("%q", want)
+				build = fmt.Sprintf("%q", want)
 			}
 			if tc.config {
 				cfg := "version: \"1.0\"\nproject:\n  name: example\nproviders:\n  codex: {}\ncontext:\n  template: agents.tpl.md\n"
 
-				if len(temp) > 0 {
-					cfg += "  temp-dir: " + temp + "\n"
+				if len(build) > 0 {
+					cfg += "  build-dir: " + build + "\n"
 				}
 				p.write(t, ".go42x/go42x.yaml", cfg)
 			}
 			if len(tc.local) > 0 {
-				p.write(t, ".go42x/go42x.local.yaml", "context:\n  temp-dir: "+tc.local+"\n")
+				p.write(t, ".go42x/go42x.local.yaml", "context:\n  build-dir: "+tc.local+"\n")
 			}
 			p.write(t, "third_party/"+vendoring.ManifestFile, vendorManifest(server.URL))
 			caller := newProject(t)
@@ -397,13 +397,13 @@ func TestVendorNestedManifestAndTempConfiguration(t *testing.T) {
 			if !strings.Contains(p.read(t, "third_party/"+vendoring.LockFile), "manifest: "+vendoring.ManifestFile) {
 				t.Fatal("lock is not beside the selected manifest")
 			}
-			entries, err := os.ReadDir(filepath.Join(want, "vendoring"))
+			entries, err := os.ReadDir(filepath.Join(want, "tmp", "vendoring"))
 			if err != nil || len(entries) != 0 {
 				t.Fatalf("temporary workspace not used or not cleaned: %v %v", entries, err)
 			}
 			if tc.want != ".build" {
 				if _, err := os.Stat(filepath.Join(p.root, ".build")); !os.IsNotExist(err) {
-					t.Fatal("ignored configured temp directory")
+					t.Fatal("ignored configured build directory")
 				}
 			}
 			before := p.snapshot(t)

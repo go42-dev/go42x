@@ -74,6 +74,26 @@ func TestKnowledgeBaseBuildRefreshesExclusions(t *testing.T) {
 	p.assertUnchanged(t, before)
 }
 
+func TestKnowledgeBaseBuildExcludesTheBuildDirectory(t *testing.T) {
+	t.Parallel()
+	p := newProject(t)
+	p.write(t, ".go42x/go42x.yaml", "version: \"1.0\"\nproject:\n  name: example\nproviders:\n  codex: {}\n"+
+		"context:\n  template: agents.tpl.md\n  build-dir: out/build\n")
+	p.write(t, "guide.md", "# Guide\nindexedonly\n")
+	p.write(t, "out/build/report.md", "# Report\nbuildonly\n")
+
+	p.run(t, 0, "kwb", "build")
+	for query, total := range map[string]uint64{"indexedonly": 1, "buildonly": 0} {
+		output := p.run(t, 0, "kwb", "search", query, "--json")
+		var result kwb.SearchResponse
+		if err := json.Unmarshal([]byte(output.stdout), &result); err != nil || result.Total != total {
+			t.Errorf("search %s = %+v, %v", query, result, err)
+		}
+	}
+	// The index records the exclusion, so a check applies it too.
+	p.run(t, 0, "kwb", "check", "--json")
+}
+
 func TestKnowledgeBaseBuildRejectsInvalidExclusions(t *testing.T) {
 	t.Parallel()
 	for _, tt := range []struct {

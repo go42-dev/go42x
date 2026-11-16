@@ -57,7 +57,7 @@ jobs:
         with:
           name: e2e-coverage
           path: |-
-            .build/coverage-e2e.out
-            .build/coverage-e2e.html
+            ${{ env.BUILD_REPORTS_DIR }}/coverage-e2e.out
+            ${{ env.BUILD_REPORTS_DIR }}/coverage-e2e.html
           include-hidden-files: true
           if-no-files-found: error

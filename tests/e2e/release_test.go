@@ -19,6 +19,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/go42-dev/go42x/internal/config"
 )
 
 type releaseArtifact struct {
@@ -71,13 +73,13 @@ func runReleaseTests(m *testing.M, dist string) int {
 			return 1
 		}
 	}
-	buildDir := filepath.Join(root, ".build")
-	if err := os.MkdirAll(buildDir, 0700); err != nil {
+	tmpDir := filepath.Join(root, config.DefaultBuildDir, config.DefaultBuildTmpDir)
+	if err := os.MkdirAll(tmpDir, 0700); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 
-	dir, err := os.MkdirTemp(buildDir, "release-e2e-*")
+	dir, err := os.MkdirTemp(tmpDir, "release-e2e-*")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

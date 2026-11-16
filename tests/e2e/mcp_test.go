@@ -50,15 +50,6 @@ type mcpSessionConfig struct {
 	indexedRoot     bool
 }
 
-func TestMCPDocumentationEntrypointFlagRemoved(t *testing.T) {
-	t.Parallel()
-	p := newProject(t)
-	result := p.run(t, 2, "mcp", "--docs-entrypoint=handbook/start.md")
-	if !strings.Contains(result.stderr, "unknown flag: --docs-entrypoint") {
-		t.Fatalf("removed flag still accepted: %+v", result)
-	}
-}
-
 func runMCPStdioSession(t *testing.T, expectTimeout bool, config mcpSessionConfig) {
 	t.Helper()
 	p := newProject(t)
@@ -198,6 +189,7 @@ providers: {codex: {enabled: false}}
 	}
 	for _, name := range []string{
 		"kwb_search", "kwb_get_file", "kwb_list_files", "kwb_stats", "docs_get", "docs_impact", "project_context",
+		"journal_list", "journal_show", "journal_new", "journal_note", "journal_done", "journal_search",
 	} {
 		if !names[name] {
 			t.Errorf("tool %s was not registered", name)
@@ -307,6 +299,25 @@ providers: {codex: {enabled: false}}
 			if diagnostic.Code == "docs_entrypoint_missing" {
 				t.Fatalf("MCP did not load the configured entrypoint: %+v", result.Diagnostics)
 			}
+		}
+
+		request(5, "tools/call", map[string]any{
+			"name":      "journal_new",
+			"arguments": map[string]any{"title": "MCP task", "tags": []string{"test"}},
+		}, &called)
+		var created struct {
+			Entry struct {
+				Runtime string `json:"runtime"`
+			} `json:"entry"`
+			Path string `json:"path"`
+		}
+		if called.IsError || len(called.Content) != 1 ||
+			json.Unmarshal([]byte(called.Content[0].Text), &created) != nil {
+			t.Fatalf("journal_new failed: %+v", called)
+		}
+		if created.Entry.Runtime != "unknown" || !strings.HasPrefix(created.Path, ".go42x/journal/") ||
+			!strings.Contains(p.read(t, created.Path+"/notes.md"), "# MCP task") {
+			t.Fatalf("journal_new did not create the entry in the served project: %+v", created)
 		}
 	}
 

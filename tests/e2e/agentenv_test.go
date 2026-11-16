@@ -371,7 +371,9 @@ func mergeSourceSnapshot(t *testing.T, p *project) map[string]fileState {
 	t.Helper()
 	files := p.snapshot(t)
 	maps.DeleteFunc(files, func(path string, _ fileState) bool {
-		return strings.HasPrefix(filepath.ToSlash(path), ".build/agentenv-update-")
+		// A failed update leaves only its candidates, in the build directory's tool workspace.
+		path = filepath.ToSlash(path)
+		return path == ".build/tmp" || strings.HasPrefix(path, ".build/tmp/agentenv-update-")
 	})
 	return files
 }
@@ -380,7 +382,7 @@ func TestAgentEnvUpdateMergesOriginalBundle(t *testing.T) {
 	t.Parallel()
 	p := newMergeProject(t)
 	incoming := p.read(t, ".go42x/go42x.yaml")
-	base := setConfigValue(t, incoming, "temp-dir", ".build-old")
+	base := setConfigValue(t, incoming, "description", "'Previous description'")
 	current := setConfigValue(t, base, "name", "project-custom")
 	p.write(t, ".build/base/go42x.yaml", base)
 	p.write(t, ".go42x/go42x.yaml", current)
@@ -397,6 +399,7 @@ func TestAgentEnvUpdateMergesOriginalBundle(t *testing.T) {
 	p.write(t, ".go42x/chunks/300-codestyle.tpl.md", "Customized style\n")
 	p.write(t, ".go42x/resources/go-codestyle.md", "Customized style resource\n")
 	p.write(t, ".go42x/upstream/go/package-names.md", "Customized reference\n")
+	p.write(t, ".go42x/schemas/journal-entry.schema.json", "{}\n")
 	p.write(t, ".go42x/"+vendoring.LockFile, "Customized lock\n")
 	for _, path := range []string{
 		".go42x/chunks/100-operation.tpl.md",
@@ -419,7 +422,11 @@ func TestAgentEnvUpdateMergesOriginalBundle(t *testing.T) {
 		len(report.BackupDir) == 0 {
 		t.Fatalf("update result = %s, %v", result.stdout, err)
 	}
-	wantOverwritten := []string{".go42x/resources/go-codestyle.md", ".go42x/upstream/go/package-names.md"}
+	wantOverwritten := []string{
+		".go42x/resources/go-codestyle.md",
+		".go42x/schemas/journal-entry.schema.json",
+		".go42x/upstream/go/package-names.md",
+	}
 	if !slices.Equal(report.Overwritten, wantOverwritten) {
 		t.Errorf("overwritten = %q, want %q", report.Overwritten, wantOverwritten)
 	}
@@ -451,6 +458,7 @@ func TestAgentEnvUpdateMergesOriginalBundle(t *testing.T) {
 	for _, path := range []string{
 		"chunks/200-search.tpl.md",
 		"resources/go-codestyle.md",
+		"schemas/journal-entry.schema.json",
 		"upstream/go/package-names.md",
 		vendoring.LockFile,
 	} {
@@ -477,7 +485,7 @@ func TestAgentEnvUpdateMergesSchemaRevisions(t *testing.T) {
 	t.Parallel()
 	const directive = "# yaml-language-server: $schema="
 	const previousSchema = directive +
-		"https://raw.githubusercontent.com/go42-dev/go42x/aa1602e76e0a373536eb51643d153d985a86afc9/assets/schemas/go42x.schema.yaml"
+		"https://raw.githubusercontent.com/go42-dev/go42x/aa1602e76e0a373536eb51643d153d985a86afc9/assets/agentenv/schemas/go42x.schema.yaml"
 	for _, tt := range []struct {
 		name     string
 		header   string
@@ -488,7 +496,7 @@ func TestAgentEnvUpdateMergesSchemaRevisions(t *testing.T) {
 			name:    "release tag and commit refs",
 			managed: true,
 			header: directive +
-				"https://raw.githubusercontent.com/go42-dev/go42x/v0.52.0/assets/schemas/go42x.schema.yaml",
+				"https://raw.githubusercontent.com/go42-dev/go42x/v0.52.0/assets/agentenv/schemas/go42x.schema.yaml",
 		},
 		{
 			name:   "custom schema",
@@ -514,11 +522,11 @@ func TestAgentEnvUpdateMergesSchemaRevisions(t *testing.T) {
 			schema, _, _ = strings.Cut(schema, "\n")
 			incomingHeader := directive + schema
 			base := strings.Replace(incoming, incomingHeader, previousSchema, 1)
-			base = setConfigValue(t, base, "temp-dir", ".build-old")
+			base = setConfigValue(t, base, "description", "'Previous description'")
 			current := strings.Replace(base, previousSchema, tt.header, 1)
 			current = setConfigValue(t, current, "name", "project-custom")
 			if tt.conflict {
-				current = setConfigValue(t, current, "temp-dir", ".build-local")
+				current = setConfigValue(t, current, "description", "'Local description'")
 			}
 			p.write(t, ".build/base/go42x.yaml", base)
 			p.write(t, ".go42x/go42x.yaml", current)
@@ -609,7 +617,7 @@ func TestAgentEnvUpdateMergeConflictsPreserveSources(t *testing.T) {
 				t.Fatal("failed merge changed project sources or backups")
 			}
 			if conflict == "content" || conflict == "add-add" {
-				candidates, err := filepath.Glob(filepath.Join(p.root, ".build/agentenv-update-*/merged", path))
+				candidates, err := filepath.Glob(filepath.Join(p.root, ".build/tmp/agentenv-update-*/merged", path))
 				if err != nil || len(candidates) != 1 {
 					t.Fatalf("missing conflict candidate: %v, %v", candidates, err)
 				}
@@ -617,6 +625,33 @@ func TestAgentEnvUpdateMergeConflictsPreserveSources(t *testing.T) {
 				if err != nil || !strings.Contains(string(data), "<<<<<<< project:") {
 					t.Fatalf("missing conflict markers: %s, %v", data, err)
 				}
+			}
+		})
+	}
+}
+
+func TestAgentEnvUpdateSavesConflictsInTheBuildDirectory(t *testing.T) {
+	t.Parallel()
+	for name, tt := range map[string]struct {
+		local string
+		want  string
+	}{
+		"configured": {"context: {build-dir: out}\n", "out/tmp"},
+		// Update repairs configurations that this release rejects, so it uses the default.
+		"rejected configuration": {"context: {build-dir: out, retired-setting: true}\n", ".build/tmp"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			p := newMergeProject(t)
+			p.write(t, ".go42x/go42x.local.yaml", tt.local)
+			p.write(t, ".build/base/agents.tpl.md", "Previous bundled content\n")
+			p.write(t, ".go42x/agents.tpl.md", "Customized project content\n")
+			publishBase(t, p)
+
+			p.run(t, 1, "agentenv", "update", "--json")
+			candidates, err := filepath.Glob(filepath.Join(p.root, tt.want, "agentenv-update-*/merged/agents.tpl.md"))
+			if err != nil || len(candidates) != 1 {
+				t.Fatalf("conflict candidates in %s = %v, %v", tt.want, candidates, err)
 			}
 		})
 	}
@@ -825,9 +860,6 @@ func TestAgentEnvLifecycle(t *testing.T) {
 	p := newProject(t)
 	p.write(t, ".gitignore", "user-entry\n")
 	p.configure(t)
-	if _, err := os.Stat(filepath.Join(p.root, ".go42x/go42x.schema.yaml")); !os.IsNotExist(err) {
-		t.Fatalf("init installed a local editor schema: %v", err)
-	}
 	p.write(t, ".go42x/custom.md", "User instructions\n")
 	p.write(t, ".claude/agents/custom.md", "User agent\n")
 	preserved := map[string]string{

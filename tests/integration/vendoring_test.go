@@ -56,7 +56,7 @@ func fixtureSettings(root, manifestName string) *vendoring.Settings {
 	settings := vendoring.NewSettings()
 	settings.RootPath = root
 	settings.ManifestPath = manifestName
-	settings.TempDir = ".scratch"
+	settings.BuildDir = ".scratch"
 	return settings
 }
 
@@ -405,6 +405,38 @@ func TestNestedManifestAndOwnership(t *testing.T) {
 	settings.Force = true
 	if _, err := fixtureServiceWithSettings(t, settings).Update(t.Context()); err == nil {
 		t.Fatal("another manifest's file was taken over")
+	}
+}
+
+func TestOwnershipScanSkipsJournalAndBuildTmp(t *testing.T) {
+	root := t.TempDir()
+	server := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte("data"))
+		}),
+	)
+	defer server.Close()
+
+	writeFixture(
+		t,
+		filepath.Join(root, vendoring.ManifestFile),
+		[]byte(httpManifest(server.URL+"/file.txt", "assets/file.txt")),
+	)
+	// Agent drafts and update conflict candidates are not other projects' manifests.
+	for _, path := range []string{
+		".go42x/journal/20261110-draft-0000/" + vendoring.ManifestFile,
+		".scratch/tmp/agentenv-update-1/merged/" + vendoring.ManifestFile,
+	} {
+		writeFixture(t, filepath.Join(root, filepath.FromSlash(path)), []byte("<<<<<<< ours\n{"))
+	}
+	if _, err := fixtureService(t, root, vendoring.ManifestFile).Update(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	writeFixture(t, filepath.Join(root, "other", vendoring.ManifestFile), []byte("{"))
+	_, err := fixtureService(t, root, vendoring.ManifestFile).Update(t.Context())
+	if err == nil || !strings.Contains(err.Error(), filepath.Join("other", vendoring.ManifestFile)) {
+		t.Fatalf("invalid manifest error does not name the file: %v", err)
 	}
 }
 
@@ -787,7 +819,7 @@ func TestControlPathsAndSymlinksCannotBeOverwritten(t *testing.T) {
 	)
 	defer server.Close()
 
-	for _, destination := range []string{vendoring.ManifestFile, ".VENDOR.YAML", vendoring.LockFile, ".VENDOR.LOCK.YAML", ".git/file", ".go42x", ".GO42X/go42x.yaml", ".go42x/backups/file", ".scratch", ".scratch/vendoring/file"} {
+	for _, destination := range []string{vendoring.ManifestFile, ".VENDOR.YAML", vendoring.LockFile, ".VENDOR.LOCK.YAML", ".git/file", ".go42x", ".GO42X/go42x.yaml", ".go42x/backups/file", ".go42x/journal/file", ".scratch", ".scratch/tmp/file"} {
 		t.Run(destination, func(t *testing.T) {
 			root := t.TempDir()
 			original := []byte(httpManifest(server.URL+"/file.txt", destination))
@@ -940,7 +972,7 @@ func TestMissingSelectedFileDoesNotPublish(t *testing.T) {
 	}
 }
 
-func TestWritersSerializeAcrossTemporaryDirectories(t *testing.T) {
+func TestWritersSerializeAcrossBuildDirectories(t *testing.T) {
 	root := t.TempDir()
 	started, release := make(chan struct{}), make(chan struct{})
 	var calls atomic.Int64
@@ -974,7 +1006,7 @@ func TestWritersSerializeAcrossTemporaryDirectories(t *testing.T) {
 		t.Fatal("first writer did not start")
 	}
 	settings := vendoring.NewSettings()
-	settings.RootPath, settings.TempDir = root, ".different-scratch"
+	settings.RootPath, settings.BuildDir = root, ".different-scratch"
 	settings.DryRun = true
 	second := fixtureServiceWithSettings(t, settings)
 	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)

@@ -32,10 +32,20 @@ const (
 	FileLocal   = "go42x.local.yaml"
 )
 
+// Default paths. The build subdirectories are relative to the build directory and
+// owned by tasks and tools.
 const (
-	DefaultTempDir                 = ".build"
+	DefaultBuildDir                = ".build"
+	DefaultBuildBinDir             = "bin"
+	DefaultBuildDistDir            = "dist"
+	DefaultBuildReportsDir         = "reports"
+	DefaultBuildCacheDir           = "cache"
+	DefaultBuildTmpDir             = "tmp"
 	DefaultDocumentationEntrypoint = "docs/README.md"
 )
+
+// JournalDir holds agent journal entries, relative to the project root.
+const JournalDir = Directory + "/journal"
 
 var (
 	goEnvNamePattern      = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
@@ -77,16 +87,21 @@ type Context struct {
 	Template  string   `yaml:"template"`
 	ChunksDir string   `yaml:"chunks-dir"`
 	SkillsDir string   `yaml:"skills-dir,omitempty"`
-	TempDir   string   `yaml:"temp-dir,omitempty"`
+	BuildDir  string   `yaml:"build-dir,omitempty"`
 	GoEnv     []string `yaml:"go-env,omitempty"`
 }
 
 // WithDefaults returns a copy with defaults applied to unset context settings.
 func (c Context) WithDefaults() Context {
-	if len(c.TempDir) == 0 {
-		c.TempDir = DefaultTempDir
+	if len(c.BuildDir) == 0 {
+		c.BuildDir = DefaultBuildDir
 	}
 	return c
+}
+
+// JournalDir returns the agent journal directory, relative to the project root.
+func (c Context) JournalDir() string {
+	return JournalDir
 }
 
 type Provider struct {
@@ -201,9 +216,9 @@ func (c *Config) Validate() error {
 	if len(strings.TrimSpace(c.Context.Template)) == 0 {
 		return fmt.Errorf("context.template is required; move shared instructions from providers into context")
 	}
-	if len(c.Context.TempDir) > 0 &&
-		(len(strings.TrimSpace(c.Context.TempDir)) == 0 || strings.ContainsRune(c.Context.TempDir, '\x00')) {
-		return fmt.Errorf("context.temp-dir must be a nonblank path without NUL characters")
+	if len(c.Context.BuildDir) > 0 &&
+		(len(strings.TrimSpace(c.Context.BuildDir)) == 0 || strings.ContainsRune(c.Context.BuildDir, '\x00')) {
+		return fmt.Errorf("context.build-dir must be a nonblank path without NUL characters")
 	}
 
 	for _, name := range c.Context.GoEnv {

@@ -15,7 +15,7 @@ type Settings struct {
 	RootPath     string
 	ManifestPath string
 	LockPath     string
-	TempDir      string
+	BuildDir     string
 	Timeout      time.Duration
 	DryRun       bool
 	Force        bool
@@ -26,7 +26,7 @@ func NewSettings() *Settings {
 	return &Settings{
 		RootPath:     ".",
 		ManifestPath: ManifestFile,
-		TempDir:      config.DefaultTempDir,
+		BuildDir:     config.DefaultBuildDir,
 		Timeout:      2 * time.Minute,
 	}
 }
@@ -36,9 +36,9 @@ func (s *Settings) Validate() error {
 		return fmt.Errorf("settings are required")
 	}
 	if len(strings.TrimSpace(s.RootPath)) == 0 || len(strings.TrimSpace(s.ManifestPath)) == 0 ||
-		len(strings.TrimSpace(s.TempDir)) == 0 ||
+		len(strings.TrimSpace(s.BuildDir)) == 0 ||
 		s.Timeout <= 0 {
-		return fmt.Errorf("root, manifest, temp directory and positive timeout are required")
+		return fmt.Errorf("root, manifest, build directory and positive timeout are required")
 	}
 
 	return nil
@@ -60,7 +60,7 @@ func (s *Settings) LoadProject() error {
 		return err
 	}
 
-	s.TempDir = cfg.Context.WithDefaults().TempDir
+	s.BuildDir = cfg.Context.WithDefaults().BuildDir
 	return nil
 }
 
@@ -94,12 +94,12 @@ func (s *Settings) Resolve() error {
 	if !filepath.IsAbs(s.LockPath) {
 		s.LockPath = filepath.Join(root, s.LockPath)
 	}
-	if !filepath.IsAbs(s.TempDir) {
-		s.TempDir = filepath.Join(root, s.TempDir)
+	if !filepath.IsAbs(s.BuildDir) {
+		s.BuildDir = filepath.Join(root, s.BuildDir)
 	}
 	s.ManifestPath = filepath.Clean(s.ManifestPath)
 	s.LockPath = filepath.Clean(s.LockPath)
-	s.TempDir = filepath.Clean(s.TempDir)
+	s.BuildDir = filepath.Clean(s.BuildDir)
 	if strings.EqualFold(s.ManifestPath, s.LockPath) {
 		return fmt.Errorf("manifest and lock paths must differ")
 	}

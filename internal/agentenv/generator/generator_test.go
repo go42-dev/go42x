@@ -191,12 +191,12 @@ func TestCollectorMetadata(t *testing.T) {
 	}
 }
 
-func TestGenerateTempDirectory(t *testing.T) {
+func TestGenerateBuildDirectory(t *testing.T) {
 	t.Setenv("PATH", "")
 	t.Setenv("GITHUB_ACTIONS", "false")
 	projectTemplates := t.TempDir()
 	writeInstructionTemplates(t, projectTemplates, "# Custom\n\n## Instructions\n\n{{ .chunks }}", []string{
-		"### Intermediate storage\n\nUse the `{{ .context.TempDir }}` directory for intermediate storage.",
+		"### Build outputs\n\nTasks and tools own the `{{ .context.BuildDir }}` directory.",
 	})
 	if err := os.Rename(
 		filepath.Join(projectTemplates, "main.tpl.md"),
@@ -223,32 +223,32 @@ func TestGenerateTempDirectory(t *testing.T) {
 				},
 				{
 					"empty",
-					", temp-dir: ''",
+					", build-dir: ''",
 					"",
 					".build",
 				},
 				{
 					"relative",
-					", temp-dir: .scratch",
+					", build-dir: .scratch",
 					"",
 					".scratch",
 				},
 				{
 					"absolute",
-					", temp-dir: /tmp/agent-output",
+					", build-dir: /tmp/agent-output",
 					"",
 					"/tmp/agent-output",
 				},
 				{
 					"local override",
-					", temp-dir: .scratch",
-					"context: {temp-dir: .local}",
+					", build-dir: .scratch",
+					"context: {build-dir: .local}",
 					".local",
 				},
 				{
 					"local clear",
-					", temp-dir: .scratch",
-					"context: {temp-dir: null}",
+					", build-dir: .scratch",
+					"context: {build-dir: null}",
 					".build",
 				},
 			} {
@@ -282,7 +282,7 @@ func TestGenerateTempDirectory(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					want := "Use the `" + tt.want + "` directory"
+					want := "own the `" + tt.want + "` directory"
 
 					if !strings.Contains(string(data), want) {
 						t.Fatalf("generated instructions missing %q:\n%s", want, data)
@@ -687,11 +687,6 @@ func TestGenerateMCPConfigurations(t *testing.T) {
 			if _, ok := entry.(map[string]any)[field]; ok {
 				t.Errorf("unexpected Antigravity server field %s.%s", name, field)
 			}
-		}
-	}
-	for _, legacy := range []string{"GEMINI.md", ".gemini/settings.json"} {
-		if _, err := os.Stat(filepath.Join(out, legacy)); !os.IsNotExist(err) {
-			t.Errorf("legacy Gemini output %s was generated: %v", legacy, err)
 		}
 	}
 	data, err := os.ReadFile(filepath.Join(out, "AGENTS.md"))

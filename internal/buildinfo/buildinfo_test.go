@@ -12,7 +12,7 @@ func TestSourceURLPinsBuildCommit(t *testing.T) {
 	})
 	xBuildCommit = "0123456789abcdef0123456789abcdef01234567"
 	xBuildVersion = "v1.2.3"
-	for _, path := range []string{"assets/schemas/go42x.schema.yaml", "assets/schemas/vendor.schema.yaml"} {
+	for _, path := range []string{"assets/agentenv/schemas/go42x.schema.yaml", "assets/schemas/vendor.schema.yaml"} {
 		want := "https://raw.githubusercontent.com/go42-dev/go42x/0123456789abcdef0123456789abcdef01234567/" + path
 		if got := SourceURL(path); got != want {
 			t.Errorf("SourceURL(%q) = %q, want %q", path, got, want)
@@ -26,7 +26,7 @@ func TestSourceURLFallbacks(t *testing.T) {
 		xBuildCommit, xBuildVersion = previousCommit, previousVersion
 	})
 	xBuildCommit = ""
-	const path = "assets/schemas/go42x.schema.yaml"
+	const path = "assets/agentenv/schemas/go42x.schema.yaml"
 	for _, tc := range []struct {
 		name    string
 		version string
@@ -74,7 +74,7 @@ func TestSourceURLDevelopmentBuild(t *testing.T) {
 		xBuildCommit, xBuildVersion = previousCommit, previousVersion
 	})
 	xBuildCommit, xBuildVersion = "dev", "dev"
-	if got := SourceURL("assets/schemas/go42x.schema.yaml"); strings.Contains(got, "/go42x/dev/") {
+	if got := SourceURL("assets/agentenv/schemas/go42x.schema.yaml"); strings.Contains(got, "/go42x/dev/") {
 		t.Errorf("SourceURL() used the development marker as a source revision: %q", got)
 	}
 }

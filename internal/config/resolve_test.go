@@ -130,7 +130,7 @@ project:
   metadata: {'${GO42X_KEY}': '${GO42X_PROJECT_ROOT}'}
 context:
   template: '${GO42X_PROJECT_ROOT}/.go42x/agents.tpl.md'
-  temp-dir: '${GO42X_PROJECT_ROOT}/.build'
+  build-dir: '${GO42X_PROJECT_ROOT}/.build'
 providers:
   codex: {approval-policy: '${GO42X_APPROVAL}'}
   gh-aw:
@@ -172,7 +172,7 @@ mcp:
 	}
 	if cfg.Version != SupportedVersion || cfg.Project.Name != "example" || cfg.Project.Tags[0] != "example" ||
 		cfg.Project.Description != "/work/project" || cfg.Project.Metadata["${GO42X_KEY}"] != "/work/project" ||
-		cfg.Context.Template != "/work/project/.go42x/agents.tpl.md" || cfg.Context.TempDir != "/work/project/.build" ||
+		cfg.Context.Template != "/work/project/.go42x/agents.tpl.md" || cfg.Context.BuildDir != "/work/project/.build" ||
 		*cfg.Providers["codex"].ApprovalPolicy != "never" {
 		t.Fatalf("project, context, or provider values were not resolved: %+v", cfg)
 	}
@@ -247,7 +247,7 @@ func TestConfigLoadersResolveRootFromConfigLocation(t *testing.T) {
 			if err := os.WriteFile(path, []byte(base), 0600); err != nil {
 				t.Fatal(err)
 			}
-			local := []byte("context: {temp-dir: '${GO42X_PROJECT_ROOT}/scratch'}")
+			local := []byte("context: {build-dir: '${GO42X_PROJECT_ROOT}/scratch'}")
 			localPath := filepath.Join(dir, FileLocal)
 			if err := os.WriteFile(localPath, local, 0600); err != nil {
 				t.Fatal(err)
@@ -259,8 +259,13 @@ func TestConfigLoadersResolveRootFromConfigLocation(t *testing.T) {
 				t.Fatalf("LoadConfig() = %+v, %v; want project root %q", single, err, root)
 			}
 			merged, err := LoadProjectConfig(path, nil)
-			if err != nil || merged.Project.Name != root || merged.Context.TempDir != root+"/scratch" {
-				t.Fatalf("LoadProjectConfig() = %+v, %v; want root %q and overridden temp directory", merged, err, root)
+			if err != nil || merged.Project.Name != root || merged.Context.BuildDir != root+"/scratch" {
+				t.Fatalf(
+					"LoadProjectConfig() = %+v, %v; want root %q and overridden build directory",
+					merged,
+					err,
+					root,
+				)
 			}
 			for path, want := range map[string][]byte{path: []byte(base), localPath: local} {
 				got, err := os.ReadFile(path)

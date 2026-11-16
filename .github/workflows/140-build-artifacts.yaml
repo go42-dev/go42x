@@ -56,13 +56,13 @@ jobs:
         with:
           name: cli-artifacts-${{ github.run_attempt }}
           path: |-
-            .build/dist/*.tar.gz
-            .build/dist/*.deb
-            .build/dist/*.rpm
-            .build/dist/*.apk
-            .build/dist/*.json
-            .build/dist/checksums.txt
-            .build/dist/homebrew/Casks/go42x.rb
+            ${{ env.BUILD_DIST_DIR }}/*.tar.gz
+            ${{ env.BUILD_DIST_DIR }}/*.deb
+            ${{ env.BUILD_DIST_DIR }}/*.rpm
+            ${{ env.BUILD_DIST_DIR }}/*.apk
+            ${{ env.BUILD_DIST_DIR }}/*.json
+            ${{ env.BUILD_DIST_DIR }}/checksums.txt
+            ${{ env.BUILD_DIST_DIR }}/homebrew/Casks/go42x.rb
           include-hidden-files: true
           if-no-files-found: error
           compression-level: 0

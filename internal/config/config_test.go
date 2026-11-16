@@ -682,22 +682,6 @@ func TestDefaultConfig(t *testing.T) {
 	}
 }
 
-func TestLoadConfigRejectsRemovedContextDirectories(t *testing.T) {
-	for _, field := range []string{"modes-dir", "workflows-dir"} {
-		t.Run(field, func(t *testing.T) {
-			data := []byte("version: '1.0'\nproject: {name: example}\n" +
-				"context: {template: agents.tpl.md, " + field + ": old/}\nproviders: {codex: {}}\n")
-			path := filepath.Join(t.TempDir(), "go42x.yaml")
-			if err := os.WriteFile(path, data, 0600); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := LoadConfig(path); err == nil || !strings.Contains(err.Error(), field) {
-				t.Errorf("LoadConfig() = %v, want rejection of %s", err, field)
-			}
-		})
-	}
-}
-
 func TestValidateGoEnv(t *testing.T) {
 	for _, tt := range []struct {
 		name  string
@@ -744,7 +728,7 @@ func TestValidateGoEnv(t *testing.T) {
 	}
 }
 
-func TestLoadConfigTempDirectoryValidation(t *testing.T) {
+func TestLoadConfigBuildDirectoryValidation(t *testing.T) {
 	for _, tt := range []struct {
 		name  string
 		path  string
@@ -783,7 +767,7 @@ func TestLoadConfigTempDirectoryValidation(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			data := fmt.Appendf(nil, "version: '1.0'\nproject: {name: example}\n"+
-				"context: {template: agents.tpl.md, temp-dir: %q}\nproviders: {codex: {}}\n", tt.path)
+				"context: {template: agents.tpl.md, build-dir: %q}\nproviders: {codex: {}}\n", tt.path)
 			path := filepath.Join(t.TempDir(), "go42x.yaml")
 			if err := os.WriteFile(path, data, 0600); err != nil {
 				t.Fatal(err)
@@ -937,11 +921,6 @@ context: {template: agents.tpl.md}
 			true,
 		},
 		{
-			"retired Gemini provider",
-			"providers: {gemini: {}}",
-			true,
-		},
-		{
 			"Antigravity provider",
 			"providers: {antigravity: {}}",
 			false,
@@ -952,7 +931,7 @@ context: {template: agents.tpl.md}
 			false,
 		},
 		{
-			"Antigravity legacy tool approvals",
+			"Antigravity tool approvals",
 			"providers: {antigravity: {auto-approve-tools: []}}",
 			true,
 		},

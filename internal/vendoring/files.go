@@ -252,9 +252,8 @@ func (s *Service) checkOwnership(ctx context.Context, in *inputs) error {
 		var node yaml.Node
 		if err := yaml.Unmarshal(data, &node); err != nil {
 			if entry.Name() == ManifestFile || entry.Name() == LockFile {
-				return err
+				return fmt.Errorf("parse other vendoring file %s: %w", filename, err)
 			}
-
 			return nil
 		}
 

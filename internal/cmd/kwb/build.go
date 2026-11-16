@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"slices"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
 	"github.com/go42-dev/go42x/internal/cmdutil"
+	"github.com/go42-dev/go42x/internal/config"
 	"github.com/go42-dev/go42x/internal/kwb"
 	"github.com/go42-dev/go42x/internal/kwb/adapters/cli"
 )
@@ -80,6 +82,12 @@ Only changed files are reindexed. Use --rebuild to rebuild the entire index.`,
 }
 
 func runBuildCommand(f *cmdutil.Factory, settings *kwb.Settings) error {
+	buildDir, err := config.ProjectBuildDir(settings.RootPath)
+	if err != nil {
+		return cli.ReportBuild(f.Output(), settings, nil, fmt.Errorf("resolve build directory: %w", err))
+	}
+	settings.ExcludeDirs = excludeBuildDir(settings, buildDir)
+
 	service, err := kwb.NewService(settings, kwb.WithLogger(slog.Default()))
 	if err != nil {
 		return cli.ReportBuild(f.Output(), settings, nil, fmt.Errorf("failed to create service: %w", err))
@@ -88,4 +96,22 @@ func runBuildCommand(f *cmdutil.Factory, settings *kwb.Settings) error {
 	result, err := service.BuildIndex(f.Context(), settings.RootPath)
 	err = errors.Join(err, service.Close())
 	return cli.ReportBuild(f.Output(), settings, &result, err)
+}
+
+// excludeBuildDir adds a build directory configured inside the project to the excluded
+// directories. The default build directory is excluded by name already.
+func excludeBuildDir(settings *kwb.Settings, buildDir string) []string {
+	root, err := filepath.Abs(settings.RootPath)
+	if err != nil {
+		return settings.ExcludeDirs
+	}
+	rel, err := filepath.Rel(root, buildDir)
+	if err != nil || !filepath.IsLocal(rel) || rel == config.DefaultBuildDir {
+		return settings.ExcludeDirs
+	}
+	rel = filepath.ToSlash(rel)
+	if slices.Contains(settings.ExcludeDirs, rel) {
+		return settings.ExcludeDirs
+	}
+	return append(slices.Clone(settings.ExcludeDirs), rel)
 }

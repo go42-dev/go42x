@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/go42-dev/go42x/internal/agentenv"
+	"github.com/go42-dev/go42x/internal/agentenv/journal"
 	"github.com/go42-dev/go42x/internal/doctor/check"
 	"github.com/go42-dev/go42x/internal/kwb"
 	"github.com/go42-dev/go42x/internal/mcpserver"
@@ -64,11 +65,12 @@ func NewService(settings *Settings, opts ...Option) (*Service, error) {
 			ProbeMCP: svc.settings.ProbeMCP,
 			Timeout:  svc.settings.Timeout,
 		})
-	mcpCheck.DependsOn = []string{"agentenv.config"}
+	mcpCheck.DependsOn = []string{agentenv.DoctorIDConfig}
 
 	svc.Register(mcpCheck)
 
 	svc.Register(kwb.DoctorChecks(root, indexPath)...)
+	svc.Register(journal.DoctorChecks(root)...)
 
 	return svc, nil
 }

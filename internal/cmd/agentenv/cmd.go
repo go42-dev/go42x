@@ -3,6 +3,7 @@ package agentenv
 import (
 	"github.com/spf13/cobra"
 
+	journalcmd "github.com/go42-dev/go42x/internal/cmd/agentenv/journal"
 	"github.com/go42-dev/go42x/internal/cmdutil"
 )
 
@@ -31,6 +32,7 @@ func NewAgentEnvCommand(f *cmdutil.Factory) *cobra.Command {
 	cmd.AddCommand(newInitCommand(f))
 	cmd.AddCommand(newUpdateCommand(f))
 	cmd.AddCommand(newGenerateCommand(f))
+	cmd.AddCommand(journalcmd.NewJournalCommand(f))
 
 	return cmd
 }

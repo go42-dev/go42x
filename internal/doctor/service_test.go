@@ -112,12 +112,20 @@ func TestServiceRegistersSubsystemsAndReloadsChecks(t *testing.T) {
 		statuses = append(statuses, result.Status)
 	}
 	if !reflect.DeepEqual(ids, []string{
-		"agentenv.config", "agentenv.outputs", "agentenv.providers", "mcp.servers", "kwb.index", "deployment.adapter",
+		"agentenv.config", "agentenv.outputs", "agentenv.providers", "mcp.servers", "kwb.index",
+		"journal.location", "journal.entries", "journal.stale", "journal.gc", "journal.stray", "journal.index",
+		"deployment.adapter",
 	}) || !reflect.DeepEqual(statuses, []check.Status{
 		check.StatusFail,
 		check.StatusSkipped,
 		check.StatusSkipped,
 		check.StatusSkipped,
+		check.StatusPass,
+		check.StatusSkipped,
+		check.StatusPass,
+		check.StatusPass,
+		check.StatusPass,
+		check.StatusPass,
 		check.StatusPass,
 		check.StatusPass,
 	}) || runs != 1 {

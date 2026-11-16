@@ -25,7 +25,7 @@ their recorded checksums. Runs offline without modifying files.`,
 				RootPath:     viper.GetString(flagRoot),
 				ManifestPath: viper.GetString(flagManifest),
 				LockPath:     viper.GetString(flagLock),
-				TempDir:      defaults.TempDir,
+				BuildDir:     defaults.BuildDir,
 				Timeout:      defaults.Timeout,
 				JSON:         viper.GetBool(flagJSON),
 			}

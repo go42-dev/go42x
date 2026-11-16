@@ -139,17 +139,17 @@ properties:
         minLength: 1
       chunks-dir:
         type: string
-        description: Chunk directory relative to .go42x; immediate *.tpl.md files load in filename order. Omit to include
-          no chunks.
+        description: Chunk directory relative to .go42x; immediate *.tpl.md files load in filename order. Name project chunks
+          999-<name>.tpl.md; bundled chunks never use that prefix. Omit to include no chunks.
       skills-dir:
         type: string
         description: Agent skill directory relative to .go42x; each immediate subdirectory with a SKILL.md, or with a SKILL.tpl.md
           whose *.tpl.md files render as templates, is installed in the skill directories of enabled providers. Omit to install
           no skills.
-      temp-dir:
+      build-dir:
         type: string
-        description: Directory for intermediate agent outputs in generated instructions, available as .context.TempDir. Relative
-          paths use the project root. Omit or leave empty to use .build.
+        description: Build directory for task and tool outputs, available as .context.BuildDir. Relative paths use the project
+          root. Omit or leave empty to use .build.
         default: .build
         pattern: ^$|\S
         not:

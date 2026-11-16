@@ -65,7 +65,7 @@ jobs:
         with:
           artifact-ids: ${{ inputs.artifact_id }}
           merge-multiple: true
-          path: .build/dist
+          path: ${{ env.BUILD_DIST_DIR }}
       - name: 'Verify artifacts and test the packaged CLI'
         run: task test:release
         env:

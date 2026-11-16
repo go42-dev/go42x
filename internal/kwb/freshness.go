@@ -96,11 +96,7 @@ func (m *indexManager) CheckFreshness(ctx context.Context) (*FreshnessResult, er
 		settings := *m.settings
 		policy := current.manifest.Selection
 		if policy == nil {
-			result.Diagnostics = append(result.Diagnostics, Diagnostic{
-				Code:    "selection_unknown",
-				Message: "This index predates recorded build settings; run go42x kwb build before checking freshness",
-			})
-			return nil
+			return fmt.Errorf("index manifest lacks build settings; run go42x kwb build")
 		}
 
 		settings.MaxFileSize, settings.ExtraExtensions = policy.MaxFileSize, policy.ExtraExtensions
@@ -132,7 +128,7 @@ func (m *indexManager) CheckFreshness(ctx context.Context) (*FreshnessResult, er
 			return err
 		}
 		defer root.Close() //nolint:errcheck
-		missing := []string{}
+		var missing []string
 		for path := range current.manifest.Files {
 			if !seen[path] {
 				missing = append(missing, path)

@@ -15,11 +15,18 @@ import (
 	"github.com/go42-dev/go42x/internal/doctor/check"
 )
 
+// IDs of the agent-environment diagnostics.
+const (
+	DoctorIDConfig    = "agentenv.config"
+	DoctorIDOutputs   = "agentenv.outputs"
+	DoctorIDProviders = "agentenv.providers"
+)
+
 // DoctorChecks supplies agent-environment diagnostics for registration with doctor.Service.
 // Configuration is loaded once per run and shared by dependent checks.
 func (s *Service) DoctorChecks(root string) []check.Check {
 	checks := []check.Check{{
-		ID: "agentenv.config",
+		ID: DoctorIDConfig,
 		Run: func(_ context.Context) check.Result {
 			var err error
 			s.config, err = config.LoadProjectConfig(
@@ -46,8 +53,8 @@ func (s *Service) DoctorChecks(root string) []check.Check {
 			}
 		},
 	}, {
-		ID:        "agentenv.outputs",
-		DependsOn: []string{"agentenv.config"},
+		ID:        DoctorIDOutputs,
+		DependsOn: []string{DoctorIDConfig},
 		Run: func(ctx context.Context) check.Result {
 			gen := generator.NewGenerator(
 				slog.New(slog.DiscardHandler),
@@ -83,8 +90,8 @@ func (s *Service) DoctorChecks(root string) []check.Check {
 			return result
 		},
 	}, {
-		ID:        "agentenv.providers",
-		DependsOn: []string{"agentenv.config"},
+		ID:        DoctorIDProviders,
+		DependsOn: []string{DoctorIDConfig},
 		Run: func(_ context.Context) check.Result {
 			var enabled []string
 			for _, name := range slices.Sorted(maps.Keys(s.config.Providers)) {

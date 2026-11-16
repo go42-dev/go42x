@@ -14,7 +14,7 @@ import (
 
 func compileSchema(t *testing.T) *jsonschema.Schema {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join("..", "..", "assets", "schemas", "go42x.schema.yaml"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "assets", "agentenv", "schemas", "go42x.schema.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}

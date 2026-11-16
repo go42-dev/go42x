@@ -3,6 +3,7 @@ package config
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -424,5 +425,83 @@ func TestProjectConfigMissingAndInvalidFiles(t *testing.T) {
 	path = writeConfigFixture(t, sharedConfig+"mistake: true\n", "mistake: null\n")
 	if _, err := LoadProjectConfig(path, nil); err == nil || !strings.Contains(err.Error(), "project configuration") {
 		t.Fatalf("local file hid a shared configuration error: %v", err)
+	}
+}
+
+func TestProjectBuildDir(t *testing.T) {
+	const project = "version: '1.0'\nproject: {name: example}\nproviders: {codex: {}}\n" +
+		"context: {template: agents.tpl.md, build-dir: %s}\n"
+	outside := t.TempDir()
+	for _, tt := range []struct {
+		name    string
+		project string
+		local   string
+		want    string
+	}{
+		{
+			name: "no configuration",
+			want: ".build",
+		},
+		{
+			name:    "empty setting",
+			project: fmt.Sprintf(project, "''"),
+			want:    ".build",
+		},
+		{
+			name:    "project setting",
+			project: fmt.Sprintf(project, "out/build"),
+			want:    "out/build",
+		},
+		{
+			name:    "local override",
+			project: fmt.Sprintf(project, "out"),
+			local:   "context: {build-dir: local-out}\n",
+			want:    "local-out",
+		},
+		{
+			name:    "project root variable",
+			project: fmt.Sprintf(project, "'${GO42X_PROJECT_ROOT}/var'"),
+			want:    "var",
+		},
+		{
+			name:    "absolute path outside the project",
+			project: fmt.Sprintf(project, outside),
+			want:    outside,
+		},
+		{
+			name:    "invalid configuration",
+			project: "context: [\n",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			for name, content := range map[string]string{FileProject: tt.project, FileLocal: tt.local} {
+				if len(content) == 0 {
+					continue
+				}
+				if err := os.MkdirAll(filepath.Join(root, Directory), 0750); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(root, Directory, name), []byte(content), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			got, err := ProjectBuildDir(root)
+			if len(tt.want) == 0 {
+				if err == nil {
+					t.Fatalf("ProjectBuildDir() = %q, want an error", got)
+				}
+				return
+			}
+
+			want := tt.want
+			if !filepath.IsAbs(want) {
+				want = filepath.Join(root, want)
+			}
+			if err != nil || got != want {
+				t.Errorf("ProjectBuildDir() = %q, %v; want %q", got, err, want)
+			}
+		})
 	}
 }

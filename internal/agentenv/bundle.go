@@ -23,7 +23,7 @@ import (
 
 const (
 	bundledSchemaURLBase = "https://raw.githubusercontent.com/go42-dev/go42x/"
-	schemaPathProject    = "assets/schemas/go42x.schema.yaml"
+	schemaPathProject    = "assets/agentenv/schemas/go42x.schema.yaml"
 	schemaPathVendor     = "assets/schemas/vendor.schema.yaml"
 )
 
@@ -31,7 +31,7 @@ const bundleMergeTimeout = 30 * time.Second
 
 // bundleReplacedDirs hold release-owned sources. A merge update replaces their bundled
 // files instead of merging project changes; files that projects add beside them are kept.
-var bundleReplacedDirs = []string{"resources/", "skills/", "upstream/"}
+var bundleReplacedDirs = []string{"resources/", "schemas/", "skills/", "upstream/"}
 
 // bundleFile distinguishes a missing source from an empty file.
 type bundleFile struct {
@@ -167,11 +167,18 @@ func prepareMergedBundle(
 		installed[name] = true
 	}
 
-	if err := os.MkdirAll(filepath.Join(root, ".build"), 0700); err != nil {
+	// Update must run on configurations that this release rejects, because its merge
+	// repairs them; the merge workspace then uses the default build directory.
+	buildDir, err := config.ProjectBuildDir(root)
+	if err != nil {
+		buildDir = filepath.Join(root, config.DefaultBuildDir)
+	}
+	parent := filepath.Join(buildDir, config.DefaultBuildTmpDir)
+	if err := os.MkdirAll(parent, 0700); err != nil {
 		return nil, nil, fmt.Errorf("create merge parent: %w", err)
 	}
 
-	workspace, err := os.MkdirTemp(filepath.Join(root, ".build"), "agentenv-update-*")
+	workspace, err := os.MkdirTemp(parent, "agentenv-update-*")
 	if err != nil {
 		return nil, nil, fmt.Errorf("create merge workspace: %w", err)
 	}

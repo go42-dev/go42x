@@ -19,8 +19,9 @@ func newUpdateCommand(f *cmdutil.Factory) *cobra.Command {
 		Long: `Merge project customizations with the configuration and templates shipped in this binary.
 The merge base is the previous bundle, which Git fetches from the revision recorded in
 .go42x/.bundle.lock.yaml; the record then names this binary's bundle.
-Bundled resources, skills, and upstream files are replaced, and the local changes this replaces are listed.
-Conflicts leave project files unchanged and save candidates under .build.
+Bundled resources, schemas, skills, and upstream files are replaced, and the local changes this replaces are listed.
+Conflicts leave project files unchanged and save candidates in <build-dir>/tmp/agentenv-update-*/merged,
+where <build-dir> is the context.build-dir setting.
 Local overrides and additional files are preserved.
 Without a usable record, run 'go42x agentenv init --force' to reinstall the bundle instead.
 Run 'go42x agentenv generate' afterward to refresh generated agent files.`,

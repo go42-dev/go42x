@@ -2,6 +2,8 @@
 .go42x/go42x.local.yaml
 .go42x/kwb/
 .go42x/backups/
+.go42x/journal/
+.build/
 .mcp.json
 .claude/
 .codex/
