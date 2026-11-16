@@ -7,6 +7,7 @@ import "context"
 // indexAccessor owns persisted generations and their read/write lifecycle.
 type indexAccessor interface {
 	BuildIndex(ctx context.Context, rootPath string) (BuildResult, error)
+	RefreshIndex(ctx context.Context) (BuildResult, error)
 	Search(ctx context.Context, options SearchOptions) (*SearchResponse, error)
 	GetFile(ctx context.Context, path string, startLine, endLine int) (*FileContent, error)
 	ListFiles(ctx context.Context, options ListOptions) (*FilesResponse, error)

@@ -24,7 +24,7 @@ import (
 	"github.com/gofrs/flock"
 )
 
-const schemaVersion = 4
+const schemaVersion = 5
 
 type fileRecord struct {
 	Hash     string `json:"hash"`
@@ -163,10 +163,10 @@ func (m *indexManager) refresh(ctx context.Context) error {
 	defer m.mu.Unlock()
 
 	catalog := flock.New(filepath.Join(m.settings.IndexPath, "catalog.lock"), flock.SetFlag(os.O_RDONLY))
+	defer catalog.Close() //nolint:errcheck
 	if err := acquireLock(ctx, catalog, true); err != nil {
 		return err
 	}
-	defer catalog.Unlock() //nolint:errcheck
 	generation, err := m.generation()
 	if err != nil {
 		return err
@@ -192,7 +192,7 @@ func (m *indexManager) refresh(ctx context.Context) error {
 	}
 	if meta.Version != schemaVersion {
 		_ = lease.Unlock()
-		return fmt.Errorf("index format changed; run 'go42x kwb build --rebuild' first")
+		return ErrIndexFormat
 	}
 
 	index, err := bleve.OpenUsing(
@@ -310,7 +310,44 @@ type BuildResult struct {
 	Duration  time.Duration `json:"duration"`
 }
 
-func (m *indexManager) BuildIndex(ctx context.Context, root string) (report BuildResult, retErr error) {
+// BuildIndex creates or updates the index of root with the configured source selection. It also
+// refreshes the managed block of the project's exclusion file.
+func (m *indexManager) BuildIndex(ctx context.Context, root string) (BuildResult, error) {
+	return m.build(ctx, root, false)
+}
+
+// RefreshIndex updates an existing index with the root and source selection recorded in it. It
+// never creates an index and never rewrites the project's exclusion file.
+func (m *indexManager) RefreshIndex(ctx context.Context) (BuildResult, error) {
+	if _, err := m.generation(); err != nil {
+		return BuildResult{}, err
+	}
+	root, err := m.ProjectRoot()
+	if err != nil {
+		return BuildResult{}, err
+	}
+	return m.build(ctx, root, true)
+}
+
+// recordedManager returns a manager that selects sources with the settings recorded in meta, so
+// a refresh keeps the choices of the last explicit build.
+func (m *indexManager) recordedManager(meta *manifest) (*indexManager, error) {
+	if meta.Selection == nil {
+		return nil, errMissingSelection
+	}
+	settings := *m.settings
+	settings.MaxFileSize, settings.ExtraExtensions = meta.Selection.MaxFileSize, meta.Selection.ExtraExtensions
+	settings.ExcludeDirs, settings.ExcludeFiles = meta.Selection.ExcludeDirs, meta.Selection.ExcludeFiles
+	settings.IndexType, settings.Rebuild = meta.IndexType, false
+	if err := settings.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid recorded build settings: %w", err)
+	}
+	return newIndexManager(m.logger, &settings), nil
+}
+
+// build updates the index of root. With recorded set, it uses the root and source selection of the
+// current generation and leaves the exclusion file unchanged.
+func (m *indexManager) build(ctx context.Context, root string, recorded bool) (report BuildResult, retErr error) {
 	started := time.Now()
 	defer func() {
 		report.Duration = time.Since(started)
@@ -346,12 +383,12 @@ func (m *indexManager) BuildIndex(ctx context.Context, root string) (report Buil
 	}
 
 	writer := flock.New(filepath.Join(m.settings.IndexPath, "build.lock"))
+	defer func() {
+		retErr = errors.Join(retErr, writer.Close())
+	}()
 	if err := acquireLock(ctx, writer, false); err != nil {
 		return report, err
 	}
-	defer func() {
-		retErr = errors.Join(retErr, writer.Unlock())
-	}()
 
 	generation, err := m.generation()
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -365,23 +402,34 @@ func (m *indexManager) BuildIndex(ctx context.Context, root string) (report Buil
 			return report, err
 		}
 	}
-	report.BackupDir, err = m.ensureSourceIgnore(ctx, root)
-	if err != nil {
-		return report, fmt.Errorf("refresh source exclusions: %w", err)
+	builder := m
+	if recorded {
+		if previous == nil {
+			return report, fmt.Errorf("refresh index: %w", os.ErrNotExist)
+		}
+		if builder, err = m.recordedManager(previous); err != nil {
+			return report, err
+		}
+		root = previous.Root
+	} else {
+		report.BackupDir, err = m.ensureSourceIgnore(ctx, root)
+		if err != nil {
+			return report, fmt.Errorf("refresh source exclusions: %w", err)
+		}
 	}
 
-	report.Rebuilt = m.settings.Rebuild || previous == nil || previous.Version != schemaVersion ||
+	report.Rebuilt = builder.settings.Rebuild || previous == nil || previous.Version != schemaVersion ||
 		previous.Root != root ||
-		previous.IndexType != m.settings.IndexType
+		previous.IndexType != builder.settings.IndexType
 	if report.Rebuilt {
 		previous = nil
 	}
 	meta := &manifest{
 		Version:   schemaVersion,
 		Root:      root,
-		IndexType: m.settings.IndexType,
+		IndexType: builder.settings.IndexType,
 		Files:     map[string]fileRecord{},
-		Selection: selectionFrom(m.settings),
+		Selection: selectionFrom(builder.settings),
 	}
 	var directory string
 	var index bleve.Index
@@ -415,7 +463,7 @@ func (m *indexManager) BuildIndex(ctx context.Context, root string) (report Buil
 				ctx,
 				filepath.Join(m.settings.IndexPath, generation, "data"),
 				dataPath,
-				m.settings.IndexType == scorch.Name,
+				builder.settings.IndexType == scorch.Name,
 			); err != nil {
 				return nil, err
 			}
@@ -427,7 +475,7 @@ func (m *indexManager) BuildIndex(ctx context.Context, root string) (report Buil
 				return nil, mappingErr
 			}
 
-			backend := m.settings.IndexType
+			backend := builder.settings.IndexType
 			if backend == indexTypeUpsideDown {
 				backend = upsidedown.Name
 			}
@@ -449,7 +497,7 @@ func (m *indexManager) BuildIndex(ctx context.Context, root string) (report Buil
 		return index, nil
 	}
 	flush := func(force bool) error {
-		if batch.Size() == 0 || (!force && batch.Size() < m.settings.BatchSize) {
+		if batch.Size() == 0 || (!force && batch.Size() < builder.settings.BatchSize) {
 			return nil
 		}
 
@@ -464,7 +512,7 @@ func (m *indexManager) BuildIndex(ctx context.Context, root string) (report Buil
 		batch = index.NewBatch()
 		return nil
 	}
-	err = m.walkFiles(ctx, root, func(path string, info os.FileInfo, data []byte) error {
+	err = builder.walkFiles(ctx, root, func(path string, info os.FileInfo, data []byte) error {
 		digest := Hash(data)
 		var old fileRecord
 		if previous != nil {
@@ -667,10 +715,10 @@ func writeSynced(path string, data []byte) (retErr error) {
 
 func (m *indexManager) publish(ctx context.Context, generation string) error {
 	catalog := flock.New(filepath.Join(m.settings.IndexPath, "catalog.lock"))
+	defer catalog.Close() //nolint:errcheck
 	if err := acquireLock(ctx, catalog, false); err != nil {
 		return err
 	}
-	defer catalog.Unlock() //nolint:errcheck
 	temporary, err := os.CreateTemp(m.settings.IndexPath, ".current-")
 	if err != nil {
 		return err

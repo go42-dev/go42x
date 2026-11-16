@@ -31,7 +31,7 @@ func (s *Adapter) Tools() []server.ServerTool {
 			Tool: mcp.NewTool(
 				"kwb_search",
 				mcp.WithDescription(
-					"Search documentation sections and code declarations. Returns ranked snippets with source line ranges. Queries are plain text; use filters to narrow results.",
+					"Search documentation sections and code declarations. Returns ranked snippets with source line ranges. Queries are plain text; use filters to narrow results. When no result contains every word, results matching at least half of the words are returned with relaxed=true; treat them as leads. Results with stale=true come from files changed since indexing; read their current lines with kwb_get_file.",
 				),
 				mcp.WithReadOnlyHintAnnotation(true),
 				mcp.WithString(
@@ -147,7 +147,7 @@ func (s *Adapter) Tools() []server.ServerTool {
 			Tool: mcp.NewTool(
 				"project_context",
 				mcp.WithDescription(
-					"Assemble live project guidance, documentation linked to supplied paths, and bounded reads of explicitly supplied files. Directory paths select documentation impact only. No implicit source searches; use kwb_search and language-server tools for discovery. No search index required; proposals and history retain status labels. Default source budget 16 KiB; total encoded response at most 64 KiB.",
+					"Assemble live project guidance, documentation linked to supplied paths, and bounded reads of explicitly supplied files. Directory paths select documentation impact only. Reads up to 16 files per request; directories do not count. paths reports each supplied path as included, partial (continue at next_start_line), omitted_budget, omitted_path_limit, unavailable, or directory. No implicit source searches; use kwb_search and language-server tools for discovery. No search index required; proposals and history retain status labels. Default source budget 16 KiB; total encoded response at most 64 KiB.",
 				),
 				mcp.WithReadOnlyHintAnnotation(
 					true,

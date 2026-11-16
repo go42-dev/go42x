@@ -37,6 +37,10 @@ type contextBuilder struct {
 	catalog    *Catalog
 	result     *ContextResult
 	candidates map[string]candidate
+	// pathIndex maps a supplied path to its entry in result.Paths.
+	pathIndex map[string]int
+	// catalogDiagnostics counts the catalog diagnostics at the start of result.Diagnostics.
+	catalogDiagnostics int
 }
 
 // Context assembles live guidance, documentation impact, and explicitly supplied
@@ -68,12 +72,15 @@ func (s *Service) Context(ctx context.Context, options ContextOptions) (*Context
 	}
 
 	b := &contextBuilder{
-		service:    s,
-		catalog:    catalog,
-		candidates: map[string]candidate{},
+		service:            s,
+		catalog:            catalog,
+		candidates:         map[string]candidate{},
+		pathIndex:          map[string]int{},
+		catalogDiagnostics: len(catalog.Diagnostics),
 		result: &ContextResult{
 			Root:        projectRoot,
 			Items:       []ContextItem{},
+			Paths:       []PathOutcome{},
 			Diagnostics: slices.Clone(catalog.Diagnostics),
 			Coverage:    "Live project documentation and explicitly supplied files; directories select documentation impact only, with no implicit source search",
 		},
@@ -186,22 +193,20 @@ func (b *contextBuilder) documentation(ctx context.Context, paths []string) erro
 	return ctx.Err()
 }
 
+// explicitSources gives every supplied path an outcome and reads up to maxContextPaths files.
+// Directories select documentation impact only and do not count toward the limit.
 func (b *contextBuilder) explicitSources(ctx context.Context, root *os.Root, paths []string) error {
-	if len(paths) > maxContextPaths {
-		b.diagnostic(
-			"path_limit",
-			"",
-			"Explicit reads use the first 16 paths; documentation impact uses all supplied paths",
-		)
-		paths = paths[:maxContextPaths]
-	}
+	files := 0
 	for _, path := range paths {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-
+		// Files stay omitted for budget until rendering returns their content.
+		b.pathIndex[path] = len(b.result.Paths)
+		b.result.Paths = append(b.result.Paths, PathOutcome{Path: path, Outcome: PathOmittedBudget})
 		info, err := root.Stat(path)
 		if err != nil {
+			b.setOutcome(path, PathUnavailable, nil)
 			b.diagnostic(
 				"source_unavailable",
 				path,
@@ -210,8 +215,20 @@ func (b *contextBuilder) explicitSources(ctx context.Context, root *os.Root, pat
 			continue
 		}
 		if info.IsDir() {
+			b.setOutcome(path, PathDirectory, nil)
 			continue
 		}
+		if files == maxContextPaths {
+			b.setOutcome(path, PathOmittedPathLimit, nil)
+			b.result.Truncated = true
+			b.diagnostic("path_limit", "", fmt.Sprintf(
+				"Explicit reads cover %d files per request, not counting directories; "+
+					"request files marked omitted_path_limit separately",
+				maxContextPaths,
+			))
+			continue
+		}
+		files++
 
 		if doc := b.catalog.ByPath(path); doc != nil {
 			b.add(documentCandidate(doc, "explicit_source", priorityExplicit))
@@ -220,6 +237,7 @@ func (b *contextBuilder) explicitSources(ctx context.Context, root *os.Root, pat
 
 		data, err := readCandidate(ctx, root, path)
 		if err != nil {
+			b.setOutcome(path, PathUnavailable, nil)
 			b.diagnostic("source_unavailable", path, err.Error())
 			continue
 		}
@@ -237,12 +255,20 @@ func (b *contextBuilder) explicitSources(ctx context.Context, root *os.Root, pat
 	return ctx.Err()
 }
 
+// setOutcome records what happened to a supplied path; other candidates have no outcome.
+func (b *contextBuilder) setOutcome(path, outcome string, next *int) {
+	if i, ok := b.pathIndex[path]; ok {
+		b.result.Paths[i].Outcome, b.result.Paths[i].NextStartLine = outcome, next
+	}
+}
+
 func (b *contextBuilder) truncated() {
 	b.result.Truncated = true
 	b.diagnostic(
 		"content_budget",
 		"",
-		"Additional content was omitted; follow source.next_start_line or read selected files and documents directly",
+		"Content was cut to fit the budget; check paths, continue partial files from next_start_line, "+
+			"and request omitted files separately, raise max_bytes, or read them with kwb_get_file",
 	)
 }
 
@@ -323,19 +349,25 @@ func (b *contextBuilder) renderCandidate(c candidate, budget int) bool {
 	}
 	b.result.Items = append(b.result.Items, item)
 	b.result.ContentBytes += len(source.Content)
+	if source.NextStartLine == nil {
+		b.setOutcome(c.path, PathIncluded, nil)
+	} else {
+		b.setOutcome(c.path, PathPartial, source.NextStartLine)
+	}
 	return cut
 }
 
+// bound fits the encoded response within MaxResponseBytes. It shrinks content before it removes
+// diagnostics, and it never removes path outcomes.
 func (b *contextBuilder) bound(ctx context.Context) (*ContextResult, error) {
-	if len(b.result.Diagnostics) > 100 {
-		b.result.Diagnostics = b.result.Diagnostics[:100]
+	for len(b.result.Diagnostics) > 100 {
+		b.dropDiagnostic()
 		b.result.Truncated = true
 	}
 	for {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-
 		data, err := json.Marshal(b.result)
 		if err != nil {
 			return nil, err
@@ -344,15 +376,42 @@ func (b *contextBuilder) bound(ctx context.Context) (*ContextResult, error) {
 			return b.result, nil
 		}
 
-		b.result.Truncated = true
-		if len(b.result.Diagnostics) > 0 {
-			b.result.Diagnostics = b.result.Diagnostics[:len(b.result.Diagnostics)-1]
-		} else if len(b.result.Items) > 0 {
-			last := b.result.Items[len(b.result.Items)-1]
-			b.result.ContentBytes -= len(last.Source.Content)
-			b.result.Items = b.result.Items[:len(b.result.Items)-1]
-		} else {
+		switch {
+		case len(b.result.Items) > 0:
+			b.shrinkLastItem()
+			b.truncated()
+		case len(b.result.Diagnostics) > 0:
+			b.dropDiagnostic()
+			b.result.Truncated = true
+		default:
 			return nil, fmt.Errorf("context response exceeds limit")
 		}
 	}
+}
+
+// shrinkLastItem halves the last item's source on a line boundary, or removes the item when no
+// line remains.
+func (b *contextBuilder) shrinkLastItem() {
+	last := len(b.result.Items) - 1
+	item := &b.result.Items[last]
+	b.result.ContentBytes -= len(item.Source.Content)
+	source, _ := fitSource(item.Source, len(item.Source.Content)/2)
+	if len(strings.TrimSpace(source.Content)) == 0 {
+		b.setOutcome(item.Path, PathOmittedBudget, nil)
+		b.result.Items = b.result.Items[:last]
+		return
+	}
+	item.Source = source
+	b.result.ContentBytes += len(source.Content)
+	b.setOutcome(item.Path, PathPartial, source.NextStartLine)
+}
+
+// dropDiagnostic removes a catalog diagnostic before any diagnostic about the request itself.
+func (b *contextBuilder) dropDiagnostic() {
+	index := len(b.result.Diagnostics) - 1
+	if b.catalogDiagnostics > 0 {
+		b.catalogDiagnostics--
+		index = b.catalogDiagnostics
+	}
+	b.result.Diagnostics = slices.Delete(b.result.Diagnostics, index, index+1)
 }

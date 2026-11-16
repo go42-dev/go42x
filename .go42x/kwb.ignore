@@ -22,3 +22,6 @@ AGENTS.md
 .github/workflows/900-aw-mcp.md
 .github/workflows/*.lock.yml
 # go42x -- END
+
+# Bundled upstream references duplicate the installed copies in .go42x/upstream.
+assets/agentenv/upstream/**

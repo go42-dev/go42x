@@ -640,8 +640,7 @@ func TestDocumentationMetadataAndFrontmatter(t *testing.T) {
 	if hit.DocumentID != "REQ-001" || hit.DocumentStatus != "draft" || hit.Collection != "requirements" ||
 		len(hit.Related) != 2 ||
 		hit.StartLine < 8 ||
-		hit.Title != "Refresh tokens" ||
-		len(hit.SourceHash) == 0 {
+		hit.Title != "Refresh tokens" {
 		t.Fatalf("metadata: %+v", hit)
 	}
 	stats, err := service.GetStats(t.Context())

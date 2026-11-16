@@ -3,6 +3,7 @@ package kwb
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -361,5 +362,114 @@ func TestConfiguredDefaultContentBudget(t *testing.T) {
 	})
 	if err != nil || result.ContentBytes <= budget || result.ContentBytes > DefaultContentBytes {
 		t.Fatalf("explicit request budget: %+v %v", result, err)
+	}
+}
+
+// outcomes maps each supplied path to its reported outcome.
+func outcomes(t *testing.T, result *ContextResult) map[string]PathOutcome {
+	t.Helper()
+	got := map[string]PathOutcome{}
+	for _, outcome := range result.Paths {
+		got[outcome.Path] = outcome
+	}
+	return got
+}
+
+func TestContextAccountsForEveryPath(t *testing.T) {
+	t.Parallel()
+	root, service := contextFixture(t)
+	var paths []string
+	for i := range maxContextPaths + 1 {
+		path := fmt.Sprintf("src/file%02d.go", i)
+		writeFixture(t, root, path, "package sample\n")
+		paths = append(paths, path)
+	}
+	for _, dir := range []string{"src/a", "src/b", "src/c"} {
+		writeFixture(t, root, dir+"/keep.md", "# Keep\n")
+		paths = append(paths, dir)
+	}
+	paths = append(paths, "src/missing.go")
+	result, err := service.Context(t.Context(), ContextOptions{Paths: paths})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := outcomes(t, result)
+	if len(result.Paths) != len(paths) || len(got) != len(paths) {
+		t.Fatalf("paths = %+v", result.Paths)
+	}
+	for i := range maxContextPaths {
+		if outcome := got[fmt.Sprintf("src/file%02d.go", i)]; outcome.Outcome != PathIncluded {
+			t.Errorf("file %d: %+v", i, outcome)
+		}
+	}
+	last := got[fmt.Sprintf("src/file%02d.go", maxContextPaths)]
+	if last.Outcome != PathOmittedPathLimit || !result.Truncated || !hasDiagnostic(result, "path_limit") {
+		t.Errorf("file beyond the limit: %+v truncated=%v", last, result.Truncated)
+	}
+	for _, dir := range []string{"src/a", "src/b", "src/c"} {
+		if got[dir].Outcome != PathDirectory {
+			t.Errorf("%s: %+v", dir, got[dir])
+		}
+	}
+	if got["src/missing.go"].Outcome != PathUnavailable {
+		t.Errorf("missing file: %+v", got["src/missing.go"])
+	}
+}
+
+func TestContextNamesFilesOmittedForBudget(t *testing.T) {
+	t.Parallel()
+	root, service := contextFixture(t)
+	var paths []string
+	for i := range 5 {
+		path := fmt.Sprintf("src/large%d.go", i)
+		writeFixture(t, root, path, "package sample\n"+strings.Repeat("// source line\n", 100))
+		paths = append(paths, path)
+	}
+	result, err := service.Context(t.Context(), ContextOptions{Paths: paths, MaxBytes: 1024})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := outcomes(t, result)
+	counts := map[string]int{}
+	for _, path := range paths {
+		outcome := got[path]
+		counts[outcome.Outcome]++
+		if (outcome.Outcome == PathPartial) != (outcome.NextStartLine != nil) {
+			t.Errorf("%s continuation: %+v", path, outcome)
+		}
+	}
+	if counts[PathPartial] != 1 || counts[PathOmittedBudget] != len(paths)-1 ||
+		!hasDiagnostic(result, "content_budget") {
+		t.Fatalf("outcomes = %+v", result.Paths)
+	}
+}
+
+func TestContextShrinksContentBeforeDiagnostics(t *testing.T) {
+	t.Parallel()
+	root, service := contextFixture(t)
+	// Context reads 200 lines by default. They fit the content budget, but escaping doubles every
+	// quote, so the encoded response exceeds its limit.
+	writeFixture(t, root, "src/quotes.go", "package sample\n"+strings.Repeat("// "+strings.Repeat(`"`, 230)+"\n", 300))
+	writeFixture(t, root, "src/missing-neighbor.go", "package sample\n")
+	if err := os.Remove(filepath.Join(root, "src/missing-neighbor.go")); err != nil {
+		t.Fatal(err)
+	}
+	result, err := service.Context(t.Context(), ContextOptions{
+		Paths:    []string{"src/quotes.go", "src/missing-neighbor.go"},
+		MaxBytes: MaxContentBytes,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(result)
+	if err != nil || len(data) > MaxResponseBytes {
+		t.Fatalf("encoded %d bytes: %v", len(data), err)
+	}
+	got := outcomes(t, result)
+	if quotes := got["src/quotes.go"]; quotes.Outcome != PathPartial || quotes.NextStartLine == nil {
+		t.Fatalf("quote-heavy file: %+v", quotes)
+	}
+	if !hasDiagnostic(result, "source_unavailable") || !hasDiagnostic(result, "content_budget") {
+		t.Fatalf("request diagnostics were dropped: %+v", result.Diagnostics)
 	}
 }

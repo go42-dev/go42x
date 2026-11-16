@@ -93,20 +93,11 @@ func (m *indexManager) CheckFreshness(ctx context.Context) (*FreshnessResult, er
 	}
 	err := m.withSnapshot(ctx, func(current *snapshot) error {
 		result.Root, result.Generation = current.manifest.Root, current.generation
-		settings := *m.settings
-		policy := current.manifest.Selection
-		if policy == nil {
-			return fmt.Errorf("index manifest lacks build settings; run go42x kwb build")
+		walker, err := m.recordedManager(current.manifest)
+		if err != nil {
+			return err
 		}
-
-		settings.MaxFileSize, settings.ExtraExtensions = policy.MaxFileSize, policy.ExtraExtensions
-		settings.ExcludeDirs, settings.ExcludeFiles = policy.ExcludeDirs, policy.ExcludeFiles
-		if err := settings.Validate(); err != nil {
-			return fmt.Errorf("invalid recorded build settings: %w", err)
-		}
-
-		result.Selection = policy
-		walker := newIndexManager(m.logger, &settings)
+		result.Selection = current.manifest.Selection
 		seen := map[string]bool{}
 		if err := walker.walkFiles(ctx, result.Root, func(path string, _ os.FileInfo, data []byte) error {
 			seen[path] = true

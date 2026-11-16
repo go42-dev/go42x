@@ -14,6 +14,7 @@ type Settings struct {
 	IndexPath     string
 	ContextDocs   []string
 	SearchTimeout time.Duration
+	IndexRefresh  bool
 }
 
 // DoctorOptions configures MCP connection diagnostics.

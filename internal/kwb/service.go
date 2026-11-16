@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"unicode/utf8"
 )
 
@@ -19,13 +20,18 @@ const (
 	MaxItems            = 40
 )
 
-var ErrRootMismatch = errors.New("index root differs from requested project root")
+var (
+	ErrRootMismatch     = errors.New("index root differs from requested project root")
+	ErrIndexFormat      = errors.New("index format changed; run 'go42x kwb build --rebuild' first")
+	errMissingSelection = errors.New("index manifest lacks build settings; run go42x kwb build")
+)
 
 type Service struct {
-	logger   *slog.Logger
-	index    indexAccessor
-	catalog  catalogAccessor
-	settings *Settings
+	logger    *slog.Logger
+	index     indexAccessor
+	catalog   catalogAccessor
+	settings  *Settings
+	refresher atomic.Pointer[Refresher]
 }
 
 func NewService(settings *Settings, opts ...Option) (*Service, error) {
@@ -83,32 +89,58 @@ func (s *Service) BuildIndex(ctx context.Context, rootPath string) (BuildResult,
 	return report, nil
 }
 
+// RefreshIndex updates an existing index with its recorded root and source selection. It never
+// creates an index; a missing index returns an error that wraps fs.ErrNotExist.
+func (s *Service) RefreshIndex(ctx context.Context) (BuildResult, error) {
+	report, err := s.index.RefreshIndex(ctx)
+	if err != nil {
+		return report, fmt.Errorf("refreshing index: %w", err)
+	}
+	return report, nil
+}
+
+// Search requests a refresh when it returns results from files changed after indexing.
 func (s *Service) Search(ctx context.Context, options SearchOptions) (*SearchResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.settings.SearchTimeout)
 	defer cancel()
-
-	return s.index.Search(ctx, options)
+	response, err := s.index.Search(ctx, options)
+	if refresher := s.refresher.Load(); refresher != nil && err == nil &&
+		slices.ContainsFunc(response.Results, func(result SearchResult) bool { return result.Stale }) {
+		refresher.Request()
+	}
+	return response, s.indexError(err)
 }
 
 func (s *Service) GetFile(ctx context.Context, path string, startLine, endLine int) (*FileContent, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.settings.SearchTimeout)
 	defer cancel()
-
-	return s.index.GetFile(ctx, path, startLine, endLine)
+	content, err := s.index.GetFile(ctx, path, startLine, endLine)
+	return content, s.indexError(err)
 }
 
 func (s *Service) ListFiles(ctx context.Context, options ListOptions) (*FilesResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.settings.SearchTimeout)
 	defer cancel()
-
-	return s.index.ListFiles(ctx, options)
+	files, err := s.index.ListFiles(ctx, options)
+	return files, s.indexError(err)
 }
 
 func (s *Service) GetStats(ctx context.Context) (*Stats, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.settings.SearchTimeout)
 	defer cancel()
+	stats, err := s.index.GetStats(ctx)
+	return stats, s.indexError(err)
+}
 
-	return s.index.GetStats(ctx)
+// indexError explains an index in an old format when a refresher can rebuild it, and asks for
+// that rebuild.
+func (s *Service) indexError(err error) error {
+	refresher := s.refresher.Load()
+	if refresher == nil || !errors.Is(err, ErrIndexFormat) {
+		return err
+	}
+	refresher.Request()
+	return fmt.Errorf("index is being rebuilt for a new format; retry shortly or read files directly: %w", err)
 }
 
 func (s *Service) Close() error {
@@ -305,9 +337,28 @@ type ContextItem struct {
 	Source        Source     `json:"source"`
 }
 
+// Outcomes of a path supplied to Context.
+const (
+	PathIncluded         = "included"
+	PathPartial          = "partial"
+	PathOmittedBudget    = "omitted_budget"
+	PathOmittedPathLimit = "omitted_path_limit"
+	PathUnavailable      = "unavailable"
+	PathDirectory        = "directory"
+)
+
+// PathOutcome reports what Context did with one supplied path.
+type PathOutcome struct {
+	Path          string `json:"path"`
+	Outcome       string `json:"outcome"`
+	NextStartLine *int   `json:"next_start_line,omitempty"`
+}
+
 type ContextResult struct {
-	Root         string        `json:"root"`
-	Items        []ContextItem `json:"items"`
+	Root  string        `json:"root"`
+	Items []ContextItem `json:"items"`
+	// Paths gives one outcome for each supplied path, in normalized order.
+	Paths        []PathOutcome `json:"paths"`
 	Diagnostics  []Diagnostic  `json:"diagnostics"`
 	ContentBytes int           `json:"content_bytes"`
 	Truncated    bool          `json:"truncated"`

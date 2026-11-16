@@ -37,10 +37,18 @@ func ReportSearch(output io.Writer, settings *kwb.SearchSettings, result *kwb.Se
 			if runErr != nil {
 				return nil
 			}
-
+			if result.Relaxed {
+				if _, err := fmt.Fprintln(w, "Relaxed match: no result contains every query word."); err != nil {
+					return err
+				}
+			}
 			for _, hit := range result.Results {
-				if _, err := fmt.Fprintf(w, "%s:%d-%d %s\n%s\n\n",
-					hit.Path, hit.StartLine, hit.EndLine, hit.Title, hit.Snippet); err != nil {
+				stale := ""
+				if hit.Stale {
+					stale = " [stale: file changed after indexing]"
+				}
+				if _, err := fmt.Fprintf(w, "%s:%d-%d %s%s\n%s\n\n",
+					hit.Path, hit.StartLine, hit.EndLine, hit.Title, stale, hit.Snippet); err != nil {
 					return err
 				}
 			}

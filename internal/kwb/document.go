@@ -189,6 +189,8 @@ func chunkFile(path string, data []byte) []document {
 				}
 				if kind == KindDocumentation {
 					doc.Prose = piece
+					// Prose analysis keeps go_symbol_references whole, so index its words as well.
+					doc.Code = compoundIdentifierWords(piece)
 				} else {
 					doc.Code = identifierWords(piece)
 				}
@@ -214,7 +216,19 @@ func goSections(path string, data []byte, count int) []section {
 		}}
 	}
 
+	lines := sourceLines(string(data))
 	var sections []section
+	// Gaps hold the package clause and loose comments. Only comments make them worth a chunk.
+	gap := func(start, end int) {
+		if end > start && hasProseComment(lines[start:end]) {
+			sections = append(sections, section{
+				start,
+				end,
+				"package " + file.Name.Name,
+				nil,
+			})
+		}
+	}
 	previous := 0
 	for _, decl := range file.Decls {
 		start := fset.Position(decl.Pos()).Line - 1
@@ -225,10 +239,11 @@ func goSections(path string, data []byte, count int) []section {
 		switch d := decl.(type) {
 		case *ast.FuncDecl:
 			name := d.Name.Name
+			symbols = []string{name}
 			if d.Recv != nil && len(d.Recv.List) > 0 {
 				name = receiverName(d.Recv.List[0].Type) + "." + name
+				symbols = []string{name, d.Name.Name}
 			}
-			symbols = []string{name, d.Name.Name}
 			title, comment = "func "+name, d.Doc
 		case *ast.GenDecl:
 			comment = d.Doc
@@ -250,13 +265,11 @@ func goSections(path string, data []byte, count int) []section {
 		if start < previous {
 			start = previous
 		}
-		if start > previous {
-			sections = append(sections, section{
-				previous,
-				start,
-				"package " + file.Name.Name,
-				nil,
-			})
+		gap(previous, start)
+		if d, ok := decl.(*ast.GenDecl); ok && d.Tok == token.IMPORT {
+			// Import blocks are boilerplate; rg and gopls find importers exhaustively.
+			previous = end
+			continue
 		}
 		if end > start {
 			sections = append(sections, section{
@@ -268,15 +281,21 @@ func goSections(path string, data []byte, count int) []section {
 		}
 		previous = end
 	}
-	if previous < count {
-		sections = append(sections, section{
-			previous,
-			count,
-			"package " + file.Name.Name,
-			nil,
-		})
-	}
+	gap(previous, count)
 	return sections
+}
+
+// hasProseComment reports whether lines contain a comment other than a tool directive.
+func hasProseComment(lines []string) bool {
+	for _, line := range lines {
+		text := strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(text, "//go:"), strings.HasPrefix(text, "//nolint"):
+		case strings.HasPrefix(text, "//"), strings.HasPrefix(text, "/*"):
+			return true
+		}
+	}
+	return false
 }
 
 func receiverName(expr ast.Expr) string {
@@ -373,6 +392,20 @@ func identifierWords(text string) string {
 				output.WriteString(string(runes[start:]))
 				output.WriteByte(' ')
 			}
+		}
+	}
+	return output.String()
+}
+
+// compoundIdentifierWords returns the words of snake_case and camelCase identifiers in text,
+// leaving ordinary words to the prose field.
+func compoundIdentifierWords(text string) string {
+	var output strings.Builder
+	for _, word := range strings.FieldsFunc(text, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_'
+	}) {
+		if words := identifierWords(word); strings.Count(words, " ") > 1 {
+			output.WriteString(words)
 		}
 	}
 	return output.String()

@@ -145,6 +145,21 @@ func (mr *MockindexAccessorMockRecorder) ProjectRoot() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ProjectRoot", reflect.TypeOf((*MockindexAccessor)(nil).ProjectRoot))
 }
 
+// RefreshIndex mocks base method.
+func (m *MockindexAccessor) RefreshIndex(ctx context.Context) (kwb.BuildResult, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RefreshIndex", ctx)
+	ret0, _ := ret[0].(kwb.BuildResult)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RefreshIndex indicates an expected call of RefreshIndex.
+func (mr *MockindexAccessorMockRecorder) RefreshIndex(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RefreshIndex", reflect.TypeOf((*MockindexAccessor)(nil).RefreshIndex), ctx)
+}
+
 // Search mocks base method.
 func (m *MockindexAccessor) Search(ctx context.Context, options kwb.SearchOptions) (*kwb.SearchResponse, error) {
 	m.ctrl.T.Helper()

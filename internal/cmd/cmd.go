@@ -25,6 +25,7 @@ const envPrefix = "GO42X"
 const (
 	flagContextDoc    = "context-doc"
 	flagIndex         = "index"
+	flagIndexRefresh  = "index-refresh"
 	flagJSON          = "json"
 	flagLogLevel      = "log-level"
 	flagProbeMCP      = "probe-mcp"

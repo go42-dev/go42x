@@ -271,7 +271,7 @@ providers: {codex: {enabled: false}}
 			"tools/call",
 			map[string]any{
 				"name":      "project_context",
-				"arguments": map[string]any{},
+				"arguments": map[string]any{"paths": []string{entrypoint}},
 			},
 			&called,
 		)
@@ -285,6 +285,10 @@ providers: {codex: {enabled: false}}
 				Path   string
 				Reason string
 			} `json:"items"`
+			Paths []struct {
+				Path    string `json:"path"`
+				Outcome string `json:"outcome"`
+			} `json:"paths"`
 			Diagnostics []struct {
 				Code string
 			} `json:"diagnostics"`
@@ -294,6 +298,9 @@ providers: {codex: {enabled: false}}
 		}
 		if len(result.Items) == 0 || result.Items[0].Path != entrypoint || result.Items[0].Reason != "bootstrap" {
 			t.Fatalf("MCP ignored the project's documentation entrypoint: %+v", result.Items)
+		}
+		if len(result.Paths) != 1 || result.Paths[0].Path != entrypoint || result.Paths[0].Outcome != "included" {
+			t.Fatalf("project_context did not report the supplied path: %+v", result.Paths)
 		}
 		for _, diagnostic := range result.Diagnostics {
 			if diagnostic.Code == "docs_entrypoint_missing" {
