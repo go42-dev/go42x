@@ -90,7 +90,7 @@ RUN apk add --no-cache \
     ca-certificates=20261020-r0 \
     curl=8.23.0-r0 \
     gcc=15.2.0-r5 \
-    git=2.54.0-r0 \
+    git=2.54.1-r0 \
     libcrypto3=3.5.9-r0 \
     libexpat=2.10.0-r0 \
     libssl3=3.5.9-r0 \
