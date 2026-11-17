@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -67,8 +68,10 @@ func runReleaseTests(m *testing.M, dist string) int {
 		fmt.Fprintln(os.Stderr, "select native release archive:", err)
 		return 1
 	}
-	if runtime.GOOS == "darwin" {
-		if err := bundle.verifyHomebrew(ctx, archive); err != nil {
+	// One cask serves every platform, so a single check covers all archives. GoReleaser casks
+	// need Homebrew 7.0.11 or later, which the Intel macOS runner images lack.
+	if runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" {
+		if err := bundle.verifyHomebrew(ctx); err != nil {
 			fmt.Fprintln(os.Stderr, "verify Homebrew cask:", err)
 			return 1
 		}
@@ -279,13 +282,21 @@ func verifyReleaseChecksums(dist string) (map[string]string, error) {
 	return checksums, nil
 }
 
-func (b *releaseBundle) verifyHomebrew(ctx context.Context, archive releaseArtifact) error {
+func (b *releaseBundle) verifyHomebrew(ctx context.Context) error {
 	// Use Homebrew's parser without installing a tap or fetching snapshot URLs.
+	// Simulate each platform so its on_macos, on_linux, on_intel, and on_arm blocks apply.
 	const script = `
 require "cask/cask_loader"
 require "json"
-cask = Cask::CaskLoader::FromContentLoader.new(File.read(ARGV.fetch(0))).load(config: nil)
-puts JSON.generate(casks: [cask.to_h])
+content = File.read(ARGV.fetch(0))
+casks = { "darwin" => :macos, "linux" => :linux }.flat_map do |goos, os|
+  { "amd64" => :intel, "arm64" => :arm }.map do |goarch, arch|
+    Homebrew::SimulateSystem.with(os:, arch:) do
+      ["#{goos}/#{goarch}", Cask::CaskLoader::FromContentLoader.new(content).load(config: nil).to_h]
+    end
+  end
+end
+puts JSON.generate(casks.to_h)
 `
 	command := exec.CommandContext(ctx, "brew", "ruby", "-e", script, "--",
 		filepath.Join(b.dir, "homebrew", "Casks", "go42x.rb"))
@@ -296,39 +307,47 @@ puts JSON.generate(casks: [cask.to_h])
 		return fmt.Errorf("parse cask with Homebrew: %w", err)
 	}
 
-	var result struct {
-		Casks []struct {
-			Token     string `json:"token"`
-			Version   string `json:"version"`
-			URL       string `json:"url"`
-			SHA256    string `json:"sha256"`
-			Artifacts []struct {
-				Binary []json.RawMessage `json:"binary"`
-			} `json:"artifacts"`
-		} `json:"casks"`
+	type caskArtifact struct {
+		Binary []json.RawMessage `json:"binary"`
 	}
-	if err := json.Unmarshal(output, &result); err != nil {
+	var casks map[string]struct {
+		Token     string         `json:"token"`
+		Version   string         `json:"version"`
+		URL       string         `json:"url"`
+		SHA256    string         `json:"sha256"`
+		Artifacts []caskArtifact `json:"artifacts"`
+	}
+	if err := json.Unmarshal(output, &casks); err != nil {
 		return fmt.Errorf("decode Homebrew output: %w", err)
 	}
-	if len(result.Casks) != 1 {
-		return fmt.Errorf("expected one Homebrew cask, found %d", len(result.Casks))
-	}
 
-	cask := result.Casks[0]
-	url := "https://github.com/go42-dev/go42x/releases/download/" + b.metadata.Tag + "/" + archive.Name
+	for _, goos := range []string{"linux", "darwin"} {
+		for _, goarch := range []string{"amd64", "arm64"} {
+			archive, err := b.artifact("Archive", goos, goarch, "")
+			if err != nil {
+				return err
+			}
+			cask, ok := casks[goos+"/"+goarch]
+			if !ok {
+				return fmt.Errorf("missing Homebrew cask for %s/%s", goos, goarch)
+			}
 
-	if cask.Token != "go42x" || cask.Version != b.metadata.Version ||
-		cask.URL != url || cask.SHA256 != b.checksums[archive.Name] {
-		return fmt.Errorf("cask token, version, URL, or checksum does not match %s", archive.Name)
-	}
+			url := "https://github.com/go42-dev/go42x/releases/download/" + b.metadata.Tag + "/" + archive.Name
+			if cask.Token != "go42x" || cask.Version != b.metadata.Version ||
+				cask.URL != url || cask.SHA256 != b.checksums[archive.Name] {
+				return fmt.Errorf("cask token, version, URL, or checksum does not match %s", archive.Name)
+			}
 
-	for _, artifact := range cask.Artifacts {
-		var binary string
-		if len(artifact.Binary) > 0 && json.Unmarshal(artifact.Binary[0], &binary) == nil && binary == "go42x" {
-			return nil
+			if !slices.ContainsFunc(cask.Artifacts, func(artifact caskArtifact) bool {
+				var binary string
+				return len(artifact.Binary) > 0 && json.Unmarshal(artifact.Binary[0], &binary) == nil &&
+					binary == "go42x"
+			}) {
+				return fmt.Errorf("cask does not install the go42x binary on %s/%s", goos, goarch)
+			}
 		}
 	}
-	return errors.New("cask does not install the go42x binary")
+	return nil
 }
 
 func extractReleaseArchive(path, dir, root string) error {
