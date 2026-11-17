@@ -6,9 +6,14 @@ paths:
       # GitHub supports queueing, but actionlint 1.7.12 does not recognize this key.
       # @see https://github.com/rhysd/actionlint/issues/680
       - '^unexpected key "queue" for "concurrency" section\.'
-      # actionlint 1.7.12 does not recognize GitHub's job.workflow_ref context.
+      # actionlint 1.7.12 does not recognize GitHub's job.workflow_ref and
+      # job.workflow_sha contexts.
       # @see https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#job-context
-      - '^property "workflow_ref" is not defined in object type \{check_run_id:'
+      - '^property "workflow_(ref|sha)" is not defined in object type \{check_run_id:'
+      # gh-aw 1.2.2 limits agent jobs to read-only caches, but actionlint 1.7.12
+      # does not recognize the job-level cache-mode key.
+      # @see https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idcache-mode
+      - '^unexpected key "cache-mode" for "job" section\.'
       # gh-aw 0.93.2 reads optional admission outputs even when admission is disabled.
       # These missing properties evaluate to empty strings in GitHub Actions.
       - '^property "admission-(result|max-ai-credits(-threat-detection|-evals)?)" is not defined in object type '

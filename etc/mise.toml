@@ -37,5 +37,5 @@ nilaway = "v0.0.0-20260808063849-8649a03c818a"
 gopls = "0.24.0"
 govulncheck = "1.7.0"
 jsonfmt = "0.5.2"
-gh-aw = { version = "0.93.5", bin = "gh-aw" }
+gh-aw = { version = "1.2.2", bin = "gh-aw" }
 go42x = "0.58.0"
