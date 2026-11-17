@@ -68,9 +68,9 @@ homebrew_casks:
       post:
         # Release checksums are signed with Sigstore; macOS binaries are not Apple-notarized.
         # Limit quarantine removal to the installed executable.
-        install: |
-          if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/go42x"]
+        install_steps: |
+          on_macos do
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/go42x"]
           end
 
 nfpms:
