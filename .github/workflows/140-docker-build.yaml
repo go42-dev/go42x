@@ -237,10 +237,23 @@ jobs:
           subject-digest: ${{ steps.build.outputs.digest }}
           show-summary: true
       # ----
+      # Generate image SBOMs with the syft release that GoReleaser uses for
+      # release SBOMs, instead of the older release bundled with sbom-action.
+      - name: 'Read syft version'
+        if: ${{ inputs.generate_sbom }}
+        id: syft
+        run: |
+          syft_version=$(sed -n 's/^syft = "\([^"]*\)"$/\1/p' etc/mise.toml)
+          if [[ ! "$syft_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo '::error::etc/mise.toml must pin syft to an exact release.'
+            exit 1
+          fi
+          echo "version=v$syft_version" >> "$GITHUB_OUTPUT"
       - name: 'Generate SBOM'
         if: ${{ inputs.generate_sbom }}
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
         with:
+          syft-version: ${{ steps.syft.outputs.version }}
           # Generate the SBOM from the immutable manifest that was just built,
           # not from a tag that another workflow could move concurrently.
           image: ${{ steps.validate-digest.outputs.image_reference }}

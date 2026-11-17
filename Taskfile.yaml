@@ -669,7 +669,7 @@ tasks:
     cmds:
       - |
         set -- {{.CLI_ARGS}}
-        mise exec -- ec -config etc/editorconfig.json "$@"
+        mise exec -- editorconfig-checker -config etc/editorconfig.json "$@"
 
   lint:yaml:
     desc: "Check plain YAML source formatting, or explicit files (read only)"

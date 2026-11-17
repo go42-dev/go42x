@@ -139,6 +139,8 @@ jobs:
         id: coverage_report
         uses: fgrosse/go-coverage-report@e432de98ee94a276e8f666d25bfd76347665f75b # v1.3.1
         with:
+          # Dependabot updates only the action ref. Keep the binary on the same
+          # release, with the checksum of its linux-amd64 tarball.
           version: v1.3.1
           sha256sum: bce196efd0d22bbdcfa2ab45dc38ad40e96acc5802356b48be358a43958674a0
           coverage-artifact-name: coverage-report
