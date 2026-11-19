@@ -70,7 +70,8 @@ with `--keep` never expires. `journal note` reopens a finished entry.
 | `refs`                     | branch and commit at the last change, and an optional pull request and issue   |
 
 Commands detect the runtime from the environment. Set `--runtime` and `--session` when detection
-is wrong. The MCP tools use the client's name and an optional `session` argument.
+is wrong. The MCP tools take the runtime from the client's name, and the session from the
+optional `session` argument or, without it, from the server's environment, as commands do.
 
 ## Tags
 

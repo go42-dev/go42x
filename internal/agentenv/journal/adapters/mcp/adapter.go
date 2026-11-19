@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -12,11 +13,13 @@ import (
 
 type Adapter struct {
 	service *journal.Service
+	lookupEnv func(string) (string, bool)
 }
 
 func New(service *journal.Service) *Adapter {
 	return &Adapter{
-		service: service,
+		service:   service,
+		lookupEnv: os.LookupEnv,
 	}
 }
 
@@ -28,7 +31,7 @@ func (s *Adapter) Tools() []server.ServerTool {
 	session := mcp.WithString(
 		"session",
 		mcp.MaxLength(200),
-		mcp.Description("Your session identifier, when your runtime reports one"),
+		mcp.Description("Your session identifier; when empty, the one your runtime names in the server's environment"),
 	)
 	return []server.ServerTool{
 		{
@@ -153,7 +156,7 @@ func (s *Adapter) create(ctx context.Context, request mcp.CallToolRequest) (*mcp
 	if err != nil {
 		return toolResult(nil, err)
 	}
-	return toolResult(s.service.New(ctx, actor(ctx, request), journal.NewOptions{
+	return toolResult(s.service.New(ctx, s.actor(ctx, request), journal.NewOptions{
 		Title: request.GetString("title", ""),
 		Tags:  tags,
 		PR:    request.GetString("pr", ""),
@@ -166,7 +169,7 @@ func (s *Adapter) note(ctx context.Context, request mcp.CallToolRequest) (*mcp.C
 	if err != nil {
 		return toolResult(nil, err)
 	}
-	return toolResult(s.service.Note(ctx, actor(ctx, request), journal.NoteOptions{
+	return toolResult(s.service.Note(ctx, s.actor(ctx, request), journal.NoteOptions{
 		ID:      request.GetString("id", ""),
 		Summary: request.GetString("summary", ""),
 		Tags:    tags,
@@ -176,7 +179,7 @@ func (s *Adapter) note(ctx context.Context, request mcp.CallToolRequest) (*mcp.C
 }
 
 func (s *Adapter) done(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	return toolResult(s.service.Done(ctx, actor(ctx, request), journal.DoneOptions{
+	return toolResult(s.service.Done(ctx, s.actor(ctx, request), journal.DoneOptions{
 		ID:        request.GetString("id", ""),
 		Summary:   request.GetString("summary", ""),
 		Abandoned: request.GetBool("abandoned", false),
@@ -192,15 +195,23 @@ func (s *Adapter) search(ctx context.Context, request mcp.CallToolRequest) (*mcp
 }
 
 // actor identifies the client that calls a tool by the name it reported during
-// initialization.
-func actor(ctx context.Context, request mcp.CallToolRequest) journal.Actor {
+// initialization, and its session by the session argument. Without one, the session is
+// the one the client's runtime names in the server's environment, as for CLI calls: the
+// runtime that starts the server passes its environment on.
+// @note The server reads the environment it started with, so a session that changes
+// while the server runs is recorded only when the client passes it.
+func (s *Adapter) actor(ctx context.Context, request mcp.CallToolRequest) journal.Actor {
 	runtime := journal.RuntimeUnknown
 	if session, ok := server.ClientSessionFromContext(ctx).(server.SessionWithClientInfo); ok {
 		runtime = journal.RuntimeFromClient(session.GetClientInfo().Name)
 	}
+	session := request.GetString("session", "")
+	if len(session) == 0 {
+		session = journal.SessionFromEnv(runtime, s.lookupEnv)
+	}
 	return journal.Actor{
 		Runtime: runtime,
-		Session: request.GetString("session", ""),
+		Session: session,
 	}
 }
 

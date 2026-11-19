@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"testing"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -35,6 +36,24 @@ func (s *clientSession) GetClientCapabilities() mcp.ClientCapabilities {
 func (s *clientSession) SetClientCapabilities(mcp.ClientCapabilities) {}
 func (s *clientSession) SetLogLevel(mcp.LoggingLevel)                 {}
 func (s *clientSession) GetLogLevel() mcp.LoggingLevel                { return mcp.LoggingLevelInfo }
+
+// fixedEnv reads env instead of the process environment, which differs between the
+// shells and agents that run the tests.
+func fixedEnv(env map[string]string) func(string) (string, bool) {
+	return func(name string) (string, bool) {
+		value, found := env[name]
+		return value, found
+	}
+}
+
+// toolsByName indexes the adapter's tools by name.
+func toolsByName(adapter *Adapter) map[string]server.ServerTool {
+	tools := map[string]server.ServerTool{}
+	for _, tool := range adapter.Tools() {
+		tools[tool.Tool.Name] = tool
+	}
+	return tools
+}
 
 func call[T any](
 	t *testing.T,
@@ -71,8 +90,10 @@ func TestJournalTools(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	adapter := New(service)
+	adapter.lookupEnv = fixedEnv(nil)
 	tools := map[string]server.ServerTool{}
-	for _, tool := range New(service).Tools() {
+	for _, tool := range adapter.Tools() {
 		if tool.Tool.OutputSchema.Type != "object" {
 			t.Errorf("%s has no output schema", tool.Tool.Name)
 		}
@@ -141,5 +162,68 @@ func TestJournalTools(t *testing.T) {
 		if err != nil || !result.IsError {
 			t.Errorf("%s accepted %v: %+v %v", name, arguments, result, err)
 		}
+	}
+}
+
+func TestJournalToolsSession(t *testing.T) {
+	t.Parallel()
+	env := map[string]string{"CLAUDECODE": "1", "CLAUDE_CODE_SESSION_ID": "c-env"}
+	for _, tt := range []struct {
+		name      string
+		client    string
+		arguments map[string]any
+		want      journal.Actor
+	}{
+		{
+			name:   "Claude Code without a session argument",
+			client: "claude-code",
+			want:   journal.Actor{Runtime: "claude", Session: "c-env"},
+		},
+		{
+			name:      "session argument",
+			client:    "claude-code",
+			arguments: map[string]any{"session": "s-1"},
+			want:      journal.Actor{Runtime: "claude", Session: "s-1"},
+		},
+		{
+			name:   "another runtime",
+			client: "codex-mcp-client",
+			want:   journal.Actor{Runtime: "codex"},
+		},
+		{
+			name: "no client session",
+			want: journal.Actor{Runtime: journal.RuntimeUnknown},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			settings := journal.NewSettings()
+			settings.RootPath = t.TempDir()
+			service, err := journal.NewService(settings)
+			if err != nil {
+				t.Fatal(err)
+			}
+			adapter := New(service)
+			adapter.lookupEnv = fixedEnv(env)
+			tools := toolsByName(adapter)
+
+			ctx := t.Context()
+			if len(tt.client) > 0 {
+				ctx = server.NewMCPServer("test", "1").WithContext(ctx, &clientSession{name: tt.client})
+			}
+			arguments := map[string]any{"title": "Session task"}
+			maps.Copy(arguments, tt.arguments)
+			created := call[journal.EntryResult](t, ctx, tools, "journal_new", arguments)
+			if got := (journal.Actor{Runtime: created.Entry.Runtime, Session: created.Entry.Session}); got != tt.want {
+				t.Errorf("journal_new recorded %+v, want %+v", got, tt.want)
+			}
+
+			arguments = map[string]any{"id": created.Entry.ID, "summary": "Progress"}
+			maps.Copy(arguments, tt.arguments)
+			noted := call[journal.EntryResult](t, ctx, tools, "journal_note", arguments)
+			if got := (journal.Actor{Runtime: noted.Entry.Runtime, Session: noted.Entry.Session}); got != tt.want {
+				t.Errorf("journal_note recorded %+v, want %+v", got, tt.want)
+			}
+		})
 	}
 }
