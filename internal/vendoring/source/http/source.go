@@ -10,19 +10,28 @@ import (
 
 type Adapter struct {
 	client *http.Client
+	lookup source.LookupFunc
 }
 
-func New(client *http.Client) *Adapter {
-	return &Adapter{client: client}
+func New(client *http.Client, lookup source.LookupFunc) *Adapter {
+	return &Adapter{
+		client: client,
+		lookup: lookup,
+	}
 }
 
 func (a *Adapter) Fetch(
 	ctx context.Context,
-	s source.Config,
+	config source.Config,
 	locked *source.Resolved,
 	workspace string,
 ) (source.Result, error) {
-	expected := s.SHA256
+	client, err := source.Authorize(a.client, config, a.lookup)
+	if err != nil {
+		return source.Result{}, err
+	}
+
+	expected := config.SHA256
 	if locked != nil {
 		expected = locked.SHA256
 	}
@@ -30,7 +39,7 @@ func (a *Adapter) Fetch(
 	if len(expected) > 0 {
 		checksum = "sha256:" + expected
 	}
-	root, hash, err := source.FetchURL(ctx, a.client, s.URL, checksum, expected, workspace, "")
+	root, hash, err := source.FetchURL(ctx, client, config.URL, checksum, expected, workspace, "")
 	if err != nil {
 		return source.Result{}, err
 	}

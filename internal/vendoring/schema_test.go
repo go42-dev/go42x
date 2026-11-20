@@ -83,6 +83,46 @@ func TestSchemaSourceVariants(t *testing.T) {
 			true,
 		},
 		{
+			"Confluence",
+			"{type: confluence, url: https://example.atlassian.net/wiki, page: '123', auth: {token-env: SITE_TOKEN, user-env: SITE_USER}}",
+			true,
+		},
+		{
+			"Confluence requires page",
+			"{type: confluence, url: https://example.atlassian.net/wiki}",
+			false,
+		},
+		{
+			"Confluence page ID",
+			"{type: confluence, url: https://example.atlassian.net/wiki, page: overview}",
+			false,
+		},
+		{
+			"HTTP auth",
+			"{type: http, url: https://example.com/file, auth: {token-env: SITE_TOKEN}}",
+			true,
+		},
+		{
+			"npm auth",
+			"{type: npm, package: '@fixture/assets', version: latest, auth: {token-env: NPM_TOKEN}}",
+			true,
+		},
+		{
+			"auth requires token-env",
+			"{type: http, url: https://example.com/file, auth: {user-env: SITE_USER}}",
+			false,
+		},
+		{
+			"auth variable name",
+			"{type: http, url: https://example.com/file, auth: {token-env: site-token}}",
+			false,
+		},
+		{
+			"Git auth",
+			"{type: git, url: https://example.com/repository.git, ref: main, auth: {token-env: SITE_TOKEN}}",
+			false,
+		},
+		{
 			"Git requires ref",
 			"{type: git, url: https://example.com/repository.git}",
 			false,

@@ -130,6 +130,26 @@ func TestLockResolvedIdentityValidation(t *testing.T) {
 			"{url: https://example.com/file.tgz, version: latest, integrity: '" + integrity + "', sha256: '" + hash + "'}",
 			false,
 		},
+		{
+			"Confluence",
+			"{revision: '7'}",
+			true,
+		},
+		{
+			"Confluence zero revision",
+			"{revision: '0', sha256: '" + hash + "'}",
+			false,
+		},
+		{
+			"Confluence with hash",
+			"{revision: '7', sha256: '" + hash + "'}",
+			false,
+		},
+		{
+			"Confluence with URL",
+			"{revision: '7', url: https://example.com/page}",
+			false,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			data := fmt.Sprintf(

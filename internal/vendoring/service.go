@@ -18,8 +18,10 @@ import (
 
 	"github.com/go42-dev/go42x/internal/config"
 	"github.com/go42-dev/go42x/internal/fspatch"
+	"github.com/go42-dev/go42x/internal/vendoring/converters/adf2md"
 	"github.com/go42-dev/go42x/internal/vendoring/converters/html2md"
 	"github.com/go42-dev/go42x/internal/vendoring/source"
+	"github.com/go42-dev/go42x/internal/vendoring/source/confluence"
 	gitsource "github.com/go42-dev/go42x/internal/vendoring/source/git"
 	httpsource "github.com/go42-dev/go42x/internal/vendoring/source/http"
 	"github.com/go42-dev/go42x/internal/vendoring/source/npm"
@@ -70,11 +72,13 @@ func newResult(operation string) *Result {
 func NewService(settings *Settings, options ...Option) (*Service, error) {
 	s := &Service{
 		adapters: map[string]adapterAccessor{
-			source.TypeGit:  gitsource.New(),
-			source.TypeHTTP: httpsource.New(source.NewHTTPClient(settings.Timeout)),
-			source.TypeNPM:  npm.New(source.NewHTTPClient(settings.Timeout)),
+			source.TypeGit:        gitsource.New(),
+			source.TypeHTTP:       httpsource.New(source.NewHTTPClient(settings.Timeout), os.LookupEnv),
+			source.TypeNPM:        npm.New(source.NewHTTPClient(settings.Timeout), os.LookupEnv),
+			source.TypeConfluence: confluence.New(source.NewHTTPClient(settings.Timeout), os.LookupEnv),
 		},
 		converters: map[string]converterAccessor{
+			adf2md.ADFToMarkdown:   adf2md.NewADFToMarkdownConverter(),
 			html2md.HTMLToMarkdown: html2md.NewHTMLToMarkdownConverter(),
 		},
 		cliVersion: defaultCLIVersion,

@@ -22,24 +22,32 @@ const mediaTypeMetadata = "application/vnd.npm.install-v1+json"
 
 type Adapter struct {
 	client *http.Client
+	lookup source.LookupFunc
 }
 
-func New(client *http.Client) *Adapter {
-	return &Adapter{client: client}
+func New(client *http.Client, lookup source.LookupFunc) *Adapter {
+	return &Adapter{
+		client: client,
+		lookup: lookup,
+	}
 }
 
 func (a *Adapter) Fetch(
 	ctx context.Context,
-	s source.Config,
+	config source.Config,
 	locked *source.Resolved,
 	workspace string,
 ) (source.Result, error) {
+	client, err := source.Authorize(a.client, config, a.lookup)
+	if err != nil {
+		return source.Result{}, err
+	}
+
 	var resolved source.Resolved
 	if locked != nil {
 		resolved = *locked
 	} else {
-		var err error
-		resolved, err = a.resolve(ctx, s)
+		resolved, err = resolve(ctx, client, config)
 		if err != nil {
 			return source.Result{}, err
 		}
@@ -50,7 +58,7 @@ func (a *Adapter) Fetch(
 		return source.Result{}, err
 	}
 
-	root, hash, err := source.FetchURL(ctx, a.client, resolved.URL, checksum, resolved.SHA256, workspace, "tgz")
+	root, hash, err := source.FetchURL(ctx, client, resolved.URL, checksum, resolved.SHA256, workspace, "tgz")
 	if err != nil {
 		return source.Result{}, err
 	}
@@ -78,11 +86,11 @@ type packageMetadata struct {
 	Versions map[string]versionMetadata `json:"versions"`
 }
 
-func (a *Adapter) resolve(ctx context.Context, s source.Config) (source.Resolved, error) {
+func resolve(ctx context.Context, client *http.Client, s source.Config) (source.Resolved, error) {
 	endpoint := strings.TrimRight(s.Registry, "/") + "/" + url.PathEscape(s.Package)
 	var metadata versionMetadata
 	if source.ExactVersion(s.Version) {
-		if err := a.metadata(ctx, endpoint+"/"+url.PathEscape(s.Version), &metadata); err != nil {
+		if err := fetchMetadata(ctx, client, endpoint+"/"+url.PathEscape(s.Version), &metadata); err != nil {
 			return source.Resolved{}, err
 		}
 		if metadata.Version != s.Version {
@@ -90,7 +98,7 @@ func (a *Adapter) resolve(ctx context.Context, s source.Config) (source.Resolved
 		}
 	} else {
 		var pack packageMetadata
-		if err := a.metadata(ctx, endpoint, &pack); err != nil {
+		if err := fetchMetadata(ctx, client, endpoint, &pack); err != nil {
 			return source.Resolved{}, err
 		}
 
@@ -124,14 +132,14 @@ func (a *Adapter) resolve(ctx context.Context, s source.Config) (source.Resolved
 	}, nil
 }
 
-func (a *Adapter) metadata(ctx context.Context, endpoint string, result any) error {
+func fetchMetadata(ctx context.Context, client *http.Client, endpoint string, result any) error {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return err
 	}
 
 	request.Header.Set(headerAccept, mediaTypeMetadata)
-	response, err := a.client.Do(request)
+	response, err := client.Do(request)
 	if err != nil {
 		return err
 	}

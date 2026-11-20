@@ -18,7 +18,7 @@ func newUpdateCommand(f *cmdutil.Factory) *cobra.Command {
 		Use:   "update",
 		Short: "Update vendored files and the lockfile",
 		Long: `Update vendored files and the lockfile using the sources declared in the manifest.
-Branches and npm tags are resolved again, so their versions may change.`,
+Branches, npm tags and Confluence pages are resolved again, so their versions may change.`,
 		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			settings := &vendoring.Settings{

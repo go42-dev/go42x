@@ -36,6 +36,7 @@ definitions:
           - $ref: '#/definitions/gitSource'
           - $ref: '#/definitions/httpSource'
           - $ref: '#/definitions/npmSource'
+          - $ref: '#/definitions/confluenceSource'
       files:
         type: array
         minItems: 1
@@ -87,6 +88,8 @@ definitions:
         anyOf:
           - const: ""
           - pattern: ^[0-9A-Fa-f]{64}$
+      auth:
+        $ref: '#/definitions/auth'
   npmSource:
     type: object
     additionalProperties: false
@@ -115,6 +118,48 @@ definitions:
               - $ref: '#/definitions/httpURL'
               - not:
                   pattern: \?
+      auth:
+        $ref: '#/definitions/auth'
+  confluenceSource:
+    type: object
+    additionalProperties: false
+    description: One Confluence Cloud page, fetched with REST API v2 in Atlassian Document Format into page.json, headed by
+      the page title. The lock pins the page version. Map page.json with the adf-to-markdown converter.
+    required:
+      - type
+      - url
+      - page
+    properties:
+      type:
+        const: confluence
+      url:
+        description: Confluence site base URL, such as https://example.atlassian.net/wiki.
+        allOf:
+          - $ref: '#/definitions/httpURL'
+          - not:
+              pattern: \?
+      page:
+        type: string
+        description: Numeric page ID from the page URL.
+        pattern: ^[0-9]{1,20}$
+      auth:
+        $ref: '#/definitions/auth'
+  auth:
+    type: object
+    additionalProperties: false
+    description: Environment variables that hold credentials. Values are sent only to the scheme and host of the source URL
+      (the registry for npm) over HTTPS, or HTTP to a loopback host, and are never stored.
+    required:
+      - token-env
+    properties:
+      token-env:
+        type: string
+        description: Variable holding the token, sent as a Bearer token, or as the password with user-env.
+        pattern: ^[A-Z][A-Z0-9_]*$
+      user-env:
+        type: string
+        description: Variable holding the user name or email; switches to Basic authentication.
+        pattern: ^[A-Z][A-Z0-9_]*$
   fileMapping:
     type: object
     additionalProperties: false
@@ -131,8 +176,10 @@ definitions:
         enum:
           - ""
           - html-to-markdown
+          - adf-to-markdown
         description: Named converter applied before hashing the destination. Omit to copy source bytes. HTML to Markdown converts
-          the complete document and preserves link targets.
+          the complete document, including tables and strikethrough, and preserves link targets. ADF to Markdown renders an
+          Atlassian Document Format document, such as a Confluence page.json, as GitHub Flavored Markdown.
   directoryMapping:
     type: object
     additionalProperties: false

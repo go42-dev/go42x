@@ -75,6 +75,14 @@ func (l *Lock) Validate() error {
 // resolvedType validates the identity without requiring a copy of the manifest.
 // Foreign locks can still describe old destinations after their manifest changes.
 func resolvedType(r source.Resolved) (string, error) {
+	if len(r.Revision) > 0 {
+		if !source.ValidRevision(r.Revision) || len(r.SHA256) > 0 ||
+			len(r.Commit) > 0 || len(r.URL) > 0 || len(r.Version) > 0 || len(r.Integrity) > 0 {
+			return "", fmt.Errorf("invalid locked Confluence identity")
+		}
+
+		return source.TypeConfluence, nil
+	}
 	if len(r.Commit) > 0 {
 		commit, err := hex.DecodeString(r.Commit)
 		if err != nil || (len(commit) != 20 && len(commit) != 32) || r.Commit != strings.ToLower(r.Commit) ||

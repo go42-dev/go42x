@@ -46,6 +46,55 @@ func TestConfigValidation(t *testing.T) {
 			URL:  "https://example.com/repo//subdir",
 			Ref:  "main",
 		},
+		{
+			Type: "git",
+			URL:  "https://example.com/repo",
+			Ref:  "main",
+			Auth: Auth{TokenEnv: "SITE_TOKEN"},
+		},
+		{
+			Type: "http",
+			URL:  "http://example.com/file",
+			Auth: Auth{TokenEnv: "SITE_TOKEN"},
+		},
+		{
+			Type: "http",
+			URL:  "https://example.com/file",
+			Auth: Auth{TokenEnv: "site_token"},
+		},
+		{
+			Type: "http",
+			URL:  "https://example.com/file",
+			Auth: Auth{UserEnv: "SITE_USER"},
+		},
+		{
+			Type: "http",
+			URL:  "https://example.com/file",
+			Page: "1",
+		},
+		{
+			Type:     "npm",
+			Registry: "http://registry.example.com",
+			Package:  "pkg",
+			Version:  "1.0.0",
+			Auth:     Auth{TokenEnv: "NPM_TOKEN"},
+		},
+		{
+			Type: "confluence",
+			URL:  "https://example.atlassian.net/wiki",
+			Page: "overview",
+		},
+		{
+			Type: "confluence",
+			URL:  "https://example.atlassian.net/wiki?space=OPS",
+			Page: "1",
+		},
+		{
+			Type: "confluence",
+			URL:  "https://example.atlassian.net/wiki",
+			Page: "1",
+			Ref:  "main",
+		},
 	} {
 		if err := s.Validate(); err == nil {
 			t.Fatalf("invalid source accepted: %+v", s)
@@ -66,6 +115,31 @@ func TestConfigValidation(t *testing.T) {
 			Type: "git",
 			URL:  "ssh://git@example.com/repo",
 			Ref:  "main",
+		},
+		{
+			Type: "confluence",
+			URL:  "https://example.atlassian.net/wiki",
+			Page: "123",
+			Auth: Auth{
+				TokenEnv: "SITE_TOKEN",
+				UserEnv:  "SITE_USER",
+			},
+		},
+		{
+			Type: "http",
+			URL:  "http://127.0.0.1:8080/file",
+			Auth: Auth{TokenEnv: "SITE_TOKEN"},
+		},
+		{
+			Type: "http",
+			URL:  "http://localhost/file",
+			Auth: Auth{TokenEnv: "SITE_TOKEN"},
+		},
+		{
+			Type:    "npm",
+			Package: "@fixture/assets",
+			Version: "latest",
+			Auth:    Auth{TokenEnv: "NPM_TOKEN"},
 		},
 	} {
 		if err := s.WithDefaults().Validate(); err != nil {

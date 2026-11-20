@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -23,6 +24,7 @@ import (
 
 	"github.com/go42-dev/go42x/internal/kwb"
 	"github.com/go42-dev/go42x/internal/vendoring"
+	"github.com/go42-dev/go42x/internal/vendoring/source"
 )
 
 func writeFixture(t *testing.T, filename string, data []byte) {
@@ -652,6 +654,200 @@ func TestNpmExactAndDistTagLockedSync(t *testing.T) {
 				t.Fatal("npm integrity mismatch accepted")
 			}
 		})
+	}
+}
+
+func TestConfluencePageIsAuthenticatedLockedAndConverted(t *testing.T) {
+	const (
+		userEnv  = "GO42X_TEST_CONFLUENCE_USER"
+		tokenEnv = "GO42X_TEST_CONFLUENCE_TOKEN"
+		user     = "reader@example.com"
+		token    = "confluence-integration-secret"
+	)
+	t.Setenv(userEnv, user)
+	t.Setenv(tokenEnv, token)
+	credentials := base64.StdEncoding.EncodeToString([]byte(user + ":" + token))
+	root := t.TempDir()
+	var current atomic.Int64
+	current.Store(3)
+	var requests atomic.Int64
+	var pinned atomic.Value
+	pinned.Store("")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		if r.Header.Get("Authorization") != "Basic "+credentials {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		if r.URL.Path != "/wiki/api/v2/pages/42" || r.URL.Query().Get("body-format") != "atlas_doc_format" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		number := current.Load()
+		if requested := r.URL.Query().Get("version"); len(requested) > 0 {
+			pinned.Store(requested)
+			number, _ = strconv.ParseInt(requested, 10, 64)
+		}
+		document := fmt.Sprintf(`{"type": "doc", "version": 1, "content": [
+			{"type": "heading", "attrs": {"level": 2}, "content": [{"type": "text", "text": "Deploy"}]},
+			{"type": "paragraph", "content": [{"type": "text", "text": "Revision %d steps."}]},
+			{"type": "codeBlock", "attrs": {"language": "sh"}, "content": [{"type": "text", "text": "task deploy"}]},
+			{"type": "taskList", "content": [
+				{"type": "taskItem", "attrs": {"state": "DONE"}, "content": [{"type": "text", "text": "Verified"}]}
+			]}
+		]}`, number)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"id":      "42",
+			"title":   "Release runbook",
+			"version": map[string]int64{"number": number},
+			"body": map[string]any{
+				"atlas_doc_format": map[string]string{"value": document},
+			},
+		})
+	}))
+	defer server.Close()
+
+	manifest := fmt.Sprintf(`version: "1.0"
+dependencies:
+  runbook:
+    source:
+      type: confluence
+      url: %s/wiki
+      page: "42"
+      auth:
+        user-env: %s
+        token-env: %s
+    files:
+      - from: page.json
+        to: docs/runbook.md
+        converter: adf-to-markdown
+`, server.URL, userEnv, tokenEnv)
+	writeFixture(t, filepath.Join(root, vendoring.ManifestFile), []byte(manifest))
+	s := fixtureService(t, root, vendoring.ManifestFile)
+	result, err := s.Update(t.Context())
+	if err != nil || !result.Valid || result.Applied != 2 {
+		t.Fatalf("update: %+v %v", result, err)
+	}
+	file := filepath.Join(root, "docs", "runbook.md")
+	markdown := readFixture(t, file)
+	for _, want := range []string{
+		"# Release runbook",
+		"## Deploy",
+		"Revision 3 steps.",
+		"```sh\ntask deploy\n```",
+		"- [x] Verified",
+	} {
+		if !strings.Contains(string(markdown), want) {
+			t.Errorf("converted Markdown omitted %q:\n%s", want, markdown)
+		}
+	}
+	lockPath := filepath.Join(root, vendoring.LockFile)
+	lockBytes := readFixture(t, lockPath)
+	lock, err := vendoring.ParseLock(lockBytes)
+	if err != nil || lock.Dependencies["runbook"].Resolved != (source.Resolved{Revision: "3"}) {
+		t.Fatalf("Confluence lock: %+v %v", lock, err)
+	}
+	for _, secret := range []string{user, token, credentials} {
+		if strings.Contains(string(lockBytes), secret) {
+			t.Fatal("lock contains a credential")
+		}
+	}
+
+	current.Store(4)
+	if err := os.Remove(file); err != nil {
+		t.Fatal(err)
+	}
+	result, err = s.Sync(t.Context())
+	if err != nil || result.Applied != 1 || pinned.Load() != "3" || !bytes.Equal(markdown, readFixture(t, file)) ||
+		!bytes.Equal(lockBytes, readFixture(t, lockPath)) {
+		t.Fatalf("locked sync: %+v %v, pinned version %v", result, err, pinned.Load())
+	}
+	result, err = s.Update(t.Context())
+	if err != nil || result.Applied != 2 || !strings.Contains(string(readFixture(t, file)), "Revision 4 steps.") {
+		t.Fatalf("update to the current version: %+v %v", result, err)
+	}
+
+	t.Setenv(tokenEnv, "")
+	before := requests.Load()
+	_, err = s.Update(t.Context())
+	if err == nil || !strings.Contains(err.Error(), tokenEnv+" is not set") || requests.Load() != before {
+		t.Fatalf("missing credential: %v after %d requests", err, requests.Load()-before)
+	}
+}
+
+func TestHTTPAndNpmSourcesSendNamedCredentials(t *testing.T) {
+	const (
+		tokenEnv = "GO42X_TEST_REGISTRY_TOKEN"
+		token    = "registry-integration-secret"
+	)
+	t.Setenv(tokenEnv, token)
+	archive := archiveFixture(t, map[string]string{"package/dist/file.txt": "npm content"})
+	sum := sha512.Sum512(archive)
+	integrity := "sha512-" + base64.StdEncoding.EncodeToString(sum[:])
+	var unauthorized atomic.Int64
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer "+token {
+			unauthorized.Add(1)
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
+		switch r.URL.Path {
+		case "/file.txt":
+			_, _ = fmt.Fprint(w, "http content")
+		case "/package.tgz":
+			_, _ = w.Write(archive)
+		default:
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"name":    "@fixture/private",
+				"version": "1.0.0",
+				"dist": map[string]string{
+					"tarball":   server.URL + "/package.tgz",
+					"integrity": integrity,
+				},
+			})
+		}
+	}))
+	defer server.Close()
+
+	root := t.TempDir()
+	manifest := fmt.Sprintf(`version: "1.0"
+dependencies:
+  file:
+    source:
+      type: http
+      url: %[1]s/file.txt
+      auth:
+        token-env: %[2]s
+    files:
+      - from: file.txt
+        to: assets/http.txt
+  package:
+    source:
+      type: npm
+      package: '@fixture/private'
+      version: '1.0.0'
+      registry: %[1]s
+      auth:
+        token-env: %[2]s
+    files:
+      - from: dist/file.txt
+        to: assets/npm.txt
+`, server.URL, tokenEnv)
+	writeFixture(t, filepath.Join(root, vendoring.ManifestFile), []byte(manifest))
+	s := fixtureService(t, root, vendoring.ManifestFile)
+	if result, err := s.Update(t.Context()); err != nil || result.Applied != 3 {
+		t.Fatalf("authenticated update: %+v %v", result, err)
+	}
+	if string(readFixture(t, filepath.Join(root, "assets", "http.txt"))) != "http content" ||
+		string(readFixture(t, filepath.Join(root, "assets", "npm.txt"))) != "npm content" ||
+		unauthorized.Load() != 0 {
+		t.Fatalf("authenticated sources: %d unauthorized requests", unauthorized.Load())
+	}
+	if strings.Contains(string(readFixture(t, filepath.Join(root, vendoring.LockFile))), token) {
+		t.Fatal("lock contains a credential")
 	}
 }
 

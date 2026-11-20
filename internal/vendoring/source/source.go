@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"net/url"
 	"path"
 	"regexp"
@@ -14,9 +15,10 @@ import (
 )
 
 const (
-	TypeGit  = "git"
-	TypeHTTP = "http"
-	TypeNPM  = "npm"
+	TypeGit        = "git"
+	TypeHTTP       = "http"
+	TypeNPM        = "npm"
+	TypeConfluence = "confluence"
 )
 
 const (
@@ -32,9 +34,12 @@ const (
 )
 
 var (
-	versionPattern = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?(?:\+[A-Za-z0-9.-]+)?$`)
-	tagPattern     = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9._-]*$`)
-	packagePattern = regexp.MustCompile(`^(?:@[a-z0-9._-]+/)?[a-z0-9][a-z0-9._-]*$`)
+	versionPattern  = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?(?:\+[A-Za-z0-9.-]+)?$`)
+	tagPattern      = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9._-]*$`)
+	packagePattern  = regexp.MustCompile(`^(?:@[a-z0-9._-]+/)?[a-z0-9][a-z0-9._-]*$`)
+	pagePattern     = regexp.MustCompile(`^[0-9]{1,20}$`)
+	revisionPattern = regexp.MustCompile(`^[1-9][0-9]{0,9}$`)
+	envNamePattern  = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
 )
 
 // Config describes an upstream source independently of the manifest and adapters.
@@ -46,12 +51,22 @@ type Config struct {
 	Package  string `yaml:"package,omitempty"`
 	Version  string `yaml:"version,omitempty"`
 	Registry string `yaml:"registry,omitempty"`
+	Page     string `yaml:"page,omitempty"`
+	Auth     Auth   `yaml:"auth,omitempty"`
+}
+
+// Auth names the environment variables that hold credentials for a source's origin.
+// Values are read when fetching and never stored.
+type Auth struct {
+	TokenEnv string `yaml:"token-env,omitempty"`
+	UserEnv  string `yaml:"user-env,omitempty"`
 }
 
 type Resolved struct {
 	URL       string `yaml:"url,omitempty"`
 	Commit    string `yaml:"commit,omitempty"`
 	Version   string `yaml:"version,omitempty"`
+	Revision  string `yaml:"revision,omitempty"`
 	Integrity string `yaml:"integrity,omitempty"`
 	SHA256    string `yaml:"sha256,omitempty"`
 }
@@ -84,6 +99,20 @@ func ExactVersion(v string) bool {
 	return versionPattern.MatchString(v)
 }
 
+// ValidRevision reports whether value is a positive Confluence page version number.
+func ValidRevision(value string) bool {
+	return revisionPattern.MatchString(value)
+}
+
+// Origin returns the URL whose scheme and host receive the source's credentials.
+func (s Config) Origin() string {
+	if s.Type == TypeNPM {
+		return s.Registry
+	}
+
+	return s.URL
+}
+
 func (s Config) Validate() error {
 	switch s.Type {
 	case TypeGit:
@@ -102,8 +131,12 @@ func (s Config) Validate() error {
 		if len(u.RawQuery) > 0 || len(u.Fragment) > 0 || (u.User != nil && hasPassword(u)) {
 			return fmt.Errorf("git URL cannot contain query, fragment or password")
 		}
-		if len(s.Package) > 0 || len(s.Version) > 0 || len(s.Registry) > 0 || len(s.SHA256) > 0 {
+		if len(s.Package) > 0 || len(s.Version) > 0 || len(s.Registry) > 0 || len(s.SHA256) > 0 ||
+			len(s.Page) > 0 {
 			return fmt.Errorf("git source contains unrelated fields")
+		}
+		if s.Auth != (Auth{}) {
+			return fmt.Errorf("git source uses Git credentials; auth is unsupported")
 		}
 	case TypeHTTP:
 		if err := ValidateHTTPURL(s.URL); err != nil {
@@ -112,7 +145,7 @@ func (s Config) Validate() error {
 		if len(s.SHA256) > 0 && !ValidSHA256(s.SHA256) {
 			return fmt.Errorf("sha256 must be a 64-character hexadecimal digest")
 		}
-		if len(s.Ref) > 0 || len(s.Package) > 0 || len(s.Version) > 0 || len(s.Registry) > 0 {
+		if len(s.Ref) > 0 || len(s.Package) > 0 || len(s.Version) > 0 || len(s.Registry) > 0 || len(s.Page) > 0 {
 			return fmt.Errorf("http source contains unrelated fields")
 		}
 	case TypeNPM:
@@ -126,13 +159,64 @@ func (s Config) Validate() error {
 		if len(u.RawQuery) > 0 {
 			return fmt.Errorf("npm registry cannot contain a query")
 		}
-		if len(s.URL) > 0 || len(s.Ref) > 0 || len(s.SHA256) > 0 {
+		if len(s.URL) > 0 || len(s.Ref) > 0 || len(s.SHA256) > 0 || len(s.Page) > 0 {
 			return fmt.Errorf("npm source contains unrelated fields")
+		}
+	case TypeConfluence:
+		u, err := parseHTTPURL(s.URL)
+		if err != nil {
+			return fmt.Errorf("confluence site: %w", err)
+		}
+		if len(u.RawQuery) > 0 {
+			return fmt.Errorf("confluence site URL cannot contain a query")
+		}
+		if !pagePattern.MatchString(s.Page) {
+			return fmt.Errorf("confluence requires a numeric page ID")
+		}
+		if len(s.Ref) > 0 || len(s.SHA256) > 0 || len(s.Package) > 0 || len(s.Version) > 0 || len(s.Registry) > 0 {
+			return fmt.Errorf("confluence source contains unrelated fields")
 		}
 	default:
 		return fmt.Errorf("unsupported source type %q", s.Type)
 	}
+	if s.Auth != (Auth{}) {
+		return s.Auth.validate(s.Origin())
+	}
 	return nil
+}
+
+func (a Auth) validate(origin string) error {
+	if !envNamePattern.MatchString(a.TokenEnv) {
+		return fmt.Errorf("auth token-env must name an environment variable, such as SITE_TOKEN")
+	}
+	if len(a.UserEnv) > 0 && !envNamePattern.MatchString(a.UserEnv) {
+		return fmt.Errorf("auth user-env must name an environment variable, such as SITE_USER")
+	}
+
+	u, err := url.Parse(origin)
+	if err != nil || !secureOrigin(u) {
+		return fmt.Errorf("auth requires an HTTPS URL, or HTTP to a loopback host")
+	}
+
+	return nil
+}
+
+// secureOrigin accepts HTTPS, and plain HTTP only when traffic stays on this machine.
+func secureOrigin(u *url.URL) bool {
+	switch u.Scheme {
+	case schemeHTTPS:
+		return true
+	case schemeHTTP:
+		host := u.Hostname()
+		if strings.EqualFold(host, "localhost") {
+			return true
+		}
+
+		ip := net.ParseIP(host)
+		return ip != nil && ip.IsLoopback()
+	default:
+		return false
+	}
 }
 
 func ValidateHTTPURL(value string) error {
