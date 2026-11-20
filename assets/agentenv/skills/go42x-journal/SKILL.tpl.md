@@ -40,6 +40,17 @@ After editing the notes, record the change with
 `go42x agentenv journal note <id> --summary "Moved the schemas"` or `journal_note`. Update the notes before
 ending, pausing, or handing off a session.
 
+To keep a copy of a file from elsewhere in the project, such as a report, run
+`go42x agentenv journal attach <id> <file>`, or `journal_attach`; `--name` names the copy. It never
+replaces a file in the entry, and records nothing: `journal note` records the change.
+
+## Follow what changed
+
+`journal list --since <time>` lists the entries updated since then, and `--kept` the finished entries
+that never expire. `journal show <id> --since <time>` shows only the log events since then, and
+`--sections` the notes split by section, without the template's comments and empty sections. Times
+are RFC 3339, such as `2026-11-10T09:00:00Z`. The MCP tools take the same options.
+
 ## Finish a task
 
 Run `go42x agentenv journal done <id>`, or `journal_done`. Use `--abandoned` for a task that was

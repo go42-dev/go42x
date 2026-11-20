@@ -47,6 +47,13 @@ func (s *Adapter) Tools() []server.ServerTool {
 					mcp.Description("Only entries with this status"),
 				),
 				mcp.WithArray("tags", mcp.WithStringItems(), mcp.Description("Only entries with every listed tag")),
+				mcp.WithString(
+					"since",
+					mcp.Description(
+						"Only entries updated at or after this RFC 3339 time, such as 2026-11-10T09:00:00Z",
+					),
+				),
+				mcp.WithBoolean("kept", mcp.Description("Only finished entries without an expiry")),
 				mcp.WithOutputSchema[journal.ListResult](),
 			),
 			Handler: s.list,
@@ -57,9 +64,41 @@ func (s *Adapter) Tools() []server.ServerTool {
 				mcp.WithDescription("Read a journal entry with its notes, log, and files."),
 				mcp.WithReadOnlyHintAnnotation(true),
 				mcp.WithString("id", mcp.Required(), mcp.Description("Entry ID, as journal_list returns it")),
+				mcp.WithString(
+					"since",
+					mcp.Description("Only log events at or after this RFC 3339 time, such as 2026-11-10T09:00:00Z"),
+				),
+				mcp.WithBoolean(
+					"sections",
+					mcp.Description(
+						"Return the notes split by section, without the template's comments and empty sections, instead of the whole notes",
+					),
+				),
 				mcp.WithOutputSchema[journal.ShowResult](),
 			),
 			Handler: s.show,
+		},
+		{
+			Tool: mcp.NewTool(
+				"journal_attach",
+				mcp.WithDescription(
+					"Copy a file from the project into a journal entry, such as a report or a log. An existing file in the entry is never replaced. Record the change with journal_note.",
+				),
+				mcp.WithString("id", mcp.Required(), mcp.Description("Entry ID")),
+				mcp.WithString(
+					"path",
+					mcp.Required(),
+					mcp.MinLength(1),
+					mcp.Description("File to copy, relative to the project root"),
+				),
+				mcp.WithString(
+					"name",
+					mcp.MaxLength(128),
+					mcp.Description("File name of the copy in the entry; the file's own name when empty"),
+				),
+				mcp.WithOutputSchema[journal.EntryFile](),
+			),
+			Handler: s.attach,
 		},
 		{
 			Tool: mcp.NewTool(
@@ -141,14 +180,36 @@ func (s *Adapter) list(ctx context.Context, request mcp.CallToolRequest) (*mcp.C
 	if err != nil {
 		return toolResult(nil, err)
 	}
+	since, err := journal.ParseSince(request.GetString("since", ""))
+	if err != nil {
+		return toolResult(nil, err)
+	}
 	return toolResult(s.service.List(ctx, journal.ListOptions{
 		Status: journal.Status(request.GetString("status", "")),
 		Tags:   tags,
+		Since:  since,
+		Kept:   request.GetBool("kept", false),
 	}))
 }
 
 func (s *Adapter) show(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	return toolResult(s.service.Show(ctx, request.GetString("id", "")))
+	since, err := journal.ParseSince(request.GetString("since", ""))
+	if err != nil {
+		return toolResult(nil, err)
+	}
+	return toolResult(s.service.Show(ctx, journal.ShowOptions{
+		ID:       request.GetString("id", ""),
+		Since:    since,
+		Sections: request.GetBool("sections", false),
+	}))
+}
+
+func (s *Adapter) attach(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return toolResult(s.service.Attach(ctx, journal.AttachOptions{
+		ID:   request.GetString("id", ""),
+		Path: request.GetString("path", ""),
+		Name: request.GetString("name", ""),
+	}))
 }
 
 func (s *Adapter) create(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {

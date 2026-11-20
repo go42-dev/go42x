@@ -305,3 +305,42 @@ func TestRuntimeFromClient(t *testing.T) {
 		}
 	}
 }
+
+func TestNoteSections(t *testing.T) {
+	t.Parallel()
+	template, err := renderNotes("Task")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, tt := range map[string]struct {
+		notes string
+		want  []NoteSection
+	}{
+		"template":    {string(template), nil},
+		"no sections": {"# Task\n", nil},
+		"filled": {
+			"# Task\n\n## Goal\n\n<!-- What the task must achieve. -->\nShip it.\n\n" +
+				"## Next\n<!--\nmultiline\n-->\n\n1. Test.\n2. Merge.\n\n### Later\n\nRelease.\n\n## Results\n\n",
+			[]NoteSection{
+				{Heading: "Goal", Text: "Ship it."},
+				{Heading: "Next", Text: "1. Test.\n2. Merge.\n\n### Later\n\nRelease."},
+			},
+		},
+		"text before the first section": {
+			"# Task\n\nContext first.\n\n## State\n\nDone.\n",
+			[]NoteSection{{Text: "Context first."}, {Heading: "State", Text: "Done."}},
+		},
+		"headings in fenced code": {
+			"# Task\n\n## Results\n\n````markdown\n```text\n## Not a section\n```\n## Still not\n````\n\n" +
+				"~~~\n# Not a title\n~~~\n",
+			[]NoteSection{{
+				Heading: "Results",
+				Text:    "````markdown\n```text\n## Not a section\n```\n## Still not\n````\n\n~~~\n# Not a title\n~~~",
+			}},
+		},
+	} {
+		if got := noteSections(tt.notes); !slices.Equal(got, tt.want) {
+			t.Errorf("%s: noteSections = %+v, want %+v", name, got, tt.want)
+		}
+	}
+}

@@ -61,9 +61,11 @@ const (
 )
 
 var (
-	idPattern   = regexp.MustCompile(`^[0-9]{8}-[a-z0-9]+(?:-[a-z0-9]+)*-[0-9a-f]{4}$`)
-	tagPattern  = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
-	slugPattern = regexp.MustCompile(`[^a-z0-9]+`)
+	idPattern       = regexp.MustCompile(`^[0-9]{8}-[a-z0-9]+(?:-[a-z0-9]+)*-[0-9a-f]{4}$`)
+	tagPattern      = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
+	slugPattern     = regexp.MustCompile(`[^a-z0-9]+`)
+	fileNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
+	commentPattern  = regexp.MustCompile(`(?s)<!--.*?-->`)
 )
 
 // Entry is the record of one task in entry.json.
@@ -97,6 +99,13 @@ type Event struct {
 	Runtime string    `json:"runtime"`
 	Session string    `json:"session,omitempty"`
 	Summary string    `json:"summary,omitempty"`
+}
+
+// NoteSection is one "## " section of an entry's notes. Text before the first section,
+// other than the title, has an empty heading.
+type NoteSection struct {
+	Heading string `json:"heading"`
+	Text    string `json:"text"`
 }
 
 // Actor identifies the runtime and session that change an entry.
@@ -191,6 +200,46 @@ func renderNotes(title string) ([]byte, error) {
 		return nil, fmt.Errorf("read notes template: %w", err)
 	}
 	return []byte(strings.NewReplacer("{{.Title}}", title).Replace(string(template))), nil
+}
+
+// noteSections splits notes at their "## " headings, outside fenced code. It leaves out the
+// title, the template's comments, and sections without text.
+func noteSections(notes string) []NoteSection {
+	var sections []NoteSection
+	current := NoteSection{}
+	var text []string
+	flush := func() {
+		current.Text = strings.TrimSpace(strings.Join(text, "\n"))
+		if len(current.Text) > 0 {
+			sections = append(sections, current)
+		}
+	}
+
+	// fence is the opening run of backticks or tildes while inside fenced code; a run of the
+	// same character, at least as long and alone on its line, closes it.
+	fence := ""
+	titled := false
+	for line := range strings.SplitSeq(commentPattern.ReplaceAllString(notes, ""), "\n") {
+		trimmed := strings.TrimSpace(line)
+		switch {
+		case len(fence) > 0:
+			if strings.HasPrefix(trimmed, fence) && len(strings.Trim(trimmed, fence[:1])) == 0 {
+				fence = ""
+			}
+		case strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~"):
+			fence = trimmed[:len(trimmed)-len(strings.TrimLeft(trimmed, trimmed[:1]))]
+		case strings.HasPrefix(line, "## "):
+			flush()
+			current, text = NoteSection{Heading: strings.TrimSpace(line[3:])}, nil
+			continue
+		case strings.HasPrefix(line, "# ") && !titled && len(current.Heading) == 0 && len(sections) == 0:
+			titled = true
+			continue
+		}
+		text = append(text, line)
+	}
+	flush()
+	return sections
 }
 
 // schemaLink returns the schema link that entries written by this binary carry.

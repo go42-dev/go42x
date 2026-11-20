@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"maps"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -85,6 +88,9 @@ func TestJournalTools(t *testing.T) {
 	t.Parallel()
 	settings := journal.NewSettings()
 	settings.RootPath = t.TempDir()
+	if err := os.WriteFile(filepath.Join(settings.RootPath, "review.md"), []byte("Review\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	service, err := journal.NewService(settings)
 	if err != nil {
 		t.Fatal(err)
@@ -141,20 +147,46 @@ func TestJournalTools(t *testing.T) {
 	if len(found.Matches) != 1 {
 		t.Errorf("search = %+v", found)
 	}
+	attached := call[journal.EntryFile](t, ctx, tools, "journal_attach", map[string]any{
+		"id":   id,
+		"path": "review.md",
+		"name": "review-1.md",
+	})
+	if attached.Path != created.Path+"/review-1.md" || attached.Size != 7 {
+		t.Errorf("attached = %+v", attached)
+	}
 
 	finished := call[journal.EntryResult](t, ctx, tools, "journal_done", map[string]any{"id": id, "keep": true})
 	if finished.Entry.Status != journal.StatusDone || finished.Entry.ExpiresAt != nil {
 		t.Errorf("done = %+v", finished.Entry)
 	}
 	shown := call[journal.ShowResult](t, ctx, tools, "journal_show", map[string]any{"id": id})
-	if len(shown.Events) != 3 || shown.Events[2].Event != "done" {
-		t.Errorf("events = %+v", shown.Events)
+	if len(shown.Events) != 3 || shown.Events[2].Event != "done" || len(shown.Notes) == 0 {
+		t.Errorf("show = %+v", shown)
+	}
+	// Events share the second they are recorded in, so only a later time leaves them all out.
+	recent := call[journal.ShowResult](t, ctx, tools, "journal_show", map[string]any{
+		"id":       id,
+		"since":    finished.Entry.UpdatedAt.Add(time.Second).Format(time.RFC3339),
+		"sections": true,
+	})
+	if len(recent.Events) != 0 || len(recent.Notes) != 0 || len(recent.Sections) != 0 {
+		t.Errorf("show after done = %+v", recent)
+	}
+	kept := call[journal.ListResult](t, ctx, tools, "journal_list", map[string]any{
+		"kept":  true,
+		"since": finished.Entry.UpdatedAt.Format(time.RFC3339),
+	})
+	if len(kept.Entries) != 1 || kept.Entries[0].ID != id {
+		t.Errorf("kept = %+v", kept)
 	}
 
 	for name, arguments := range map[string]map[string]any{
-		"journal_show": {"id": "../outside"},
-		"journal_new":  {"title": "Bad tags", "tags": "not-a-list"},
-		"journal_done": {"id": id},
+		"journal_show":   {"id": "../outside"},
+		"journal_new":    {"title": "Bad tags", "tags": "not-a-list"},
+		"journal_done":   {"id": id},
+		"journal_list":   {"since": "yesterday"},
+		"journal_attach": {"id": id, "path": "review.md", "name": "review-1.md"},
 	} {
 		request := mcp.CallToolRequest{}
 		request.Params.Arguments = arguments

@@ -131,7 +131,11 @@ func ReportShow(output io.Writer, settings *journal.Settings, result *journal.Sh
 				}
 			}
 
-			if _, err := fmt.Fprintf(w, "\nNotes:\n%s\n", strings.TrimSpace(result.Notes)); err != nil {
+			notes := strings.TrimSpace(result.Notes)
+			if len(result.Sections) > 0 {
+				notes = formatSections(result.Sections)
+			}
+			if _, err := fmt.Fprintf(w, "\nNotes:\n%s\n", notes); err != nil {
 				return err
 			}
 
@@ -155,6 +159,19 @@ func ReportShow(output io.Writer, settings *journal.Settings, result *journal.Sh
 		}
 	}
 	return cmdutil.Report(output, result, runErr, text)
+}
+
+// formatSections renders note sections as Markdown, a heading before each one's text.
+func formatSections(sections []journal.NoteSection) string {
+	blocks := make([]string, 0, len(sections))
+	for _, section := range sections {
+		if len(section.Heading) == 0 {
+			blocks = append(blocks, section.Text)
+			continue
+		}
+		blocks = append(blocks, "## "+section.Heading+"\n\n"+section.Text)
+	}
+	return strings.Join(blocks, "\n\n")
 }
 
 func writeRefs(w io.Writer, refs journal.Refs) error {
@@ -189,6 +206,21 @@ func ReportNote(output io.Writer, settings *journal.Settings, result *journal.En
 			}
 			_, err := fmt.Fprintf(w, "Recorded the update of journal entry %s; it is %s.\n",
 				result.Entry.ID, result.Entry.Status)
+			return err
+		}
+	}
+	return cmdutil.Report(output, result, runErr, text)
+}
+
+func ReportAttach(output io.Writer, settings *journal.Settings, result *journal.EntryFile, runErr error) error {
+	var text func(io.Writer) error
+	if !settings.JSON {
+		text = func(w io.Writer) error {
+			if runErr != nil {
+				return nil
+			}
+			_, err := fmt.Fprintf(w, "Attached %s (%s); record the change with journal note.\n",
+				result.Path, journal.FormatSize(result.Size))
 			return err
 		}
 	}

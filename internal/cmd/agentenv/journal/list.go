@@ -19,13 +19,20 @@ func newListCommand(f *cmdutil.Factory) *cobra.Command {
 directory content that no entry describes. go42x never deletes it; review it and delete
 what is no longer needed. Agents ask the user first.`,
 		Example: `  go42x agentenv journal list --status open
+  go42x agentenv journal list --since 2026-11-10T09:00:00Z
   go42x agentenv journal list --stray`,
 		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			settings := newSettings(f, false)
+			since, err := journal.ParseSince(viper.GetString(flagSince))
+			if err != nil {
+				return cmdutil.UsageError(err)
+			}
 			options := journal.ListOptions{
 				Status: journal.Status(viper.GetString(flagStatus)),
 				Tags:   viper.GetStringSlice(flagTag),
+				Since:  since,
+				Kept:   viper.GetBool(flagKept),
 				Stray:  viper.GetBool(flagStray),
 			}
 			if err := settings.Validate(); err != nil {
@@ -44,9 +51,16 @@ what is no longer needed. Agents ask the user first.`,
 	cmd.Flags().StringSlice(
 		flagTag, nil,
 		"only entries with every listed tag")
+	cmd.Flags().String(
+		flagSince, "",
+		"only entries updated at or after this RFC 3339 time")
+	cmd.Flags().Bool(
+		flagKept, false,
+		"only finished entries without an expiry")
 	cmd.Flags().Bool(
 		flagStray, false,
 		"list content without a journal record instead of entries")
+
 	return cmd
 }
 

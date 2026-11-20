@@ -116,7 +116,7 @@ func TestEntryLifecycle(t *testing.T) {
 			t.Fatalf("abandon = %+v, %v", abandoned, err)
 		}
 
-		shown, err := service.Show(t.Context(), id)
+		shown, err := service.Show(t.Context(), ShowOptions{ID: id})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -230,7 +230,9 @@ func TestListFiltersAndStrayContent(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := service.Done(t.Context(), human, DoneOptions{ID: first.Entry.ID}); err != nil {
+		time.Sleep(time.Minute)
+		finished := time.Now()
+		if _, err := service.Done(t.Context(), human, DoneOptions{ID: first.Entry.ID, Keep: true}); err != nil {
 			t.Fatal(err)
 		}
 		writeTestFile(t, filepath.Join(root, ".go42x/journal/20261110-broken-0000/entry.json"), "{")
@@ -256,6 +258,12 @@ func TestListFiltersAndStrayContent(t *testing.T) {
 			"all":       {ListOptions{}, []string{first.Entry.ID, second.Entry.ID}},
 			"open":      {ListOptions{Status: StatusOpen}, []string{second.Entry.ID}},
 			"every tag": {ListOptions{Tags: []string{"fix", "kwb"}}, []string{first.Entry.ID}},
+			"since":     {ListOptions{Since: finished}, []string{first.Entry.ID}},
+			"kept":      {ListOptions{Kept: true}, []string{first.Entry.ID}},
+			"kept and changed later": {
+				ListOptions{Kept: true, Since: finished.Add(time.Second)},
+				nil,
+			},
 		} {
 			result, err := service.List(t.Context(), tt.options)
 			if err != nil {
@@ -522,11 +530,11 @@ func TestRejectsInvalidInput(t *testing.T) {
 
 	for name, call := range map[string]func() error{
 		"traversing show": func() error {
-			_, err := service.Show(t.Context(), "../../secret.txt")
+			_, err := service.Show(t.Context(), ShowOptions{ID: "../../secret.txt"})
 			return err
 		},
 		"missing entry": func() error {
-			_, err := service.Show(t.Context(), "20261110-missing-0000")
+			_, err := service.Show(t.Context(), ShowOptions{ID: "20261110-missing-0000"})
 			return err
 		},
 		"blank title": func() error {
@@ -545,10 +553,136 @@ func TestRejectsInvalidInput(t *testing.T) {
 			_, err := service.List(t.Context(), ListOptions{Status: "paused"})
 			return err
 		},
+		"kept open entries": func() error {
+			_, err := service.List(t.Context(), ListOptions{Status: StatusOpen, Kept: true})
+			return err
+		},
+		"stray listing since": func() error {
+			_, err := service.List(t.Context(), ListOptions{Stray: true, Since: time.Now()})
+			return err
+		},
+		"traversing attach": func() error {
+			_, err := service.Attach(t.Context(), AttachOptions{ID: "../../secret.txt", Path: "secret.txt"})
+			return err
+		},
 	} {
 		if err := call(); err == nil {
 			t.Errorf("%s accepted", name)
 		}
+	}
+}
+
+func TestShowSinceAndSections(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		root := t.TempDir()
+		service := newTestService(t, root)
+		created, err := service.New(t.Context(), human, NewOptions{Title: "Sections"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		id := created.Entry.ID
+		notes, err := os.ReadFile(filepath.Join(root, created.Path, notesFile))
+		if err != nil {
+			t.Fatal(err)
+		}
+		notes = bytes.Replace(notes, []byte("## Next\n"), []byte("## Next\n\nRun the tests.\n"), 1)
+		writeTestFile(t, filepath.Join(root, created.Path, notesFile), string(notes))
+
+		time.Sleep(time.Hour)
+		since := time.Now()
+		if _, err := service.Note(t.Context(), human, NoteOptions{ID: id, Summary: "Planned"}); err != nil {
+			t.Fatal(err)
+		}
+
+		whole, err := service.Show(t.Context(), ShowOptions{ID: id})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if whole.Notes != string(notes) || whole.Sections != nil || len(whole.Events) != 2 {
+			t.Errorf("show = %+v", whole)
+		}
+
+		recent, err := service.Show(t.Context(), ShowOptions{ID: id, Since: since, Sections: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(recent.Notes) != 0 ||
+			!slices.Equal(recent.Sections, []NoteSection{{Heading: "Next", Text: "Run the tests."}}) {
+			t.Errorf("sections = %+v, notes = %q", recent.Sections, recent.Notes)
+		}
+		if got := eventNames(recent.Events); !slices.Equal(got, []string{"note"}) {
+			t.Errorf("events since %s = %q", since, got)
+		}
+	})
+}
+
+func TestAttach(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	service := newTestService(t, root)
+	created, err := service.New(t.Context(), human, NewOptions{Title: "Attach"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := created.Entry.ID
+	writeTestFile(t, filepath.Join(root, "reports/review.md"), "Review\n")
+	writeTestFile(t, filepath.Join(root, ".env"), "hidden")
+	outside := filepath.Join(t.TempDir(), "secret.txt")
+	writeTestFile(t, outside, "outside")
+	escape, err := filepath.Rel(root, outside)
+	if err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "link.txt")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Fatal(err)
+	}
+
+	attached, err := service.Attach(t.Context(), AttachOptions{ID: id, Path: "reports/review.md"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attached.Path != created.Path+"/review.md" || attached.Size != 7 {
+		t.Errorf("attached = %+v", attached)
+	}
+	if data, err := os.ReadFile(filepath.Join(root, attached.Path)); err != nil || string(data) != "Review\n" {
+		t.Errorf("copy = %q, %v", data, err)
+	}
+	renamed, err := service.Attach(t.Context(), AttachOptions{
+		ID:   id,
+		Path: filepath.Join(root, ".env"),
+		Name: "env-2026-11-10.txt",
+	})
+	if err != nil || renamed.Path != created.Path+"/env-2026-11-10.txt" {
+		t.Errorf("renamed = %+v, %v", renamed, err)
+	}
+
+	for name, options := range map[string]AttachOptions{
+		"existing file":       {ID: id, Path: "reports/review.md"},
+		"go42x file":          {ID: id, Path: "reports/review.md", Name: notesFile},
+		"hidden name":         {ID: id, Path: "reports/review.md", Name: ".review.md"},
+		"name with a path":    {ID: id, Path: "reports/review.md", Name: "../review.md"},
+		"hidden source name":  {ID: id, Path: ".env"},
+		"directory":           {ID: id, Path: "reports", Name: "reports.md"},
+		"missing file":        {ID: id, Path: "missing.md"},
+		"outside the project": {ID: id, Path: outside},
+		"relative escape":     {ID: id, Path: escape},
+		"link out":            {ID: id, Path: "link.txt"},
+		"missing entry":       {ID: "20261110-missing-0000", Path: "reports/review.md", Name: "other.md"},
+		"no file":             {ID: id, Path: " "},
+	} {
+		if result, err := service.Attach(t.Context(), options); err == nil {
+			t.Errorf("%s: attached %+v", name, result)
+		}
+	}
+
+	shown, err := service.Show(t.Context(), ShowOptions{ID: id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !shown.Entry.UpdatedAt.Equal(created.Entry.UpdatedAt) || len(shown.Events) != 1 || len(shown.Files) != 5 {
+		t.Errorf("attach changed the record or left other files: %+v", shown)
 	}
 }
 

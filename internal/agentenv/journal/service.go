@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -44,6 +45,10 @@ type NewOptions struct {
 type ListOptions struct {
 	Status Status
 	Tags   []string
+	// Since leaves out entries last updated before it when not zero.
+	Since time.Time
+	// Kept lists only finished entries without an expiry.
+	Kept bool
 	// Stray lists content without an entry record instead of entries.
 	Stray bool
 }
@@ -54,12 +59,29 @@ type ListResult struct {
 	Stray   []StrayItem `json:"stray,omitempty"`
 }
 
+type ShowOptions struct {
+	ID string
+	// Since leaves out log events from before it when not zero.
+	Since time.Time
+	// Sections returns the notes split by section instead of as a whole.
+	Sections bool
+}
+
 type ShowResult struct {
-	Entry  *Entry      `json:"entry"`
-	Path   string      `json:"path"`
-	Notes  string      `json:"notes"`
-	Events []Event     `json:"events"`
-	Files  []EntryFile `json:"files"`
+	Entry    *Entry        `json:"entry"`
+	Path     string        `json:"path"`
+	Notes    string        `json:"notes,omitempty"`
+	Sections []NoteSection `json:"sections,omitempty"`
+	Events   []Event       `json:"events"`
+	Files    []EntryFile   `json:"files"`
+}
+
+type AttachOptions struct {
+	ID string
+	// Path is the file to copy, absolute or relative to the project root.
+	Path string
+	// Name is the file name of the copy in the entry; the source's name when empty.
+	Name string
 }
 
 type NoteOptions struct {
@@ -136,11 +158,31 @@ func (o ListOptions) Validate() error {
 	default:
 		return fmt.Errorf("status must be open, done, or abandoned")
 	}
-	if o.Stray && (len(o.Status) > 0 || len(o.Tags) > 0) {
+	if o.Stray && (len(o.Status) > 0 || len(o.Tags) > 0 || !o.Since.IsZero() || o.Kept) {
 		return fmt.Errorf("stray listing does not take entry filters")
+	}
+	if o.Kept && o.Status == StatusOpen {
+		return fmt.Errorf("kept entries are finished, so they never have status open")
 	}
 	_, err := NormalizeTags(o.Tags)
 	return err
+}
+
+func (o ShowOptions) Validate() error {
+	return ValidateID(o.ID)
+}
+
+func (o AttachOptions) Validate() error {
+	if err := ValidateID(o.ID); err != nil {
+		return err
+	}
+	if len(strings.TrimSpace(o.Path)) == 0 || strings.ContainsFunc(o.Path, isControl) {
+		return fmt.Errorf("the file to attach is required, without control characters")
+	}
+	if len(o.Name) > 0 {
+		return validateFileName(o.Name)
+	}
+	return nil
 }
 
 func (o NoteOptions) Validate() error {
@@ -180,6 +222,33 @@ func validateSummary(summary string) error {
 		return fmt.Errorf("summary must be at most 1000 characters without control characters")
 	}
 	return nil
+}
+
+// validateFileName accepts the name of a file that attach copies into an entry: a plain
+// name that is neither hidden, like temporary files, nor one of the files go42x keeps.
+func validateFileName(name string) error {
+	if !fileNamePattern.MatchString(name) {
+		return fmt.Errorf(
+			"invalid file name %q: use up to 128 letters, digits, dots, underscores, and hyphens, "+
+				"starting with a letter or digit", name)
+	}
+	if slices.Contains([]string{entryFile, notesFile, logFile}, name) {
+		return fmt.Errorf("%s is kept by go42x; choose another name", name)
+	}
+	return nil
+}
+
+// ParseSince parses the RFC 3339 time of a since filter. An empty value returns the zero
+// time, which filters nothing.
+func ParseSince(value string) (time.Time, error) {
+	if len(value) == 0 {
+		return time.Time{}, nil
+	}
+	since, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("since must be an RFC 3339 time, such as 2026-11-10T09:00:00Z")
+	}
+	return since, nil
 }
 
 func validateReferences(refs ...string) error {
@@ -320,6 +389,8 @@ func (s *Service) List(ctx context.Context, options ListOptions) (*ListResult, e
 	entries := []*Entry{}
 	for _, entry := range current.entries {
 		if (len(options.Status) > 0 && entry.Status != options.Status) ||
+			entry.UpdatedAt.Before(options.Since) ||
+			(options.Kept && !kept(entry)) ||
 			slices.ContainsFunc(tags, func(tag string) bool { return !slices.Contains(entry.Tags, tag) }) {
 			continue
 		}
@@ -332,35 +403,91 @@ func (s *Service) List(ctx context.Context, options ListOptions) (*ListResult, e
 }
 
 // Show returns an entry with its notes, log, and files.
-func (s *Service) Show(_ context.Context, id string) (*ShowResult, error) {
-	if err := ValidateID(id); err != nil {
+func (s *Service) Show(_ context.Context, options ShowOptions) (*ShowResult, error) {
+	if err := options.Validate(); err != nil {
 		return nil, err
 	}
 
-	entry, err := s.store.read(id)
+	entry, err := s.store.read(options.ID)
 	if err != nil {
 		return nil, err
 	}
 
-	notes, err := os.ReadFile(filepath.Join(s.store.entryDir(id), notesFile))
+	notes, err := os.ReadFile(filepath.Join(s.store.entryDir(options.ID), notesFile))
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
-	events, err := s.store.events(id)
+	events, err := s.store.events(options.ID)
 	if err != nil {
 		return nil, err
 	}
-	files, err := s.store.entryFiles(id)
+	events = slices.DeleteFunc(events, func(event Event) bool { return event.At.Before(options.Since) })
+	files, err := s.store.entryFiles(options.ID)
 	if err != nil {
 		return nil, err
 	}
 
-	return &ShowResult{
+	result := &ShowResult{
 		Entry:  entry,
-		Path:   s.store.relative(s.store.entryDir(id)),
-		Notes:  string(notes),
+		Path:   s.store.relative(s.store.entryDir(options.ID)),
 		Events: events,
 		Files:  files,
+	}
+	if options.Sections {
+		result.Sections = noteSections(string(notes))
+	} else {
+		result.Notes = string(notes)
+	}
+	return result, nil
+}
+
+// Attach copies a file from the project into an entry directory. It never replaces a file
+// and records nothing: like other files an agent keeps in an entry, the copy becomes part of
+// the record with the next note.
+func (s *Service) Attach(ctx context.Context, options AttachOptions) (*EntryFile, error) {
+	if err := options.Validate(); err != nil {
+		return nil, err
+	}
+
+	source, err := s.store.projectFile(options.Path)
+	if err != nil {
+		return nil, err
+	}
+	name := options.Name
+	if len(name) == 0 {
+		name = filepath.Base(source)
+		if err := validateFileName(name); err != nil {
+			return nil, fmt.Errorf("%w; name the copy with a valid file name", err)
+		}
+	}
+
+	unlock, err := s.store.lock(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock() //nolint:errcheck
+
+	if _, err := s.store.read(options.ID); err != nil {
+		return nil, err
+	}
+	target := filepath.Join(s.store.entryDir(options.ID), name)
+	if _, err := os.Lstat(target); err == nil {
+		return nil, fmt.Errorf("journal entry %s already has %s; choose another name", options.ID, name)
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
+	}
+
+	// #nosec G304 -- projectFile resolved the source to a regular file inside the project.
+	data, err := os.ReadFile(source)
+	if err != nil {
+		return nil, err
+	}
+	if err := writeFileAtomic(target, data); err != nil {
+		return nil, err
+	}
+	return &EntryFile{
+		Path: s.store.relative(target),
+		Size: int64(len(data)),
 	}, nil
 }
 
@@ -617,6 +744,11 @@ func timestamp() time.Time {
 
 func expired(entry *Entry, now time.Time) bool {
 	return entry.Status != StatusOpen && entry.ExpiresAt != nil && !entry.ExpiresAt.After(now)
+}
+
+// kept reports whether an entry is finished without an expiry, so gc never deletes it.
+func kept(entry *Entry) bool {
+	return entry.Status != StatusOpen && entry.ExpiresAt == nil
 }
 
 func mergeRefs(recorded, update Refs) Refs {

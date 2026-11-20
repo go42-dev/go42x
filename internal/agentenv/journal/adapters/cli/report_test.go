@@ -112,6 +112,41 @@ func TestReportShowKeepsTheLatestEvents(t *testing.T) {
 	}
 }
 
+func TestReportShowSections(t *testing.T) {
+	t.Parallel()
+	entry := testEntry()
+	var output bytes.Buffer
+	if err := ReportShow(&output, textSettings, &journal.ShowResult{
+		Entry: entry,
+		Path:  ".go42x/journal/" + entry.ID,
+		Sections: []journal.NoteSection{
+			{Text: "Context first."},
+			{Heading: "Next", Text: "Run the tests."},
+		},
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	want := "Notes:\nContext first.\n\n## Next\n\nRun the tests.\n\nLog:\n"
+	if text := output.String(); !strings.Contains(text, want) {
+		t.Errorf("show sections:\n%s", text)
+	}
+}
+
+func TestReportAttach(t *testing.T) {
+	t.Parallel()
+	var output bytes.Buffer
+	if err := ReportAttach(&output, textSettings, &journal.EntryFile{
+		Path: ".go42x/journal/20261110-task-0000/review.md",
+		Size: 7,
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	want := "Attached .go42x/journal/20261110-task-0000/review.md (7 B); record the change with journal note.\n"
+	if output.String() != want {
+		t.Errorf("attach = %q, want %q", output.String(), want)
+	}
+}
+
 func TestReportDone(t *testing.T) {
 	t.Parallel()
 	kept := testEntry()

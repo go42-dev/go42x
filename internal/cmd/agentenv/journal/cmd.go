@@ -17,10 +17,14 @@ const (
 	flagIssue     = "issue"
 	flagJSON      = "json"
 	flagKeep      = "keep"
+	flagKept      = "kept"
 	flagLimit     = "limit"
+	flagName      = "name"
 	flagPR        = "pr"
 	flagRuntime   = "runtime"
+	flagSections  = "sections"
 	flagSession   = "session"
+	flagSince     = "since"
 	flagStatus    = "status"
 	flagStray     = "stray"
 	flagSummary   = "summary"
@@ -46,10 +50,12 @@ entries and continue them. The journal is local and ignored by Git.`,
 	cmd.AddCommand(newListCommand(f))
 	cmd.AddCommand(newShowCommand(f))
 	cmd.AddCommand(newNoteCommand(f))
+	cmd.AddCommand(newAttachCommand(f))
 	cmd.AddCommand(newDoneCommand(f))
 	cmd.AddCommand(newSearchCommand(f))
 	cmd.AddCommand(newIndexCommand(f))
 	cmd.AddCommand(newGCCommand(f))
+
 	return cmd
 }
 

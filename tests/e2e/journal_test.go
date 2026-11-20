@@ -142,6 +142,39 @@ func TestJournalEntryFlags(t *testing.T) {
 	if kept.Entry.Status != "done" || kept.Entry.ExpiresAt != nil {
 		t.Errorf("kept = %+v", kept.Entry)
 	}
+	for args, want := range map[string]int{"--kept": 1, "--status=open": 0, "--since=2999-01-01T00:00:00Z": 0} {
+		listed := decodeJournal[struct {
+			Entries []json.RawMessage `json:"entries"`
+		}](t, p.run(t, 0, "agentenv", "journal", "list", args, "--json").stdout)
+		if len(listed.Entries) != want {
+			t.Errorf("list %s found %d entries, want %d", args, len(listed.Entries), want)
+		}
+	}
+	p.run(t, 2, "agentenv", "journal", "list", "--kept", "--status", "open")
+	p.run(t, 2, "agentenv", "journal", "list", "--since", "yesterday")
+
+	p.write(t, ".go42x/journal/"+id+"/notes.md", "# Flags\n\n## Goal\n\n<!-- Guidance. -->\n\n## Next\n\nShip.\n")
+	shown := decodeJournal[struct {
+		Notes    *string `json:"notes"`
+		Sections []struct {
+			Heading string `json:"heading"`
+			Text    string `json:"text"`
+		} `json:"sections"`
+		Events []json.RawMessage `json:"events"`
+	}](t, p.run(t, 0,
+		"agentenv", "journal", "show", id, "--sections", "--since", "2999-01-01T00:00:00Z", "--json").stdout)
+	if shown.Notes != nil || len(shown.Sections) != 1 || shown.Sections[0].Heading != "Next" ||
+		shown.Sections[0].Text != "Ship." || len(shown.Events) != 0 {
+		t.Errorf("show --sections --since = %+v", shown)
+	}
+
+	p.write(t, "review.md", "Review\n")
+	attached := p.run(t, 0, "agentenv", "journal", "attach", id, "review.md", "--name", "review-1.md").stdout
+	if attached != "Attached .go42x/journal/"+id+"/review-1.md (7 B); record the change with journal note.\n" {
+		t.Errorf("attach = %q", attached)
+	}
+	p.run(t, 1, "agentenv", "journal", "attach", id, "review.md", "--name", "review-1.md")
+	p.run(t, 2, "agentenv", "journal", "attach", id, "review.md", "--name", "notes.md")
 	p.run(t, 0, "agentenv", "journal", "note", id, "--summary", "Reopened", "--runtime", "human")
 	abandoned := decodeJournal[journalEntry](t, p.run(t, 0,
 		"agentenv", "journal", "done", id, "--abandoned", "--runtime", "human", "--json").stdout)

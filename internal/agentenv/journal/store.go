@@ -391,6 +391,34 @@ func (s store) writeIndex(ctx context.Context) (int, error) {
 	return len(current.entries), writeFileAtomic(filepath.Join(s.dir, indexFile), data)
 }
 
+// projectFile resolves path, absolute or relative to the project root, to a regular file
+// inside the project. Links are followed, so neither a link nor ".." reaches outside.
+func (s store) projectFile(path string) (string, error) {
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(s.root, path)
+	}
+	root, err := filepath.EvalSymlinks(s.root)
+	if err != nil {
+		return "", fmt.Errorf("resolve project root: %w", err)
+	}
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", fmt.Errorf("read the file to attach: %w", err)
+	}
+	if rel, err := filepath.Rel(root, resolved); err != nil || !filepath.IsLocal(rel) {
+		return "", fmt.Errorf("%s is outside the project; attach files from inside it", path)
+	}
+
+	info, err := os.Stat(resolved)
+	if err != nil {
+		return "", err
+	}
+	if !info.Mode().IsRegular() {
+		return "", fmt.Errorf("%s is not a regular file", path)
+	}
+	return resolved, nil
+}
+
 // entryFiles lists regular files in an entry directory, relative to the project root.
 func (s store) entryFiles(id string) ([]EntryFile, error) {
 	dir := s.entryDir(id)
