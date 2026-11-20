@@ -76,13 +76,13 @@ func DetectActor(runtime, session string, lookup func(string) (string, bool), te
 // processes it starts, for commands and MCP servers alike, or an empty string when it
 // names none. A runtime gets a case once the variable that names its session is known.
 func SessionFromEnv(runtime string, lookup func(string) (string, bool)) string {
-        switch runtime {
-        case claude.Name:
-                session, _ := lookup("CLAUDE_CODE_SESSION_ID")
-                return session
-        default:
-                return ""
-        }
+	switch runtime {
+	case claude.Name:
+		session, _ := lookup("CLAUDE_CODE_SESSION_ID")
+		return session
+	default:
+		return ""
+	}
 }
 
 // RuntimeFromClient maps a client or agent name, such as an MCP client's name, to the

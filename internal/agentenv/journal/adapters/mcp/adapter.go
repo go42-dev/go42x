@@ -12,7 +12,7 @@ import (
 )
 
 type Adapter struct {
-	service *journal.Service
+	service   *journal.Service
 	lookupEnv func(string) (string, bool)
 }
 
