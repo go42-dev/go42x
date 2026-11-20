@@ -1,9 +1,6 @@
 # go42x -- START
-.go42x/go42x.local.yaml
-.go42x/kwb/
-.go42x/backups/
-.go42x/journal/
-.build/
+{{ with .BuildDir }}/{{ . }}/
+{{ end -}}
 .mcp.json
 .claude/
 .codex/

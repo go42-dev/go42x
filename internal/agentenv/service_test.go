@@ -142,8 +142,15 @@ func TestInitExtractsTemplatesAndPreservesCustomFiles(t *testing.T) {
 	if !bytes.HasPrefix(before, []byte("existing-entry\n")) {
 		t.Fatal("existing gitignore changed")
 	}
-	if strings.Count(string(before), assets.AgentEnvGitIgnore()) != 1 {
+	block, err := projectGitIgnore(dir, config.DefaultBuildDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(string(before), block) != 1 {
 		t.Fatal("bundled gitignore block missing or duplicated")
+	}
+	if string(readFile(t, filepath.Join(dir, ".go42x/.gitignore"))) != assets.AgentEnvDirGitIgnore() {
+		t.Fatal("init did not ignore the state directories in .go42x")
 	}
 	kwbIgnorePath := filepath.Join(dir, ".go42x/kwb.ignore")
 	if _, err := os.Stat(kwbIgnorePath); !os.IsNotExist(err) {
@@ -439,9 +446,11 @@ func TestInitForceReplacesOnlyBundledSources(t *testing.T) {
 	if result.Sources != wantSources || result.Applied != result.Sources {
 		t.Fatalf("reinstall result = %+v, want %d sources", result, wantSources)
 	}
-	if got := string(
-		readFile(t, filepath.Join(dir, ".gitignore")),
-	); got != "before\n"+assets.AgentEnvGitIgnore()+"after\n" {
+	block, err := projectGitIgnore(dir, config.DefaultBuildDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(readFile(t, filepath.Join(dir, ".gitignore"))); got != "before\n"+block+"after\n" {
 		t.Fatalf("managed gitignore block was not refreshed: %s", got)
 	}
 	recorded, err := parseBundleSource(readFile(t, filepath.Join(dir, ".go42x", bundleSourceFile)))

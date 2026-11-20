@@ -38,8 +38,7 @@ type Service struct {
 	logger   *slog.Logger
 	settings *Settings
 	config   *config.Config
-	// source identifies this binary's bundle; it is nil for builds without a published revision.
-	source *buildinfo.Source
+	source   *buildinfo.Source
 }
 
 func NewAgentEnvService(settings *Settings, opts ...Option) (*Service, error) {
@@ -94,7 +93,15 @@ func (s *Service) Init(ctx context.Context) (*InitResult, error) {
 		}
 	}
 
-	if err := updateGitIgnore("."); err != nil {
+	// Init keeps an existing configuration without validating it. When that configuration
+	// cannot be read, the project .gitignore block keeps its build directory.
+	buildDir, err := config.ProjectBuildDir(".")
+	if err != nil {
+		s.logger.WarnContext(ctx, "Configuration cannot be read; the project .gitignore block was not refreshed",
+			slog.Any("error", err))
+		buildDir = ""
+	}
+	if err := updateGitIgnore(".", buildDir); err != nil {
 		return nil, fmt.Errorf("failed to update .gitignore: %w", err)
 	}
 
@@ -123,7 +130,8 @@ func (s *Service) reinstall(ctx context.Context) (*InitResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read bundled configuration: %w", err)
 	}
-	if err := validateUpdatedConfig(plan, root, pinBundledSchemaURL(config.FileProject, updatedConfig)); err != nil {
+	cfg, err := loadUpdatedConfig(plan, root, pinBundledSchemaURL(config.FileProject, updatedConfig))
+	if err != nil {
 		return nil, err
 	}
 
@@ -154,7 +162,7 @@ func (s *Service) reinstall(ctx context.Context) (*InitResult, error) {
 	if err := prepareBundleSource(plan, dir, s.source); err != nil {
 		return nil, fmt.Errorf("prepare bundle record: %w", err)
 	}
-	if err := prepareGitIgnore(plan, root); err != nil {
+	if err := prepareGitIgnore(plan, root, cfg.Context.WithDefaults().BuildDir); err != nil {
 		return nil, fmt.Errorf("prepare .gitignore: %w", err)
 	}
 
@@ -177,24 +185,25 @@ func (s *Service) reinstall(ctx context.Context) (*InitResult, error) {
 	}, nil
 }
 
-// validateUpdatedConfig checks the configuration that an update or reinstall installs,
-// together with the project's local overrides.
-func validateUpdatedConfig(plan *fspatch.Plan, root string, updatedConfig []byte) error {
+// loadUpdatedConfig validates and returns the configuration that an update or reinstall
+// installs, together with the project's local overrides.
+func loadUpdatedConfig(plan *fspatch.Plan, root string, updatedConfig []byte) (*config.Config, error) {
 	local, _, err := plan.Read(filepath.Join(root, config.Directory, config.FileLocal))
 	if err != nil {
-		return fmt.Errorf("read local configuration: %w", err)
+		return nil, fmt.Errorf("read local configuration: %w", err)
 	}
 
 	variables, err := config.VariablesForProject(root)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	if _, err := config.ParseProjectConfig(updatedConfig, local, nil, variables); err != nil {
-		return fmt.Errorf("validate updated configuration: %w", err)
+	cfg, err := config.ParseProjectConfig(updatedConfig, local, nil, variables)
+	if err != nil {
+		return nil, fmt.Errorf("validate updated configuration: %w", err)
 	}
 
-	return nil
+	return cfg, nil
 }
 
 // Update merges bundled sources and refreshes the managed .gitignore block without
@@ -235,11 +244,13 @@ func (s *Service) Update(ctx context.Context) (*UpdateResult, error) {
 	if err != nil {
 		return &UpdateResult{Overwritten: []string{}}, fmt.Errorf("prepare merged sources: %w", err)
 	}
-	if err := validateUpdatedConfig(plan, root, updatedConfig); err != nil {
+
+	cfg, err := loadUpdatedConfig(plan, root, updatedConfig)
+	if err != nil {
 		return nil, err
 	}
 
-	if err := prepareGitIgnore(plan, root); err != nil {
+	if err := prepareGitIgnore(plan, root, cfg.Context.WithDefaults().BuildDir); err != nil {
 		return nil, fmt.Errorf("prepare .gitignore: %w", err)
 	}
 
@@ -288,7 +299,7 @@ func (s *Service) Generate(ctx context.Context) (*GenerateResult, error) {
 		cfg, templateDir, workingDir,
 	)
 
-	plan, err := gen.Prepare(ctx, s.settings.Clean)
+	plan, err := prepareGeneration(ctx, gen, cfg, workingDir, s.settings.Clean)
 	if err != nil {
 		return nil, fmt.Errorf("generation failed: %w", err)
 	}
@@ -298,4 +309,24 @@ func (s *Service) Generate(ctx context.Context) (*GenerateResult, error) {
 	}
 
 	return &GenerateResult{Changes: plan.Changes()}, nil
+}
+
+// prepareGeneration prepares the generated outputs and the managed .gitignore blocks,
+// which follow the configured build directory.
+func prepareGeneration(
+	ctx context.Context,
+	gen *generator.Generator,
+	cfg *config.Config,
+	root string,
+	clean bool,
+) (*fspatch.Plan, error) {
+	plan, err := gen.Prepare(ctx, clean)
+	if err != nil {
+		return nil, err
+	}
+	if err := prepareGitIgnore(plan, root, cfg.Context.WithDefaults().BuildDir); err != nil {
+		return nil, fmt.Errorf("prepare .gitignore: %w", err)
+	}
+
+	return plan, nil
 }

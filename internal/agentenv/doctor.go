@@ -62,12 +62,13 @@ func (s *Service) DoctorChecks(root string) []check.Check {
 				filepath.Join(root, config.Directory),
 				root,
 			)
-			plan, err := gen.Prepare(ctx, false)
+			plan, err := prepareGeneration(ctx, gen, s.config, root, false)
 			if err != nil {
 				return check.Result{
-					Status:      check.StatusFail,
-					Message:     "Templates or provider outputs cannot be prepared",
-					Remediation: "Review templates and existing provider settings; run go42x agentenv generate after correcting them",
+					Status:  check.StatusFail,
+					Message: "Templates, provider outputs, or .gitignore blocks cannot be prepared",
+					Remediation: "Review templates, existing provider settings, and the go42x markers in .gitignore files; " +
+						"run go42x agentenv generate after correcting them",
 				}
 			}
 

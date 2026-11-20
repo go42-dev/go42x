@@ -17,12 +17,20 @@ func AgentEnvTemplates() (fs.FS, error) {
 	return fs.Sub(agentEnvTemplates, "agentenv")
 }
 
-//go:embed agentenv/.gitignore.tpl
+//go:embed .gitignore.tpl
 var agentEnvGitIgnore string
 
-// AgentEnvGitIgnore returns the managed .gitignore block for agentenv.
+// AgentEnvGitIgnore returns the managed project .gitignore block for agentenv.
 func AgentEnvGitIgnore() string {
 	return agentEnvGitIgnore
+}
+
+//go:embed agentenv/go42x.gitignore.tpl
+var agentEnvDirGitIgnore string
+
+// AgentEnvDirGitIgnore returns the managed .go42x/.gitignore block for agentenv state.
+func AgentEnvDirGitIgnore() string {
+	return agentEnvDirGitIgnore
 }
 
 //go:embed kwb/kwb.ignore.tpl

@@ -1241,8 +1241,11 @@ func TestAgentEnvInitForce(t *testing.T) {
 
 	if !strings.HasPrefix(gitignore, "before\n# go42x -- START\n") ||
 		!strings.HasSuffix(gitignore, "# go42x -- END\nafter\n") ||
-		strings.Contains(gitignore, "obsolete") || !strings.Contains(gitignore, ".go42x/backups/\n") {
+		strings.Contains(gitignore, "obsolete") || !strings.Contains(gitignore, "\n/.build/\n") {
 		t.Fatalf("reinstall did not replace the managed gitignore block: %s", gitignore)
+	}
+	if gitignore := p.read(t, ".go42x/.gitignore"); !strings.Contains(gitignore, "\n/backups/\n") {
+		t.Fatalf("reinstall did not keep the managed .go42x/.gitignore block: %s", gitignore)
 	}
 	for path, want := range preserved {
 		if got := p.read(t, path); got != want {

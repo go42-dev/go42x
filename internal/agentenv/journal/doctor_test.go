@@ -78,7 +78,8 @@ func TestDoctorLocation(t *testing.T) {
 		t.Parallel()
 		root := t.TempDir()
 		gitInit(t, root)
-		writeTestFile(t, filepath.Join(root, ".gitignore"), ".go42x/journal/\n.build/\n")
+		writeTestFile(t, filepath.Join(root, ".gitignore"), ".build/\n")
+		writeTestFile(t, filepath.Join(root, ".go42x/.gitignore"), "/journal/\n")
 
 		if result := runCheck(t, root, "journal.location"); result.Status != check.StatusPass {
 			t.Errorf("location = %+v", result)

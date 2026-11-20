@@ -7,10 +7,13 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/go42-dev/go42x/assets"
 	"github.com/go42-dev/go42x/internal/doctor/check"
+	"github.com/go42-dev/go42x/internal/fspatch"
 )
 
 func snapshotTree(t *testing.T, root string) map[string]string {
@@ -124,6 +127,35 @@ func TestDoctorGHAWFragmentDrift(t *testing.T) {
 	if err != nil || report.Checks[1].Status != check.StatusWarn ||
 		!strings.Contains(strings.Join(report.Checks[1].Evidence, "\n"), ".github/workflows/900-aw-mcp.md") {
 		t.Fatalf("fragment drift check = %+v, %v", report, err)
+	}
+	if !reflect.DeepEqual(before, snapshotTree(t, root)) {
+		t.Fatal("doctor repaired drift without authorization")
+	}
+}
+
+func TestGenerateRefreshesGitIgnoreAndDoctorReportsDrift(t *testing.T) {
+	root := t.TempDir()
+	service := testService(t, root, false)
+	writeFile(t, filepath.Join(root, ".go42x/go42x.yaml"),
+		"version: '1.0'\nproject: {name: test}\ncontext: {template: agents.tpl.md, build-dir: out}\n"+
+			"providers:\n  codex: {enabled: false}\n")
+	writeFile(t, filepath.Join(root, ".go42x/agents.tpl.md"), "# Test\n")
+	if _, err := service.Generate(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if got := string(readFile(t, filepath.Join(root, ".gitignore"))); !strings.Contains(got, "\n/out/\n") {
+		t.Fatalf("generate did not ignore the configured build directory: %q", got)
+	}
+	if got := string(readFile(t, filepath.Join(root, ".go42x/.gitignore"))); got != assets.AgentEnvDirGitIgnore() {
+		t.Fatalf("generate did not write .go42x/.gitignore: %q", got)
+	}
+
+	writeFile(t, filepath.Join(root, ".gitignore"), "# go42x -- START\n/.build/\n# go42x -- END\n")
+	before := snapshotTree(t, root)
+	report, err := check.Run(t.Context(), service.DoctorChecks(root)...)
+	if err != nil || report.Checks[1].Status != check.StatusWarn ||
+		!slices.Contains(report.Checks[1].Evidence, fspatch.OperationUpdate+" .gitignore") {
+		t.Fatalf("gitignore drift check = %+v, %v", report, err)
 	}
 	if !reflect.DeepEqual(before, snapshotTree(t, root)) {
 		t.Fatal("doctor repaired drift without authorization")

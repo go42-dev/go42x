@@ -196,9 +196,11 @@ func TestAgentEnvInitIgnoresJournalAndBuildDirectories(t *testing.T) {
 
 	p.run(t, 0, "agentenv", "init")
 
-	gitignore := p.read(t, ".gitignore")
-	if !strings.Contains(gitignore, "\n.go42x/journal/\n.build/\n") {
-		t.Errorf("gitignore does not ignore the journal and build directories:\n%s", gitignore)
+	if gitignore := p.read(t, ".gitignore"); !strings.Contains(gitignore, "\n/.build/\n") {
+		t.Errorf("gitignore does not ignore the build directory:\n%s", gitignore)
+	}
+	if gitignore := p.read(t, ".go42x/.gitignore"); !strings.Contains(gitignore, "\n/journal/\n") {
+		t.Errorf(".go42x/.gitignore does not ignore the journal directory:\n%s", gitignore)
 	}
 	p.run(t, 0, "kwb", "build")
 	if kwbIgnore := p.read(t, ".go42x/kwb.ignore"); !strings.Contains(kwbIgnore, ".go42x/journal/**\n") {
@@ -208,5 +210,30 @@ func TestAgentEnvInitIgnoresJournalAndBuildDirectories(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(p.root, ".go42x/schemas", schema)); err != nil {
 			t.Errorf("init did not install schema %s: %v", schema, err)
 		}
+	}
+}
+
+func TestAgentEnvIgnoresConfiguredBuildDirectory(t *testing.T) {
+	t.Parallel()
+	p := newProject(t)
+	p.write(t, ".go42x/go42x.local.yaml", "context: {build-dir: out}\n")
+
+	p.run(t, 0, "agentenv", "init")
+
+	if gitignore := p.read(t, ".gitignore"); !strings.Contains(gitignore, "\n/out/\n") ||
+		strings.Contains(gitignore, ".build/") {
+		t.Errorf("init did not ignore the configured build directory:\n%s", gitignore)
+	}
+	p.write(t, ".go42x/go42x.local.yaml", "context: {build-dir: out/build}\n")
+	p.run(t, 0, "agentenv", "init", "--force")
+	if gitignore := p.read(t, ".gitignore"); !strings.Contains(gitignore, "\n/out/build/\n") ||
+		strings.Contains(gitignore, "\n/out/\n") {
+		t.Errorf("reinstall did not ignore the changed build directory:\n%s", gitignore)
+	}
+	p.write(t, ".go42x/go42x.local.yaml", "context: {build-dir: dist}\n")
+	p.run(t, 0, "agentenv", "generate", "--providers=")
+	if gitignore := p.read(t, ".gitignore"); !strings.Contains(gitignore, "\n/dist/\n") ||
+		strings.Contains(gitignore, "/out/build/") {
+		t.Errorf("generate did not ignore the changed build directory:\n%s", gitignore)
 	}
 }

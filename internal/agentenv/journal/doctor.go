@@ -103,7 +103,7 @@ func (s store) checkLocation(ctx context.Context) check.Result {
 		return check.Result{
 			Status:      check.StatusFail,
 			Message:     "Journal or build directory is not ignored by Git, so its files could be committed or indexed",
-			Remediation: "go42x agentenv update, or add these directories to .gitignore",
+			Remediation: "go42x agentenv generate, or add these directories to .gitignore",
 			Evidence:    exposed,
 		}
 	}
