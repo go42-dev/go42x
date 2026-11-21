@@ -37,6 +37,17 @@ go install github.com/go42-dev/go42x@latest
 
 Download the latest binary from the [releases page](https://github.com/go42-dev/go42x/releases).
 
+## Supported runtimes
+
+| Runtime                  | Where it runs  | Supported features                                                                 |
+| ------------------------ | -------------- | ---------------------------------------------------------------------------------- |
+| Claude Code              | Local          | Instructions, MCP servers, skills, tool permissions, subagents                     |
+| Codex                    | Local          | Instructions with size budget, MCP servers, skills                                 |
+| Copilot CLI              | Local          | Instructions, MCP servers, skills                                                  |
+| Crush                    | Local          | Instructions, MCP servers                                                          |
+| Antigravity              | Local          | Instructions, MCP servers through a workspace plugin, skills                       |
+| GitHub Agentic Workflows | GitHub Actions | Instructions, MCP servers, skills; `copilot`, `claude`, `codex`, and `agy` engines |
+
 ## Features
 
 One project configuration generates the files every agent runtime needs:
@@ -46,12 +57,19 @@ mindmap
   root((.go42x/))
     All runtimes
       AGENTS.md
+        agents.tpl.md template
+        chunks/
+        skills/
+        resources/
+        upstream/
+        go42x.yaml
+        Environment context
     Claude Code
       .claude/
       .mcp.json
     Codex
       .codex/config.toml
-    Copilot
+    Copilot CLI
       .mcp.json
     Crush
       .crush.json
