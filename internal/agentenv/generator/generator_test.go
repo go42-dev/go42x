@@ -302,7 +302,7 @@ func TestGeneratorGoContextWithoutExecutable(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example\ngo 1.27\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	template := "# Instructions\n\n{{.golang.go_version}}\n"
+	template := "# Instructions\n\n{{.golang.go_mod.go_version}}\n"
 	if err := os.WriteFile(filepath.Join(root, "agents.tpl.md"), []byte(template), 0600); err != nil {
 		t.Fatal(err)
 	}

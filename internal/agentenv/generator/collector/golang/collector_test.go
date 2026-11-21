@@ -107,7 +107,7 @@ func TestGoCollectorEffectiveEnvironment(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]any{
-		"go_version": "1.27",
+		"go_mod": map[string]string{"go_version": "1.27"},
 		"env": map[string]string{
 			"GOVERSION":   "go1.27.9",
 			"GOTOOLCHAIN": "auto",
@@ -125,12 +125,14 @@ func TestGoCollectorEffectiveEnvironment(t *testing.T) {
 func TestGoCollectorModuleWithoutGo(t *testing.T) {
 	t.Setenv("PATH", "")
 	for _, tt := range []struct {
-		name    string
-		content string
-		want    string
+		name      string
+		content   string
+		goVersion string
+		toolchain string
 	}{
 		{
 			"missing",
+			"",
 			"",
 			"",
 		},
@@ -138,20 +140,30 @@ func TestGoCollectorModuleWithoutGo(t *testing.T) {
 			"requirement",
 			"module example\ngo 1.27\n",
 			"1.27",
-		},
-		{
-			"patch and comment",
-			"module example\n\tgo\t1.27.2 // requirement\ntoolchain go1.28.1\n",
-			"1.27.2",
-		},
-		{
-			"toolchain only",
-			"module example\ntoolchain go1.28.1\n",
 			"",
 		},
 		{
+			"patch and comment",
+			"module example\n\tgo\t1.27.2 // requirement\ntoolchain go1.28.1 // suggested\n",
+			"1.27.2",
+			"go1.28.1",
+		},
+		{
+			"toolchain only",
+			"module example\ntoolchain go1.28.1-corp\n",
+			"",
+			"go1.28.1-corp",
+		},
+		{
 			"invalid",
-			"module example\ngo invalid\n",
+			"module example\ngo invalid\ntoolchain 1.28.1\n",
+			"",
+			"",
+		},
+		{
+			"default toolchain",
+			"module example\ngo 1.27\ntoolchain default\n",
+			"1.27",
 			"",
 		},
 	} {
@@ -167,10 +179,17 @@ func TestGoCollectorModuleWithoutGo(t *testing.T) {
 			if !errors.Is(err, exec.ErrNotFound) {
 				t.Fatalf("Collect() error = %v, want missing Go", err)
 			}
-			want := make(map[string]any)
+			goMod := make(map[string]string)
 
-			if len(tt.want) > 0 {
-				want["go_version"] = tt.want
+			if len(tt.goVersion) > 0 {
+				goMod["go_version"] = tt.goVersion
+			}
+			if len(tt.toolchain) > 0 {
+				goMod["toolchain"] = tt.toolchain
+			}
+			want := make(map[string]any)
+			if len(goMod) > 0 {
+				want["go_mod"] = goMod
 			}
 			if !reflect.DeepEqual(data, want) {
 				t.Fatalf("Collect() = %+v, want %+v", data, want)
@@ -205,7 +224,7 @@ func TestGoCollectorCommandFailures(t *testing.T) {
 			start := time.Now()
 			data, err := c.Collect(ctx)
 			if err == nil || strings.Contains(err.Error(), "private-value") ||
-				!reflect.DeepEqual(data, map[string]any{"go_version": "1.27"}) {
+				!reflect.DeepEqual(data, map[string]any{"go_mod": map[string]string{"go_version": "1.27"}}) {
 				t.Fatalf("Collect() = %+v, %v; want only the module requirement and a non-sensitive error", data, err)
 			}
 			if mode == "wait" && (!errors.Is(err, context.DeadlineExceeded) || time.Since(start) > 5*time.Second) {
@@ -225,7 +244,7 @@ func TestGoCollectorKeepsEnvWhenModuleUnreadable(t *testing.T) {
 		t.Fatal(err)
 	}
 	data, err := New(root, nil).Collect(t.Context())
-	if err == nil || !strings.Contains(err.Error(), "read project go.mod") || data["go_version"] != nil {
+	if err == nil || !strings.Contains(err.Error(), "read project go.mod") || data["go_mod"] != nil {
 		t.Fatalf("Collect() = %+v, %v; want module read error", data, err)
 	}
 	if env, ok := data["env"].(map[string]string); !ok || env["GOVERSION"] != "go1.27.9" || len(env["GOFLAGS"]) > 0 {
@@ -258,8 +277,9 @@ func TestGoCollectorWithInstalledGo(t *testing.T) {
 		t.Fatal(err)
 	}
 	env := data["env"].(map[string]string)
+	goMod, _ := data["go_mod"].(map[string]string)
 
-	if data["go_version"] != "1.18" || !strings.HasPrefix(env["GOVERSION"], "go") || len(env["GOROOT"]) == 0 {
+	if goMod["go_version"] != "1.18" || !strings.HasPrefix(env["GOVERSION"], "go") || len(env["GOROOT"]) == 0 {
 		t.Fatalf("missing module/toolchain context: %+v", data)
 	}
 	for _, key := range []string{"GOTOOLCHAIN", "GOWORK", "GOFLAGS", "GOPATH", "GOCACHE", "CGO_ENABLED"} {

@@ -19,7 +19,7 @@ const (
 	priority = 25
 )
 
-// Collector collects the project's Go requirement and effective Go settings.
+// Collector collects the project's go.mod Go version and toolchain, and effective Go settings.
 type Collector struct {
 	root    string
 	envVars []string
@@ -53,37 +53,47 @@ func (*Collector) Priority() int {
 
 func (c *Collector) Collect(ctx context.Context) (map[string]any, error) {
 	result := make(map[string]any)
-	goVersion, moduleErr := c.moduleVersion()
-	if len(goVersion) > 0 {
-		result["go_version"] = goVersion
+	goMod, modErr := c.goMod()
+	if len(goMod) > 0 {
+		result["go_mod"] = goMod
 	}
 	env, envErr := c.goEnv(ctx)
 	if len(env) > 0 {
 		result["env"] = env
 	}
-	return result, errors.Join(moduleErr, envErr)
+	return result, errors.Join(modErr, envErr)
 }
 
-func (c *Collector) moduleVersion() (string, error) {
+// goMod returns the go.mod go and toolchain directives as go_version and toolchain.
+func (c *Collector) goMod() (map[string]string, error) {
 	// Read the Go requirement even when the Go executable is unavailable.
 	// #nosec G304 -- The caller explicitly selects the project whose go.mod is inspected.
 	data, err := os.ReadFile(filepath.Join(c.root, "go.mod"))
 	if err != nil {
 		if os.IsNotExist(err) {
-			return "", nil
+			return nil, nil
 		}
 
-		return "", fmt.Errorf("read project go.mod: %w", err)
+		return nil, fmt.Errorf("read project go.mod: %w", err)
 	}
 
+	result := make(map[string]string)
 	for line := range strings.SplitSeq(string(data), "\n") {
 		line, _, _ = strings.Cut(line, "//")
 		fields := strings.Fields(line)
-		if len(fields) == 2 && fields[0] == "go" && version.IsValid("go"+fields[1]) {
-			return fields[1], nil
+		if len(fields) != 2 {
+			continue
+		}
+
+		switch {
+		case fields[0] == "go" && version.IsValid("go"+fields[1]):
+			result["go_version"] = fields[1]
+		case fields[0] == "toolchain" && version.IsValid(fields[1]):
+			// Toolchain names keep their go prefix and any custom suffix, such as go1.27.5-corp.
+			result["toolchain"] = fields[1]
 		}
 	}
-	return "", nil
+	return result, nil
 }
 
 func (c *Collector) goEnv(ctx context.Context) (map[string]string, error) {

@@ -89,7 +89,10 @@ func TestContextYAMLRoundTrip(t *testing.T) {
 			"variables":   map[string]string{"CUSTOM": "false\nvalue: yes"},
 		},
 		"golang": map[string]any{
-			"go_version": "1.27",
+			"go_mod": map[string]string{
+				"go_version": "1.27",
+				"toolchain":  "go1.27.9",
+			},
 			"env": map[string]string{
 				"GOVERSION":   "go1.27.9",
 				"GOTOOLCHAIN": "auto",
@@ -151,8 +154,10 @@ func TestContextYAMLRoundTrip(t *testing.T) {
 	}
 	golang := decoded["golang"].(map[string]any)
 
-	if golang["go_version"] != "1.27" {
-		t.Fatalf("Go requirement did not round-trip: %+v", golang)
+	goMod := golang["go_mod"].(map[string]any)
+
+	if goMod["go_version"] != "1.27" || goMod["toolchain"] != "go1.27.9" {
+		t.Fatalf("go.mod directives did not round-trip: %+v", golang)
 	}
 	for key, want := range data["golang"].(map[string]any)["env"].(map[string]string) {
 		if got := golang["env"].(map[string]any)[key]; got != want {
