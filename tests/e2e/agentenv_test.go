@@ -123,7 +123,8 @@ func TestGeneratedDirectoriesArePrivate(t *testing.T) {
 
 func TestAgentEnvGenerateWithoutLocalOverrides(t *testing.T) {
 	t.Parallel()
-	const shared = providerProjectConfig + `mcp:
+	const shared = providerProjectConfig + `  gh-aw: {mcp-servers: [shared]}
+mcp:
   shared:
     enabled: true
     name: shared
@@ -136,6 +137,8 @@ func TestAgentEnvGenerateWithoutLocalOverrides(t *testing.T) {
     url: http://127.0.0.1:64422/stream
 `
 	const local = `project: {name: local-development}
+providers:
+  gh-aw: {mcp-servers: [shared, jetbrains]}
 mcp:
   jetbrains:
     enabled: true

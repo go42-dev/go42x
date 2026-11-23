@@ -201,6 +201,7 @@ func TestGHAWFragmentGeneration(t *testing.T) {
 	p.env = append(p.env, "GITHUB_TOKEN=local-token-do-not-write", "CONTEXT7_API_KEY=local-key-do-not-write")
 	const local = `providers:
   gh-aw:
+    mcp-servers: [local, remote]
     bindings:
       GITHUB_TOKEN: '${{ github.token }}'
       CONTEXT7_API_KEY: '${{ secrets.REMOTE_API_KEY }}'

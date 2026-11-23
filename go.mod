@@ -10,7 +10,7 @@ require (
 	github.com/hashicorp/go-getter/v2 v2.2.5
 	github.com/klauspost/compress v1.20.2
 	github.com/lmittmann/tint v1.1.2
-	github.com/mark3labs/mcp-go v1.0.0
+	github.com/mark3labs/mcp-go v1.6.0
 	github.com/pelletier/go-toml/v2 v2.2.4
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 	github.com/spf13/cobra v1.10.2

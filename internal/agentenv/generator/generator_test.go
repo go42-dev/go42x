@@ -53,7 +53,7 @@ func TestGenerateBuiltInProjectRoot(t *testing.T) {
 			providerConfig := tt.name + ": {}"
 			header := "${GO42X_PROJECT_ROOT}"
 			if tt.name == ghaw.Name {
-				providerConfig = "gh-aw:\n    bindings:\n      GENERATION_ROOT: '${GO42X_PROJECT_ROOT}'\n"
+				providerConfig = "gh-aw:\n    mcp-servers: [jetbrains]\n    bindings:\n      GENERATION_ROOT: '${GO42X_PROJECT_ROOT}'\n"
 				header = "${GENERATION_ROOT}"
 			}
 			if tt.name == claude.Name {

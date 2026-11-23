@@ -175,7 +175,9 @@ jobs:
             exit 0
           fi
           "$RUNNER_TEMP/gitleaks" dir --no-banner --redact --exit-code 1 "$folder"
-          git commit --quiet -m "journal: ${GITHUB_REPOSITORY}${SUBJECT:+ #$SUBJECT} run ${GITHUB_RUN_ID}"
+          # Conventional commit: the project scopes the change in a shared journal repository.
+          project="${GITHUB_REPOSITORY#*/}"
+          git commit --quiet -m "chore(${project,,}): save journal${SUBJECT:+ for #$SUBJECT} in run ${GITHUB_RUN_ID}"
 
           # This run's version of a file wins. An entry that this run removed and another run
           # changed stays.

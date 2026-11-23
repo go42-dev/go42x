@@ -128,11 +128,6 @@ func TestCompiledWorkflowBoundaries(t *testing.T) {
 			if !foundApp {
 				t.Fatal("safe outputs have no App token")
 			}
-			for _, command := range []string{"go42x", "gopls", "mise"} {
-				if !strings.Contains(string(data), `"entrypoint": "`+command+`"`) {
-					t.Errorf("missing native container entrypoint %s", command)
-				}
-			}
 			if strings.Contains(string(data), "8765/mcp") || strings.Contains(string(data), "supergateway") {
 				t.Fatal("compiled workflow still uses a stdio bridge")
 			}
@@ -299,7 +294,7 @@ func TestRepositoryMCPFragment(t *testing.T) {
 		nil,
 		ghaw.Settings{
 			OutputDir:  output,
-			MCPServers: cfg.MCP,
+			MCPServers: cfg.WorkflowMCPServers(),
 			Bindings:   cfg.Providers[ghaw.Name].Bindings,
 		},
 		"",

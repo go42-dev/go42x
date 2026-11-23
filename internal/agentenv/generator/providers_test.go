@@ -17,6 +17,76 @@ import (
 	"github.com/go42-dev/go42x/internal/config"
 )
 
+func TestGenerateGHAWServers(t *testing.T) {
+	t.Setenv("PATH", "")
+	t.Setenv("GITHUB_ACTIONS", "false")
+	const base = `version: "1.0"
+project: {name: example}
+context: {template: main.tpl.md}
+providers:
+  claude: {}
+  gh-aw:
+    mcp-servers: [workflow]
+mcp:
+  local:
+    enabled: true
+    name: local
+    command: local-server
+  workflow:
+    enabled: false
+    name: workflow
+    command: npx
+    args: [workflow-server]
+`
+	for _, tt := range []struct {
+		providers    []string
+		instructions string
+		workflow     bool
+	}{
+		// gh-aw gets its listed servers, and instructions generated for it describe them.
+		{providers: []string{ghaw.Name}, instructions: "local workflow ", workflow: true},
+		// Local agents keep the enabled servers.
+		{providers: []string{claude.Name}, instructions: "local "},
+	} {
+		t.Run(strings.Join(tt.providers, ","), func(t *testing.T) {
+			cfg, err := config.ParseProjectConfig([]byte(base), nil, tt.providers, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			dir, out := t.TempDir(), t.TempDir()
+			template := "# Example\n\nServers: {{ range $name, $_ := .mcp }}{{ $name }} {{ end }}\n"
+			if err := os.WriteFile(filepath.Join(dir, "main.tpl.md"), []byte(template), 0600); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := NewGenerator(
+				slog.New(slog.DiscardHandler),
+				cfg,
+				dir,
+				out,
+			).Generate(t.Context(), false); err != nil {
+				t.Fatal(err)
+			}
+
+			instructions, err := os.ReadFile(filepath.Join(out, provider.AgentsFile))
+			if err != nil || !strings.Contains(string(instructions), "Servers: "+tt.instructions+"\n") {
+				t.Errorf("instructions = %q, %v; want servers %q", instructions, err, tt.instructions)
+			}
+			workflow, err := os.ReadFile(filepath.Join(out, ghaw.MCPFile))
+			if !tt.workflow {
+				if !os.IsNotExist(err) {
+					t.Errorf("gh-aw output exists without gh-aw: %v", err)
+				}
+				return
+			}
+			if err != nil || !strings.Contains(string(workflow), "mcp-workflow:") ||
+				strings.Contains(string(workflow), "mcp-local:") {
+				t.Errorf("gh-aw servers = %s, %v; want only the listed server", workflow, err)
+			}
+		})
+	}
+}
+
 func TestGenerateGHAWBindings(t *testing.T) {
 	t.Setenv("PATH", "")
 	t.Setenv("GITHUB_ACTIONS", "false")
@@ -26,6 +96,7 @@ project: {name: example}
 context: {template: main.tpl.md}
 providers:
   gh-aw:
+    mcp-servers: [remote]
     bindings:
       TOKEN: '${{ secrets.SHARED_TOKEN }}'
 mcp:

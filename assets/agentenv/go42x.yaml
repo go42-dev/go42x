@@ -129,6 +129,14 @@ providers:
   # Generates .github/workflows/900-aw-mcp.md for import before gh-aw compilation.
   gh-aw:
     enabled: false
+    # MCP servers that agentic workflows get, whether or not they are enabled below for local
+    # agents. Instructions generated for gh-aw describe them too.
+    mcp-servers:
+      - go42x
+      - gopls
+      - mise
+      - context7
+      - github
     # Map ${NAME} references to explicit workflow values; missing bindings fail generation.
     # Keep GitHub ${{ ... }} expressions here. Bindings never read the local environment.
     bindings:
@@ -142,7 +150,7 @@ providers:
 mcp:
   # All tools from enabled servers are available, including tools omitted from these lists.
   # Lists use raw tool names for context descriptions and client approval settings.
-  # Set enabled: false to disable a server.
+  # Set enabled: false to disable a server for local agents; gh-aw uses its own mcp-servers list.
   # Antigravity resolves $NAME and ${NAME} in remote headers during generation.
   # Export these variables before generating; resolved headers stay in ignored plugin output.
   # Optional cwd is a literal path for stdio servers; relative paths use the project directory.

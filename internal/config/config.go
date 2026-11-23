@@ -185,6 +185,20 @@ type Provider struct {
 	MCPApproval        *string           `yaml:"mcp-approval,omitempty"`
 	ProjectDocMaxBytes *int              `yaml:"project-doc-max-bytes,omitempty"`
 	Bindings           map[string]string `yaml:"bindings,omitempty"`
+	MCPServers         []string          `yaml:"mcp-servers,omitempty"`
+}
+
+// WorkflowMCPServers returns the MCP servers that gh-aw lists for agentic workflows, enabled
+// whether or not local agents use them.
+func (c *Config) WorkflowMCPServers() map[string]provider.MCPServer {
+	servers := make(map[string]provider.MCPServer)
+	for _, name := range c.Providers[ghaw.Name].MCPServers {
+		if server, exists := c.MCP[name]; exists {
+			server.Enabled = true
+			servers[name] = server
+		}
+	}
+	return servers
 }
 
 // ProviderEnabled reports whether a provider is configured and enabled.
@@ -330,12 +344,26 @@ func (c *Config) Validate() error {
 		}
 		if server.Enabled && len(server.CWD) > 0 {
 			for _, providerName := range providers {
-				if c.ProviderEnabled(providerName) &&
-					(providerName == claude.Name || providerName == crush.Name || providerName == ghaw.Name) {
+				if c.ProviderEnabled(providerName) && (providerName == claude.Name || providerName == crush.Name) {
 					return fmt.Errorf("MCP server %s: provider %s does not support cwd", name, providerName)
 				}
 			}
 		}
+	}
+
+	// gh-aw uses the servers it lists, not the enabled ones.
+	listed := make(map[string]bool)
+	for _, name := range c.Providers[ghaw.Name].MCPServers {
+		server, exists := c.MCP[name]
+		switch {
+		case !exists:
+			return fmt.Errorf("providers.gh-aw.mcp-servers: unknown MCP server %q", name)
+		case listed[name]:
+			return fmt.Errorf("providers.gh-aw.mcp-servers: duplicate MCP server %q", name)
+		case c.ProviderEnabled(ghaw.Name) && len(server.CWD) > 0:
+			return fmt.Errorf("MCP server %s: provider %s does not support cwd", name, ghaw.Name)
+		}
+		listed[name] = true
 	}
 
 	return nil
@@ -414,6 +442,9 @@ func validateProvider(p Provider, name string) error {
 
 	if p.Bindings != nil && name != ghaw.Name {
 		return fmt.Errorf("bindings is only supported by gh-aw")
+	}
+	if p.MCPServers != nil && name != ghaw.Name {
+		return fmt.Errorf("mcp-servers is only supported by gh-aw")
 	}
 
 	for _, reference := range slices.Sorted(maps.Keys(p.Bindings)) {

@@ -1069,6 +1069,28 @@ context: {template: agents.tpl.md}
 			true,
 		},
 		{
+			"workflow MCP servers",
+			`providers: {gh-aw: {mcp-servers: [server]}}
+mcp: {server: {name: server, command: go42x}}`,
+			false,
+		},
+		{
+			"workflow MCP servers on another provider",
+			"providers: {codex: {mcp-servers: []}}",
+			true,
+		},
+		{
+			"unknown workflow MCP server",
+			"providers: {gh-aw: {mcp-servers: [missing]}}",
+			true,
+		},
+		{
+			"duplicate workflow MCP server",
+			`providers: {gh-aw: {mcp-servers: [server, server]}}
+mcp: {server: {name: server, command: go42x}}`,
+			true,
+		},
+		{
 			"raw MCP tool names",
 			`providers: {codex: {}}
 mcp: {server: {name: server, command: go42x, tools: [search, tool.v2-test, find_mcp__server]}}`,
@@ -1157,9 +1179,14 @@ func TestDisabledProvidersAllowMCPCWD(t *testing.T) {
 		} {
 			t.Run(name+"/"+tt.name, func(t *testing.T) {
 				cfg := validProviderConfig()
+				selected := Provider{Enabled: tt.enabled}
+				if name == ghaw.Name {
+					// gh-aw runs the servers it lists, enabled or not.
+					selected.MCPServers = []string{"example"}
+				}
 				cfg.Providers = map[string]Provider{
 					"codex": {},
-					name:    {Enabled: tt.enabled},
+					name:    selected,
 				}
 				cfg.MCP["example"] = provider.MCPServer{
 					Enabled: true,

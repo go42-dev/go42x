@@ -208,6 +208,11 @@ func (g *Generator) buildTemplateContext(ctx context.Context) (*Context, error) 
 			servers[name] = server
 		}
 	}
+	// Instructions describe the servers their readers get: the enabled ones, and gh-aw's own
+	// list when gh-aw is selected.
+	if g.config.ProviderEnabled(ghaw.Name) {
+		maps.Copy(servers, g.config.WorkflowMCPServers())
+	}
 
 	tplCtx.Set("mcp", servers)
 
@@ -319,7 +324,7 @@ func (g *Generator) registerProviders() {
 		templateEngine,
 		ghaw.Settings{
 			OutputDir:  g.outputDir,
-			MCPServers: servers,
+			MCPServers: g.config.WorkflowMCPServers(),
 			Bindings:   g.config.Providers[ghaw.Name].Bindings,
 		},
 		g.templateDir,
