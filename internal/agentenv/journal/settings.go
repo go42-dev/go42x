@@ -98,7 +98,7 @@ func RuntimeFromClient(name string) string {
 		return antigravity.Name
 	case strings.Contains(name, "crush"):
 		return crush.Name
-	case strings.Contains(name, ghaw.Name):
+	case strings.Contains(name, ghaw.Name), strings.Contains(name, ghaw.GatewayClient):
 		return ghaw.Name
 	}
 

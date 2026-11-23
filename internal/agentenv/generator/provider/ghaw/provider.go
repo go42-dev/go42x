@@ -21,6 +21,10 @@ const Name = "gh-aw"
 // CLI.
 const DefaultEngine = "copilot"
 
+// GatewayClient is the client name of gh-aw's MCP gateway, which connects to MCP servers on
+// behalf of a workflow's engine.
+const GatewayClient = "awmg"
+
 // MCPFile declares the enabled MCP servers for agentic workflows to import.
 const MCPFile = ".github/workflows/900-aw-mcp.md"
 

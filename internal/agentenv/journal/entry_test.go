@@ -301,6 +301,7 @@ func TestRuntimeFromClient(t *testing.T) {
 		"gemini-cli":                      "antigravity",
 		"crush":                           "crush",
 		"gh-aw":                           "gh-aw",
+		"awmg":                            "gh-aw",
 		"Cursor":                          "cursor",
 		"inspector":                       "inspector",
 		"  my_agent v2 ":                  "my-agent-v2",
