@@ -232,8 +232,8 @@ func TestProjectConfigExactProviderSelection(t *testing.T) {
 		},
 		{
 			"multiple",
-			[]string{"codex", "copilot"},
-			[]string{"codex", "copilot"},
+			[]string{"codex", "crush"},
+			[]string{"codex", "crush"},
 		},
 		{
 			"explicit none",
@@ -246,7 +246,7 @@ func TestProjectConfigExactProviderSelection(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			for _, name := range []string{"claude", "codex", "antigravity", "crush", "copilot", "gh-aw"} {
+			for _, name := range []string{"claude", "codex", "antigravity", "crush", "gh-aw"} {
 				if cfg.ProviderEnabled(name) != slices.Contains(tt.want, name) {
 					t.Errorf("provider %s enabled = %v; selection %v", name, cfg.ProviderEnabled(name), tt.selection)
 				}

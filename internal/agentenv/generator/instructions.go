@@ -18,7 +18,6 @@ import (
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/antigravity"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/claude"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/codex"
-	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/copilot"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/crush"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/ghaw"
 	"github.com/go42-dev/go42x/internal/config"
@@ -35,8 +34,6 @@ const (
 )
 
 const dirWorkflows = ".github/workflows"
-
-const engineShared = "shared"
 
 var (
 	instructionImportPattern = regexp.MustCompile(`(?m)^@([^\s]+)[ \t]*$`)
@@ -167,9 +164,9 @@ func instructionTargets(root string, cfg *config.Config) ([]instructionTarget, e
 		return nil, err
 	}
 	targets = append(targets, workflows...)
+	// A target without an engine stands for any agent that reads AGENTS.md.
 	if len(targets) == 0 {
 		targets = append(targets, instructionTarget{
-			engine: engineShared,
 			source: filepath.Join(config.Directory, config.FileProject),
 		})
 	}
@@ -188,7 +185,8 @@ func instructionLimit(target instructionTarget) (int, string, error) {
 		return claude.MaxInstructionBytes, limitSourceRuntime, nil
 	case antigravity.Name:
 		return antigravity.MaxInstructionBytes, limitSourceRuntime, nil
-	case copilot.Name, crush.Name, engineShared:
+	// Copilot and Crush document no limit; a target without an engine has no known reader.
+	case ghaw.DefaultEngine, crush.Name, "":
 		return budgetInstructionBytes, limitSourcePolicy, nil
 	default:
 		return 0, "", fmt.Errorf("cannot determine instruction limit for engine %q in %s", target.engine, target.source)
@@ -227,8 +225,7 @@ func workflowInstructionTargets(root string) ([]instructionTarget, error) {
 			return nil, err
 		}
 		if len(engine.ID) == 0 {
-			// gh-aw defaults to Copilot when neither the workflow nor its imports select an engine.
-			engine.ID = copilot.Name
+			engine.ID = ghaw.DefaultEngine
 		}
 		if engine.ID == antigravity.EngineAlias {
 			engine.ID = antigravity.Name
@@ -382,7 +379,8 @@ func (r *instructionReader) measure(path, engine string, visiting map[string]boo
 		}
 	}
 	size := len(content)
-	if engine != claude.Name && engine != copilot.Name && engine != antigravity.Name {
+	// Claude, Copilot, and Antigravity load the files that instructions import.
+	if engine != claude.Name && engine != ghaw.DefaultEngine && engine != antigravity.Name {
 		r.sizes[path] = size
 		return size, nil
 	}

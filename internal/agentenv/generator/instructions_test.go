@@ -1,6 +1,7 @@
 package generator
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"os"
@@ -31,20 +32,23 @@ func TestInstructionSizes(t *testing.T) {
 			limit:  24000,
 		},
 		{
-			engine: "copilot",
-			limit:  24000,
-			policy: true,
-		},
-		{
 			engine: "crush",
 			limit:  24000,
 			policy: true,
 		},
+		{
+			// Without a provider or workflow, any agent may read AGENTS.md.
+			limit:  24000,
+			policy: true,
+		},
 	} {
-		t.Run(tt.engine, func(t *testing.T) {
+		t.Run(cmp.Or(tt.engine, "any agent"), func(t *testing.T) {
 			root := t.TempDir()
 			t.Setenv("CODEX_HOME", t.TempDir())
-			cfg := &config.Config{Providers: map[string]config.Provider{tt.engine: {}}}
+			cfg := &config.Config{Providers: map[string]config.Provider{}}
+			if len(tt.engine) > 0 {
+				cfg.Providers[tt.engine] = config.Provider{}
+			}
 			for _, extra := range []int{0, 1} {
 				content := []byte(strings.Repeat("x", tt.limit+extra))
 

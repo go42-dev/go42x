@@ -1042,7 +1042,7 @@ func TestAntigravityHeaderEnvironment(t *testing.T) {
 	for _, token := range []string{"test-token-one", "test-token-two"} {
 		p.env[len(p.env)-1] = "AGY_TEST_TOKEN=" + token
 		p.run(t, 0, "agentenv", "generate")
-		var native, copilot map[string]any
+		var native, client map[string]any
 		if err := json.Unmarshal(
 			[]byte(p.read(t, ".agents/plugins/project-tools/mcp_config.json")),
 			&native,
@@ -1052,10 +1052,10 @@ func TestAntigravityHeaderEnvironment(t *testing.T) {
 		assertSetting(t, native, "mcpServers.github.headers.Authorization", "Bearer "+token)
 		assertSetting(t, native, "mcpServers.github.headers.X-Label", "example")
 		assertSetting(t, native, "mcpServers.github.headers.X-MCP-Toolsets", "all")
-		if err := json.Unmarshal([]byte(p.read(t, ".mcp.json")), &copilot); err != nil {
+		if err := json.Unmarshal([]byte(p.read(t, ".mcp.json")), &client); err != nil {
 			t.Fatal(err)
 		}
-		assertSetting(t, copilot, "mcpServers.github.headers.Authorization", "Bearer ${AGY_TEST_TOKEN}")
+		assertSetting(t, client, "mcpServers.github.headers.Authorization", "Bearer ${AGY_TEST_TOKEN}")
 		if p.read(t, ".go42x/go42x.local.yaml") != local {
 			t.Fatal("generation changed the authored header references")
 		}
@@ -1307,7 +1307,7 @@ func TestAgentEnvInitForceFailureBeforeApplication(t *testing.T) {
 		{
 			"incompatible configuration",
 			".go42x/go42x.local.yaml",
-			"providers: {claude: {enabled: true}}\nmcp: {gopls: {cwd: src}}\n",
+			"providers: {claude: {enabled: true}}\nmcp: {go42x: {cwd: src}}\n",
 		},
 		{
 			"malformed gitignore block",

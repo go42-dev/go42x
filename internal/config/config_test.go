@@ -642,7 +642,7 @@ func TestDefaultConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cfg.Providers) != 6 || len(cfg.MCP) != 8 {
+	if len(cfg.Providers) != 5 || len(cfg.MCP) != 9 {
 		t.Fatalf("default providers/servers = %d/%d", len(cfg.Providers), len(cfg.MCP))
 	}
 	paths := []string{cfg.Context.Template, cfg.Context.ChunksDir, cfg.Context.SkillsDir}
@@ -658,7 +658,7 @@ func TestDefaultConfig(t *testing.T) {
 		if len(s.Tools) == 0 {
 			t.Errorf("server %s has no tools", name)
 		}
-		if s.Enabled != (name == "go42x" || name == "gopls" || name == "mise") {
+		if s.Enabled != (name == "go42x") {
 			t.Errorf("unexpected enabled state for %s", name)
 		}
 	}
@@ -881,7 +881,7 @@ func TestLoadConfigProviderEnabled(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "go42x.yaml")
 			data := "version: '1.0'\nproject: {name: example}\ncontext: {template: agents.tpl.md}\nproviders:\n"
-			for _, name := range []string{"claude", "codex", "antigravity", "crush", "copilot", "gh-aw"} {
+			for _, name := range []string{"claude", "codex", "antigravity", "crush", "gh-aw"} {
 				data += "  " + name + ": " + tt.entry + "\n"
 			}
 			if err := os.WriteFile(path, []byte(data), 0600); err != nil {
@@ -1007,7 +1007,7 @@ context: {template: agents.tpl.md}
 		},
 		{
 			"unsupported provider option",
-			"providers: {copilot: {approval-policy: never}}",
+			"providers: {crush: {approval-policy: never}}",
 			true,
 		},
 		{
@@ -1025,7 +1025,7 @@ context: {template: agents.tpl.md}
 		},
 		{
 			name:    "empty bindings on another provider",
-			content: "providers: {copilot: {bindings: {}}}",
+			content: "providers: {antigravity: {bindings: {}}}",
 			wantErr: true,
 		},
 		{
@@ -1158,8 +1158,8 @@ func TestDisabledProvidersAllowMCPCWD(t *testing.T) {
 			t.Run(name+"/"+tt.name, func(t *testing.T) {
 				cfg := validProviderConfig()
 				cfg.Providers = map[string]Provider{
-					"copilot": {},
-					name:      {Enabled: tt.enabled},
+					"codex": {},
+					name:    {Enabled: tt.enabled},
 				}
 				cfg.MCP["example"] = provider.MCPServer{
 					Enabled: true,

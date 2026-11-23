@@ -20,7 +20,6 @@ import (
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/antigravity"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/claude"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/codex"
-	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/copilot"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/crush"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/ghaw"
 )
@@ -399,7 +398,6 @@ func ProviderNames() []string {
 		codex.Name,
 		antigravity.Name,
 		crush.Name,
-		copilot.Name,
 		ghaw.Name,
 	}
 }

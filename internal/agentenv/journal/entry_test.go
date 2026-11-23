@@ -155,7 +155,7 @@ func TestSchemaMatchesRules(t *testing.T) {
 	var schema struct {
 		Properties struct {
 			Runtime struct {
-				Enum []string `json:"enum"`
+				Pattern string `json:"pattern"`
 			} `json:"runtime"`
 			Tags struct {
 				MaxItems int `json:"maxItems"`
@@ -172,8 +172,8 @@ func TestSchemaMatchesRules(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !slices.Equal(schema.Properties.Runtime.Enum, Runtimes()) {
-		t.Errorf("schema runtimes = %q, want %q", schema.Properties.Runtime.Enum, Runtimes())
+	if schema.Properties.Runtime.Pattern != runtimePattern.String() {
+		t.Errorf("schema runtime pattern = %q, want %q", schema.Properties.Runtime.Pattern, runtimePattern)
 	}
 	if schema.Properties.Tags.Items.Pattern != tagPattern.String() || schema.Properties.Tags.MaxItems != maxTags {
 		t.Errorf("schema tags = %+v, want pattern %q and at most %d", schema.Properties.Tags, tagPattern, maxTags)
@@ -208,7 +208,7 @@ func TestDecodeEntryRejectsInvalidRecords(t *testing.T) {
 		"missing keep":       func(m map[string]any) { delete(m, "keep") },
 		"other version":      func(m map[string]any) { m["version"] = 1 },
 		"status of v1":       func(m map[string]any) { m["status"] = "open" },
-		"unknown runtime":    func(m map[string]any) { m["runtime"] = "robot" },
+		"invalid runtime":    func(m map[string]any) { m["runtime"] = "Robot Agent" },
 		"invalid tag":        func(m map[string]any) { m["tags"] = []string{"Bad Tag"} },
 		"directory mismatch": func(m map[string]any) { m["id"] = "20261110-other-0000" },
 	} {
@@ -257,8 +257,14 @@ func TestDetectActor(t *testing.T) {
 			want: Actor{Runtime: "claude"},
 		},
 		{
-			name: "unknown agent falls back to markers",
+			// A marker such as CLAUDECODE can come from a parent process; the agent's own name wins.
+			name: "named agent wins over markers",
 			env:  map[string]string{"AI_AGENT": "robot_1_agent", "CLAUDECODE": "1"},
+			want: Actor{Runtime: "robot"},
+		},
+		{
+			name: "agent without a usable name falls back to markers",
+			env:  map[string]string{"AI_AGENT": "__", "CLAUDECODE": "1"},
 			want: Actor{Runtime: "claude"},
 		},
 		{
@@ -288,18 +294,26 @@ func TestDetectActor(t *testing.T) {
 func TestRuntimeFromClient(t *testing.T) {
 	t.Parallel()
 	for name, want := range map[string]string{
-		"claude-code":      "claude",
-		"codex-mcp-client": "codex",
-		"GitHub Copilot":   "copilot",
-		"antigravity":      "antigravity",
-		"gemini-cli":       "antigravity",
-		"crush":            "crush",
-		"gh-aw":            "gh-aw",
-		"":                 RuntimeUnknown,
-		"inspector":        RuntimeUnknown,
+		"claude-code":                     "claude",
+		"codex-mcp-client":                "codex",
+		"GitHub Copilot":                  "github-copilot",
+		"antigravity":                     "antigravity",
+		"gemini-cli":                      "antigravity",
+		"crush":                           "crush",
+		"gh-aw":                           "gh-aw",
+		"Cursor":                          "cursor",
+		"inspector":                       "inspector",
+		"  my_agent v2 ":                  "my-agent-v2",
+		strings.Repeat("a", 31) + " tail": strings.Repeat("a", 31),
+		"":                                RuntimeUnknown,
+		"Кодекс":                          RuntimeUnknown,
 	} {
-		if got := RuntimeFromClient(name); got != want {
+		got := RuntimeFromClient(name)
+		if got != want {
 			t.Errorf("RuntimeFromClient(%q) = %q, want %q", name, got, want)
+		}
+		if err := (Actor{Runtime: got}).Validate(); err != nil {
+			t.Errorf("RuntimeFromClient(%q) = %q, which an entry rejects: %v", name, got, err)
 		}
 	}
 }

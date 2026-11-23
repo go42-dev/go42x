@@ -227,21 +227,14 @@ properties:
         additionalProperties: false
       antigravity:
         type: object
-        description: Workspace project-tools plugin with all enabled MCP servers. Tool approvals are managed in Antigravity
-          user settings.
+        description: Workspace project-tools plugin with all enabled MCP servers. Antigravity asks before running an MCP tool
+          unless its permission rules, such as mcp(server/tool), allow it.
         properties:
           enabled:
             $ref: '#/definitions/providerEnabled'
         additionalProperties: false
       crush:
         $ref: '#/definitions/toolApprovalProvider'
-      copilot:
-        type: object
-        description: All MCP tools are available. Tool approvals are managed in Copilot's user settings.
-        properties:
-          enabled:
-            $ref: '#/definitions/providerEnabled'
-        additionalProperties: false
       gh-aw:
         type: object
         description: Importable MCP Markdown fragment for GitHub Agentic Workflows. Workflow configuration remains repository-owned.
@@ -353,8 +346,8 @@ properties:
         cwd:
           type: string
           description: Working directory for stdio servers after built-in substitution. Relative paths resolve from the project
-            directory; omit or leave empty for the client's default. Supported by Codex, Antigravity, and Copilot; rejected
-            on enabled servers when Claude or Crush is enabled. Environment variables and home expansion are not supported.
+            directory; omit or leave empty for the client's default. Supported by Codex and Antigravity; rejected on enabled
+            servers when Claude or Crush is enabled. Environment variables and home expansion are not supported.
           pattern: ^$|\S
           not:
             pattern: "\0"

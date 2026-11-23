@@ -20,7 +20,6 @@ import (
 
 	"github.com/go42-dev/go42x/assets"
 	"github.com/go42-dev/go42x/internal/buildinfo"
-	"github.com/go42-dev/go42x/internal/config"
 )
 
 // Runtimes that are not agent providers.
@@ -30,23 +29,25 @@ const (
 )
 
 const (
-	entryVersion   = 2
-	entryFile      = "entry.json"
-	notesFile      = "notes.md"
-	logFile        = "log.jsonl"
-	indexFile      = ".index.json"
-	lockFile       = ".lock"
-	schemaPath     = "schemas/journal-entry.schema.json"
-	schemaLinkPath = "assets/agentenv/" + schemaPath
-	notesTemplate  = "skills/go42x-journal/notes.md"
-	maxTags        = 8
-	maxTitleLength = 200
-	maxSlugLength  = 40
+	entryVersion     = 2
+	entryFile        = "entry.json"
+	notesFile        = "notes.md"
+	logFile          = "log.jsonl"
+	indexFile        = ".index.json"
+	lockFile         = ".lock"
+	schemaPath       = "schemas/journal-entry.schema.json"
+	schemaLinkPath   = "assets/agentenv/" + schemaPath
+	notesTemplate    = "skills/go42x-journal/notes.md"
+	maxTags          = 8
+	maxTitleLength   = 200
+	maxSlugLength    = 40
+	maxRuntimeLength = 32
 )
 
 var (
 	idPattern       = regexp.MustCompile(`^[0-9]{8}-[a-z0-9]+(?:-[a-z0-9]+)*-[0-9a-f]{4}$`)
 	tagPattern      = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
+	runtimePattern  = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
 	slugPattern     = regexp.MustCompile(`[^a-z0-9]+`)
 	fileNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
 	commentPattern  = regexp.MustCompile(`(?s)<!--.*?-->`)
@@ -103,16 +104,10 @@ type Actor struct {
 	Session string `json:"session,omitempty"`
 }
 
-// Runtimes returns the runtime names an entry can record: the agent providers, a human,
-// and an unknown runtime.
-func Runtimes() []string {
-	return append(config.ProviderNames(), RuntimeHuman, RuntimeUnknown)
-}
-
 // Validate checks an actor before it is recorded.
 func (a Actor) Validate() error {
-	if !slices.Contains(Runtimes(), a.Runtime) {
-		return fmt.Errorf("runtime must be one of %s", strings.Join(Runtimes(), ", "))
+	if !runtimePattern.MatchString(a.Runtime) {
+		return fmt.Errorf("runtime must be 1 to 32 lowercase letters, digits, or hyphens, such as claude or human")
 	}
 	if utf8.RuneCountInString(a.Session) > 200 || strings.ContainsFunc(a.Session, isControl) {
 		return fmt.Errorf("session must be at most 200 characters without control characters")

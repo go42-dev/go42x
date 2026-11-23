@@ -14,8 +14,6 @@ providers:
     enabled: true
   crush:
     enabled: true
-  copilot:
-    enabled: true
 mcp:
   local:
     enabled: true

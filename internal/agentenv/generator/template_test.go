@@ -59,11 +59,6 @@ func TestTemplateProcessing(t *testing.T) {
 			`{{ mcpTool "crush" "go42x" "kwb_search" }}`,
 			"mcp_go42x_kwb_search",
 		},
-		{
-			"MCP Copilot",
-			`{{ mcpTool "copilot" "go42x" "kwb_search" }}`,
-			"go42x/kwb_search",
-		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := e.Process(tt.template, map[string]any{

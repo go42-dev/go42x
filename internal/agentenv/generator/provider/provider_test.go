@@ -15,7 +15,6 @@ import (
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/antigravity"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/claude"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/codex"
-	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/copilot"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/crush"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/ghaw"
 	"github.com/go42-dev/go42x/internal/config"
@@ -48,7 +47,6 @@ func makeProvider(
 				MCPServers:       cfg.MCP,
 				Agents:           cfg.Providers[name].Agents,
 				AutoApproveTools: cfg.Providers[name].AutoApproveTools,
-				WriteMCPFile:     !cfg.ProviderEnabled(copilot.Name),
 			},
 			dir,
 		)
@@ -83,16 +81,6 @@ func makeProvider(
 				OutputDir:        out,
 				MCPServers:       cfg.MCP,
 				AutoApproveTools: cfg.Providers[name].AutoApproveTools,
-			},
-			dir,
-		)
-	case copilot.Name:
-		return copilot.New(
-			logger,
-			engine,
-			copilot.Settings{
-				OutputDir:  out,
-				MCPServers: cfg.MCP,
 			},
 			dir,
 		)
@@ -142,10 +130,6 @@ func TestProviderMCPLifecycle(t *testing.T) {
 		{
 			crush.Name,
 			".crush.json",
-		},
-		{
-			copilot.Name,
-			".mcp.json",
 		},
 		{
 			ghaw.Name,
@@ -230,14 +214,13 @@ func TestProviderMCPLifecycle(t *testing.T) {
 }
 
 func TestProviderGenerationErrors(t *testing.T) {
-	for _, name := range []string{claude.Name, antigravity.Name, crush.Name, copilot.Name} {
+	for _, name := range []string{claude.Name, antigravity.Name, crush.Name} {
 		t.Run(name, func(t *testing.T) {
 			dir, out := t.TempDir(), t.TempDir()
 			path := map[string]string{
 				claude.Name:      ".claude/settings.local.json",
 				antigravity.Name: ".agents/plugins/project-tools/mcp_config.json",
 				crush.Name:       ".crush.json",
-				copilot.Name:     ".mcp.json",
 			}[name]
 			if err := os.MkdirAll(filepath.Join(out, path), 0755); err != nil {
 				t.Fatal(err)

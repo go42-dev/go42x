@@ -17,6 +17,10 @@ import (
 
 const Name = "gh-aw"
 
+// DefaultEngine is the engine that gh-aw runs when a workflow and its imports name none: Copilot
+// CLI.
+const DefaultEngine = "copilot"
+
 // MCPFile declares the enabled MCP servers for agentic workflows to import.
 const MCPFile = ".github/workflows/900-aw-mcp.md"
 

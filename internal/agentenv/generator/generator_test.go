@@ -26,7 +26,6 @@ import (
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/antigravity"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/claude"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/codex"
-	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/copilot"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/crush"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/ghaw"
 	"github.com/go42-dev/go42x/internal/config"
@@ -46,7 +45,6 @@ func TestGenerateBuiltInProjectRoot(t *testing.T) {
 		{codex.Name, ".codex/config.toml", "mcp_servers", "http_headers"},
 		{antigravity.Name, ".agents/plugins/project-tools/mcp_config.json", "mcpServers", "headers"},
 		{crush.Name, ".crush.json", "mcp", "headers"},
-		{copilot.Name, ".mcp.json", "mcpServers", "headers"},
 		{ghaw.Name, ghaw.MCPFile, "mcp-servers", "headers"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -439,6 +437,8 @@ func TestGenerateMCPConfigurations(t *testing.T) {
 	t.Setenv("API_KEY", "test-api-key")
 	t.Setenv("CONTEXT7_API_KEY", "test-context7-key")
 	t.Setenv("GITHUB_TOKEN", "test-github-token")
+	t.Setenv("GITLAB_TOKEN", "test-gitlab-token")
+	t.Setenv("SLACK_USER_TOKEN", "test-slack-token")
 	templateDir := filepath.Join("..", "..", "..", "assets", "agentenv")
 	cfg, err := config.LoadConfig(filepath.Join(templateDir, "go42x.yaml"))
 	if err != nil {
@@ -473,7 +473,7 @@ func TestGenerateMCPConfigurations(t *testing.T) {
 		Env: map[string]string{
 			"TOKEN":   "${TOKEN:-fallback}",
 			"LITERAL": "true",
-			"READY":   "$COPILOT_MCP_READY",
+			"READY":   "$CLIENT_MCP_READY",
 		},
 	}
 	cfg.MCP["disabled"] = provider.MCPServer{
@@ -500,11 +500,8 @@ func TestGenerateMCPConfigurations(t *testing.T) {
 		t.Fatalf("invalid Antigravity plugin manifest: %+v", manifest)
 	}
 	crushConfig := readJSON[crush.Config](t, out, ".crush.json")
-	copilotConfig := readJSON[copilot.MCPConfig](t, out, ".mcp.json")
 
-	if len(claudeMCP.MCPServers) != 10 || len(antigravityConfig.MCPServers) != 10 ||
-		len(copilotConfig.MCPServers) != 10 ||
-		len(crushConfig.MCP) != 10 {
+	if len(claudeMCP.MCPServers) != 11 || len(antigravityConfig.MCPServers) != 11 || len(crushConfig.MCP) != 11 {
 		t.Fatal("enabled server set does not match generated configurations")
 	}
 	for name, s := range cfg.MCP {
@@ -513,12 +510,6 @@ func TestGenerateMCPConfigurations(t *testing.T) {
 		}
 		if claudeMCP.MCPServers[name].Type != s.Transport() {
 			t.Errorf("Claude transport for %s", name)
-		}
-		if copilotConfig.MCPServers[name].Type != s.Transport() {
-			t.Errorf("Copilot transport for %s", name)
-		}
-		if !slices.Equal(copilotConfig.MCPServers[name].Tools, []string{"*"}) {
-			t.Errorf("Copilot must make all tools available for %s", name)
 		}
 		if _, ok := antigravityConfig.MCPServers[name]; !ok ||
 			!slices.Contains(claudeSettings.EnabledMCPServers, name) {
@@ -552,18 +543,19 @@ func TestGenerateMCPConfigurations(t *testing.T) {
 		antigravityConfig.MCPServers["github"].Headers["X-MCP-Toolsets"] != "all" {
 		t.Error("Antigravity GitHub headers were not resolved")
 	}
-	if copilotConfig.MCPServers["sse"].Headers["Authorization"] != "Bearer ${API_KEY}" {
-		t.Error("Copilot header reference changed")
+	// Clients that read .mcp.json resolve references themselves, so generation keeps them.
+	if claudeMCP.MCPServers["sse"].Headers["Authorization"] != "Bearer ${API_KEY}" {
+		t.Error("Claude header reference changed")
 	}
-	if copilotConfig.MCPServers["github"].Headers["Authorization"] != "Bearer ${GITHUB_TOKEN}" {
-		t.Error("Copilot GitHub secret reference changed")
+	if claudeMCP.MCPServers["github"].Headers["Authorization"] != "Bearer ${GITHUB_TOKEN}" {
+		t.Error("Claude GitHub secret reference changed")
 	}
-	local := copilotConfig.MCPServers["local"]
+	local := claudeMCP.MCPServers["local"]
 
 	if local.Env["TOKEN"] != "${TOKEN:-fallback}" || local.Env["LITERAL"] != "true" ||
-		local.Env["READY"] != "$COPILOT_MCP_READY" ||
+		local.Env["READY"] != "$CLIENT_MCP_READY" ||
 		local.Args[0] != "--token=$TOKEN" {
-		t.Fatalf("Copilot environment references changed = %+v", local)
+		t.Fatalf("Claude environment references changed = %+v", local)
 	}
 	antigravityLocal := antigravityConfig.MCPServers["local"]
 

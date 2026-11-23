@@ -26,6 +26,9 @@ import (
 
 const SchemaVersion = "1.0"
 
+// SchemaPath is the repository path of the manifest schema that editor schema links name.
+const SchemaPath = "assets/vendoring/vendor.schema.yaml"
+
 const ManifestFile = ".vendor.yaml"
 
 type Manifest struct {
@@ -286,7 +289,7 @@ func Touch(ctx context.Context, directory string, data map[string]any) (*Result,
 		data = make(map[string]any)
 	}
 	data["vendoring"] = struct{ SchemaURL, SchemaVersion string }{
-		SchemaURL:     buildinfo.SourceURL("assets/schemas/vendor.schema.yaml"),
+		SchemaURL:     buildinfo.SourceURL(SchemaPath),
 		SchemaVersion: SchemaVersion,
 	}
 	manifest, err := assets.Render(assets.VendorManifest, data)

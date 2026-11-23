@@ -1,6 +1,7 @@
 package generator
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -19,7 +20,6 @@ import (
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/antigravity"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/claude"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/codex"
-	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/copilot"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/crush"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/ghaw"
 	"github.com/go42-dev/go42x/internal/config"
@@ -247,7 +247,7 @@ func (g *Generator) prepareInstructions(
 		}
 
 		g.logger.WarnContext(ctx, check.warning,
-			slog.String("engine", check.engine),
+			slog.String("engine", cmp.Or(check.engine, "any")),
 			slog.String("source", check.source),
 			slog.String("file", check.file),
 			slog.Int("bytes", check.bytes),
@@ -280,7 +280,6 @@ func (g *Generator) registerProviders() {
 			MCPServers:       servers,
 			Agents:           claudeConfig.Agents,
 			AutoApproveTools: claudeConfig.AutoApproveTools,
-			WriteMCPFile:     !g.config.ProviderEnabled(copilot.Name),
 		},
 		g.templateDir,
 	)
@@ -310,15 +309,6 @@ func (g *Generator) registerProviders() {
 		g.logger.With(slog.String("provider", antigravity.Name)),
 		templateEngine,
 		antigravity.Settings{
-			OutputDir:  g.outputDir,
-			MCPServers: servers,
-		},
-		g.templateDir,
-	)
-	g.providers[copilot.Name] = copilot.New(
-		g.logger.With(slog.String("provider", copilot.Name)),
-		templateEngine,
-		copilot.Settings{
 			OutputDir:  g.outputDir,
 			MCPServers: servers,
 		},

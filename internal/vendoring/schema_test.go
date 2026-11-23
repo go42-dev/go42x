@@ -12,7 +12,7 @@ import (
 
 func compileVendorSchema(t *testing.T) *jsonschema.Schema {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join("..", "..", "assets", "schemas", "vendor.schema.yaml"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "assets", "vendoring", "vendor.schema.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}

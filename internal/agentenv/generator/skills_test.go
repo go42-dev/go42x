@@ -14,7 +14,6 @@ import (
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/antigravity"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/claude"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/codex"
-	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/copilot"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/crush"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/ghaw"
 	"github.com/go42-dev/go42x/internal/config"
@@ -77,12 +76,6 @@ func TestPrepareSkillsTargetsEnabledProviders(t *testing.T) {
 		{name: "claude", providers: []string{claude.Name}, want: []string{claude.SkillsDir}},
 		{name: "codex", providers: []string{codex.Name}, want: []string{provider.SharedSkillsDir}},
 		{name: "antigravity", providers: []string{antigravity.Name}, want: []string{provider.SharedSkillsDir}},
-		{name: "copilot", providers: []string{copilot.Name}, want: []string{provider.SharedSkillsDir}},
-		{
-			name:      "claude and copilot",
-			providers: []string{claude.Name, copilot.Name},
-			want:      []string{claude.SkillsDir, provider.SharedSkillsDir},
-		},
 		{
 			name:      "claude and codex",
 			providers: []string{claude.Name, codex.Name},

@@ -12,7 +12,6 @@ import (
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/antigravity"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/claude"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/codex"
-	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/copilot"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/crush"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/ghaw"
 	"github.com/go42-dev/go42x/internal/config"
@@ -108,7 +107,6 @@ func TestGenerateProviderToggles(t *testing.T) {
 		codex.Name:       ".codex/config.toml",
 		antigravity.Name: ".agents/plugins/project-tools/mcp_config.json",
 		crush.Name:       ".crush.json",
-		copilot.Name:     ".mcp.json",
 		ghaw.Name:        ghaw.MCPFile,
 	}
 	for name := range settingsFiles {

@@ -40,7 +40,7 @@ func TestJournalCommands(t *testing.T) {
 	for _, args := range [][]string{
 		{"agentenv", "journal", "new"},
 		{"agentenv", "journal", "new", "--title", "Task", "--tag", "Not_A_Tag"},
-		{"agentenv", "journal", "new", "--title", "Task", "--runtime", "robot"},
+		{"agentenv", "journal", "new", "--title", "Task", "--runtime", "Robot Agent"},
 		{"agentenv", "journal", "show", "../outside"},
 		{"agentenv", "journal", "list", "--stray", "--kept"},
 		{"agentenv", "journal", "list", "--status", "open"},

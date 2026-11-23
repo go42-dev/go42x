@@ -7,7 +7,6 @@ import (
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/antigravity"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/claude"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/codex"
-	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/copilot"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/crush"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/ghaw"
 )
@@ -86,7 +85,8 @@ func SessionFromEnv(runtime string, lookup func(string) (string, bool)) string {
 }
 
 // RuntimeFromClient maps a client or agent name, such as an MCP client's name, to the
-// runtime an entry records.
+// runtime an entry records: the provider name for clients that go42x configures, otherwise the
+// name in runtime form, or RuntimeUnknown when no letter or digit remains.
 func RuntimeFromClient(name string) string {
 	name = strings.ToLower(name)
 	switch {
@@ -94,15 +94,21 @@ func RuntimeFromClient(name string) string {
 		return claude.Name
 	case strings.Contains(name, "codex"):
 		return codex.Name
-	case strings.Contains(name, "copilot"):
-		return copilot.Name
 	case strings.Contains(name, "antigravity"), strings.Contains(name, "gemini"):
 		return antigravity.Name
 	case strings.Contains(name, "crush"):
 		return crush.Name
 	case strings.Contains(name, ghaw.Name):
 		return ghaw.Name
-	default:
+	}
+
+	runtime := strings.Trim(slugPattern.ReplaceAllString(name, "-"), "-")
+	if len(runtime) > maxRuntimeLength {
+		runtime = strings.TrimRight(runtime[:maxRuntimeLength], "-")
+	}
+	if len(runtime) == 0 {
 		return RuntimeUnknown
 	}
+
+	return runtime
 }

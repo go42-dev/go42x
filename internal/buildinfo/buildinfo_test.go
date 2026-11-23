@@ -12,7 +12,7 @@ func TestSourceURLPinsBuildCommit(t *testing.T) {
 	})
 	xBuildCommit = "0123456789abcdef0123456789abcdef01234567"
 	xBuildVersion = "v1.2.3"
-	for _, path := range []string{"assets/agentenv/schemas/go42x.schema.yaml", "assets/schemas/vendor.schema.yaml"} {
+	for _, path := range []string{"assets/agentenv/schemas/go42x.schema.yaml", "assets/vendoring/vendor.schema.yaml"} {
 		want := "https://raw.githubusercontent.com/go42-dev/go42x/0123456789abcdef0123456789abcdef01234567/" + path
 		if got := SourceURL(path); got != want {
 			t.Errorf("SourceURL(%q) = %q, want %q", path, got, want)

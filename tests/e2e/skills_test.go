@@ -31,7 +31,7 @@ func TestAgentEnvSkills(t *testing.T) {
 	p.write(t, ".claude/skills/manual/SKILL.md", "Written by hand\n")
 	p.run(t, 0, "agentenv", "generate")
 
-	// The fixture enables Claude, plus Codex, Antigravity, and Copilot, which read the shared directory.
+	// The fixture enables Claude, plus Codex and Antigravity, which read the shared directory.
 	targets := []string{".claude/skills", ".agents/skills"}
 	for _, dir := range targets {
 		for _, file := range []string{"review/SKILL.md", "review/references/checklist.md"} {
@@ -49,7 +49,7 @@ func TestAgentEnvSkills(t *testing.T) {
 		for _, want := range []string{
 			"skill sources live in `.go42x/skills/`",
 			"| `.claude/skills/` | claude |",
-			"| `.agents/skills/` | antigravity, codex, copilot |",
+			"| `.agents/skills/` | antigravity, codex |",
 		} {
 			if !strings.Contains(bundled, want) {
 				t.Errorf("%s/go42x-skills/SKILL.md does not contain %q", dir, want)

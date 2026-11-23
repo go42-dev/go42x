@@ -85,8 +85,7 @@ func TestClaudeAdditionalOutputFailures(t *testing.T) {
 			dir, out := t.TempDir(), t.TempDir()
 			engine := mocks.NewMockTemplateEngineAccessor(gomock.NewController(t))
 			pc := Settings{
-				OutputDir:    out,
-				WriteMCPFile: true,
+				OutputDir: out,
 			}
 			want := ""
 

@@ -172,7 +172,7 @@ func TestJournalTools(t *testing.T) {
 	// Events share the second they are recorded in, so only a later time leaves them all out.
 	recent := call[journal.ShowResult](t, ctx, tools, "journal_show", map[string]any{
 		"id":       id,
-		"since":    finished.Entry.UpdatedAt.Add(time.Second).Format(time.RFC3339),
+		"since":    untouched.Entry.UpdatedAt.Add(time.Second).Format(time.RFC3339),
 		"sections": true,
 	})
 	if len(recent.Events) != 0 || len(recent.Notes) != 0 || len(recent.Sections) != 0 {

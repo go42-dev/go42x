@@ -322,7 +322,8 @@ providers: {codex: {enabled: false}}
 			json.Unmarshal([]byte(called.Content[0].Text), &created) != nil {
 			t.Fatalf("journal_new failed: %+v", called)
 		}
-		if created.Entry.Runtime != "unknown" || !strings.HasPrefix(created.Path, ".go42x/journal/") ||
+		// The test client's name, e2e, becomes the runtime.
+		if created.Entry.Runtime != "e2e" || !strings.HasPrefix(created.Path, ".go42x/journal/") ||
 			!strings.Contains(p.read(t, created.Path+"/notes.md"), "# MCP task") {
 			t.Fatalf("journal_new did not create the entry in the served project: %+v", created)
 		}

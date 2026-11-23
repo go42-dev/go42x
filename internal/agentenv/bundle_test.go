@@ -25,7 +25,7 @@ func TestPinBundledSchemaURL(t *testing.T) {
 		},
 		{
 			vendoring.ManifestFile,
-			"assets/schemas/vendor.schema.yaml",
+			"assets/vendoring/vendor.schema.yaml",
 		},
 	} {
 		t.Run(tt.path, func(t *testing.T) {

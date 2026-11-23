@@ -173,7 +173,7 @@ func TestInvalidLocalConfigurationCannotPartiallyGenerate(t *testing.T) {
 		},
 		{
 			name:  "unsupported option on unselected provider",
-			local: "providers: {copilot: {auto-approve-tools: []}}\n",
+			local: "providers: {antigravity: {auto-approve-tools: []}}\n",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

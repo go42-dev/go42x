@@ -17,7 +17,7 @@ const Name = "claude"
 // MaxInstructionBytes is Claude's size limit for each startup instruction file.
 const MaxInstructionBytes = 4 * 1024 * 1024
 
-// SkillsDir is Claude Code's project skill directory; Copilot reads it as well.
+// SkillsDir is Claude Code's project skill directory.
 // @see https://docs.anthropic.com/en/docs/claude-code/skills
 const SkillsDir = ".claude/skills"
 
@@ -65,7 +65,6 @@ type Settings struct {
 	MCPServers       map[string]provider.MCPServer
 	Agents           []string
 	AutoApproveTools []string
-	WriteMCPFile     bool
 }
 
 type Provider struct {
@@ -129,11 +128,6 @@ func (p *Provider) prepareConfigFiles(plan *fspatch.Plan) error {
 		[]string{"permissions.deny"},
 	); err != nil {
 		return fmt.Errorf("failed to prepare %s: %w", settingsPath, err)
-	}
-
-	// The generator assigns ownership of the shared MCP file.
-	if !p.settings.WriteMCPFile {
-		return nil
 	}
 
 	// Generate .mcp.json

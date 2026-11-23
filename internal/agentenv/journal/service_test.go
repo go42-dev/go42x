@@ -545,8 +545,8 @@ func TestRejectsInvalidInput(t *testing.T) {
 			_, err := service.New(t.Context(), human, NewOptions{Title: " "})
 			return err
 		},
-		"unknown runtime": func() error {
-			_, err := service.New(t.Context(), Actor{Runtime: "robot"}, NewOptions{Title: "Task"})
+		"invalid runtime": func() error {
+			_, err := service.New(t.Context(), Actor{Runtime: "Robot Agent"}, NewOptions{Title: "Task"})
 			return err
 		},
 		"invalid tag": func() error {

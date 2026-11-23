@@ -57,7 +57,7 @@ func TestVendorTouch(t *testing.T) {
 			data,
 			"---\n\n# yaml-language-server: $schema=https://raw.githubusercontent.com/go42-dev/go42x/",
 		) ||
-		!strings.Contains(data, "/assets/schemas/vendor.schema.yaml\n") {
+		!strings.Contains(data, "/assets/vendoring/vendor.schema.yaml\n") {
 		t.Fatalf("initial manifest: %s %v", data, err)
 	}
 	if _, err := os.Stat(filepath.Join(p.root, schemaPath)); !os.IsNotExist(err) {

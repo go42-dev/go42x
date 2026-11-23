@@ -24,7 +24,6 @@ import (
 const (
 	bundledSchemaURLBase = "https://raw.githubusercontent.com/go42-dev/go42x/"
 	schemaPathProject    = "assets/agentenv/schemas/go42x.schema.yaml"
-	schemaPathVendor     = "assets/schemas/vendor.schema.yaml"
 )
 
 const bundleMergeTimeout = 30 * time.Second
@@ -55,7 +54,7 @@ func pinBundledSchemaURL(path string, data []byte) []byte {
 	case config.FileProject:
 		schemaPath = schemaPathProject
 	case vendoring.ManifestFile:
-		schemaPath = schemaPathVendor
+		schemaPath = vendoring.SchemaPath
 	default:
 		return data
 	}

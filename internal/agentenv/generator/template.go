@@ -14,7 +14,6 @@ import (
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/antigravity"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/claude"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/codex"
-	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/copilot"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/crush"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/ghaw"
 	"github.com/go42-dev/go42x/internal/config"
@@ -181,8 +180,6 @@ func mcpToolName(providerName, serverName, toolName string) string {
 		return antigravity.MCPToolName(serverName, toolName)
 	case crush.Name:
 		return crush.MCPToolName(serverName, toolName)
-	case copilot.Name:
-		return copilot.MCPToolName(serverName, toolName)
 	case ghaw.Name:
 		return ghaw.MCPToolName(serverName, toolName)
 	default:
