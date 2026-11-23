@@ -12,24 +12,22 @@ import (
 )
 
 const (
-	flagAbandoned = "abandoned"
-	flagApply     = "apply"
-	flagIssue     = "issue"
-	flagJSON      = "json"
-	flagKeep      = "keep"
-	flagKept      = "kept"
-	flagLimit     = "limit"
-	flagName      = "name"
-	flagPR        = "pr"
-	flagRuntime   = "runtime"
-	flagSections  = "sections"
-	flagSession   = "session"
-	flagSince     = "since"
-	flagStatus    = "status"
-	flagStray     = "stray"
-	flagSummary   = "summary"
-	flagTag       = "tag"
-	flagTitle     = "title"
+	flagApply    = "apply"
+	flagIssue    = "issue"
+	flagJSON     = "json"
+	flagKeep     = "keep"
+	flagKept     = "kept"
+	flagLimit    = "limit"
+	flagName     = "name"
+	flagPR       = "pr"
+	flagRuntime  = "runtime"
+	flagSections = "sections"
+	flagSession  = "session"
+	flagSince    = "since"
+	flagStray    = "stray"
+	flagSummary  = "summary"
+	flagTag      = "tag"
+	flagTitle    = "title"
 )
 
 // NewJournalCommand returns the journal command group, registered below agentenv.
@@ -37,9 +35,12 @@ func NewJournalCommand(f *cmdutil.Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "journal",
 		Short: "Record, continue, and clean up agent task entries",
-		Long: `Keep the material of each task in a journal entry in .go42x/journal: an entry.json
-record, notes.md handoff notes, and the task's files. Any session or runtime can list open
-entries and continue them. The journal is local and ignored by Git.`,
+		Long: `Keep the material of each task in a journal entry in the journal directory, .go42x/journal
+unless journal.path in .go42x/go42x.yaml sets another: an entry.json record, notes.md handoff
+notes, and the task's files. Any session or runtime can list entries and continue them. gc
+deletes entries that go without an update for journal.retention-days, 30 by default, unless
+they are kept. The journal is ignored by Git; in CI, the generated 901-aw-journal.md workflow
+import can restore and save it.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
@@ -51,7 +52,6 @@ entries and continue them. The journal is local and ignored by Git.`,
 	cmd.AddCommand(newShowCommand(f))
 	cmd.AddCommand(newNoteCommand(f))
 	cmd.AddCommand(newAttachCommand(f))
-	cmd.AddCommand(newDoneCommand(f))
 	cmd.AddCommand(newSearchCommand(f))
 	cmd.AddCommand(newIndexCommand(f))
 	cmd.AddCommand(newGCCommand(f))

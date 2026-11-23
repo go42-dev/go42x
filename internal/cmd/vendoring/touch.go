@@ -1,11 +1,13 @@
 package vendoring
 
 import (
+	"log/slog"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	"github.com/go42-dev/go42x/internal/agentenv/generator"
 	"github.com/go42-dev/go42x/internal/cmdutil"
 	"github.com/go42-dev/go42x/internal/vendoring"
 	"github.com/go42-dev/go42x/internal/vendoring/adapters/cli"
@@ -25,7 +27,8 @@ Relative directories resolve from --root. With no directory, use --root itself.`
 				RootPath:     viper.GetString(flagRoot),
 				ManifestPath: viper.GetString(flagManifest),
 				LockPath:     viper.GetString(flagLock),
-				BuildDir:     defaults.BuildDir,
+				TmpDir:       defaults.TmpDir,
+				JournalDir:   defaults.JournalDir,
 				Timeout:      defaults.Timeout,
 				JSON:         viper.GetBool(flagJSON),
 			}
@@ -47,6 +50,10 @@ Relative directories resolve from --root. With no directory, use --root itself.`
 }
 
 func runTouchCommand(f *cmdutil.Factory, settings *vendoring.Settings, directory string) error {
-	result, err := vendoring.Touch(f.Context(), directory)
+	data, err := generator.ProjectContext(f.Context(), slog.New(slog.DiscardHandler), settings.RootPath)
+	if err != nil {
+		return cli.Report(f.Output(), settings, vendoring.OperationTouch, nil, err)
+	}
+	result, err := vendoring.Touch(f.Context(), directory, data)
 	return cli.Report(f.Output(), settings, vendoring.OperationTouch, result, err)
 }

@@ -189,7 +189,7 @@ providers: {codex: {enabled: false}}
 	}
 	for _, name := range []string{
 		"kwb_search", "kwb_get_file", "kwb_list_files", "kwb_stats", "docs_get", "docs_impact", "project_context",
-		"journal_list", "journal_show", "journal_new", "journal_note", "journal_attach", "journal_done", "journal_search",
+		"journal_list", "journal_show", "journal_new", "journal_note", "journal_attach", "journal_search",
 	} {
 		if !names[name] {
 			t.Errorf("tool %s was not registered", name)

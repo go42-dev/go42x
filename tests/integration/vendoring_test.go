@@ -58,7 +58,7 @@ func fixtureSettings(root, manifestName string) *vendoring.Settings {
 	settings := vendoring.NewSettings()
 	settings.RootPath = root
 	settings.ManifestPath = manifestName
-	settings.BuildDir = ".scratch"
+	settings.TmpDir = ".scratch"
 	return settings
 }
 
@@ -427,7 +427,7 @@ func TestOwnershipScanSkipsJournalAndBuildTmp(t *testing.T) {
 	// Agent drafts and update conflict candidates are not other projects' manifests.
 	for _, path := range []string{
 		".go42x/journal/20261110-draft-0000/" + vendoring.ManifestFile,
-		".scratch/tmp/agentenv-update-1/merged/" + vendoring.ManifestFile,
+		".scratch/agentenv-update-1/merged/" + vendoring.ManifestFile,
 	} {
 		writeFixture(t, filepath.Join(root, filepath.FromSlash(path)), []byte("<<<<<<< ours\n{"))
 	}
@@ -1015,7 +1015,7 @@ func TestControlPathsAndSymlinksCannotBeOverwritten(t *testing.T) {
 	)
 	defer server.Close()
 
-	for _, destination := range []string{vendoring.ManifestFile, ".VENDOR.YAML", vendoring.LockFile, ".VENDOR.LOCK.YAML", ".git/file", ".go42x", ".GO42X/go42x.yaml", ".go42x/backups/file", ".go42x/journal/file", ".scratch", ".scratch/tmp/file"} {
+	for _, destination := range []string{vendoring.ManifestFile, ".VENDOR.YAML", vendoring.LockFile, ".VENDOR.LOCK.YAML", ".git/file", ".go42x", ".GO42X/go42x.yaml", ".go42x/backups/file", ".go42x/journal/file", ".scratch", ".scratch/file"} {
 		t.Run(destination, func(t *testing.T) {
 			root := t.TempDir()
 			original := []byte(httpManifest(server.URL+"/file.txt", destination))
@@ -1063,7 +1063,7 @@ func TestTouchCancellationDoesNotCreateDirectory(t *testing.T) {
 	directory := filepath.Join(t.TempDir(), "missing")
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	if _, err := vendoring.Touch(ctx, directory); err == nil {
+	if _, err := vendoring.Touch(ctx, directory, nil); err == nil {
 		t.Fatal("cancelled touch succeeded")
 	}
 	if _, err := os.Stat(directory); !os.IsNotExist(err) {
@@ -1168,7 +1168,7 @@ func TestMissingSelectedFileDoesNotPublish(t *testing.T) {
 	}
 }
 
-func TestWritersSerializeAcrossBuildDirectories(t *testing.T) {
+func TestWritersSerializeAcrossTmpDirectories(t *testing.T) {
 	root := t.TempDir()
 	started, release := make(chan struct{}), make(chan struct{})
 	var calls atomic.Int64
@@ -1202,7 +1202,7 @@ func TestWritersSerializeAcrossBuildDirectories(t *testing.T) {
 		t.Fatal("first writer did not start")
 	}
 	settings := vendoring.NewSettings()
-	settings.RootPath, settings.BuildDir = root, ".different-scratch"
+	settings.RootPath, settings.TmpDir = root, ".different-scratch"
 	settings.DryRun = true
 	second := fixtureServiceWithSettings(t, settings)
 	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)

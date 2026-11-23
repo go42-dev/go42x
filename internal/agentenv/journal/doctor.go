@@ -9,9 +9,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/go42-dev/go42x/internal/config"
 	"github.com/go42-dev/go42x/internal/doctor/check"
 )
 
@@ -19,7 +19,6 @@ import (
 const (
 	DoctorIDLocation = "journal.location"
 	DoctorIDEntries  = "journal.entries"
-	DoctorIDStale    = "journal.stale"
 	DoctorIDGC       = "journal.gc"
 	DoctorIDStray    = "journal.stray"
 	DoctorIDIndex    = "journal.index"
@@ -28,33 +27,44 @@ const (
 // maxEvidence bounds the paths listed in one diagnostic.
 const maxEvidence = 10
 
-// DoctorChecks supplies journal diagnostics for registration with doctor.Service.
+// DoctorChecks supplies journal diagnostics for registration with doctor.Service. The
+// checks load the journal settings from the project configuration once, when the first
+// one runs. Without a usable configuration, they are skipped; the configuration check
+// reports the problem without repeating configuration values.
 func DoctorChecks(root string) []check.Check {
-	s := newStore(root)
+	load := sync.OnceValues(func() (store, error) { return loadStore(root) })
+	run := func(diagnose func(store, context.Context) check.Result) func(context.Context) check.Result {
+		return func(ctx context.Context) check.Result {
+			s, err := load()
+			if err != nil {
+				return check.Result{
+					Status:  check.StatusSkipped,
+					Message: "Project configuration cannot be loaded, so the journal was not checked",
+				}
+			}
+			return diagnose(s, ctx)
+		}
+	}
 	return []check.Check{
 		{
 			ID:  DoctorIDLocation,
-			Run: s.checkLocation,
+			Run: run(store.checkLocation),
 		},
 		{
 			ID:  DoctorIDEntries,
-			Run: s.checkEntries,
-		},
-		{
-			ID:  DoctorIDStale,
-			Run: s.checkStale,
+			Run: run(store.checkEntries),
 		},
 		{
 			ID:  DoctorIDGC,
-			Run: s.checkGC,
+			Run: run(store.checkGC),
 		},
 		{
 			ID:  DoctorIDStray,
-			Run: s.checkStray,
+			Run: run(store.checkStray),
 		},
 		{
 			ID:  DoctorIDIndex,
-			Run: s.checkIndex,
+			Run: run(store.checkIndex),
 		},
 	}
 }
@@ -67,51 +77,32 @@ func (s store) checkLocation(ctx context.Context) check.Result {
 		}
 	}
 
-	buildDir, err := config.ProjectBuildDir(s.root)
-	if err != nil {
-		return check.Result{
-			Status:  check.StatusWarn,
-			Message: "Project configuration cannot be loaded, so ignore rules were not checked",
-		}
-	}
-
-	paths := []string{config.JournalDir}
-	rel, err := filepath.Rel(s.root, buildDir)
-	if err == nil && filepath.IsLocal(rel) {
-		paths = append(paths, filepath.ToSlash(rel))
-	}
-
-	var exposed []string
-	for _, path := range paths {
-		// A path inside the directory matches directory patterns whether or not it exists.
-		// #nosec G204 -- Git and its options are fixed; the path follows -- and no shell is used.
-		cmd := exec.CommandContext(ctx, "git", "-C", s.root, "check-ignore", "-q", "--no-index", "--", path+"/probe")
-		err := cmd.Run()
-		var exit *exec.ExitError
-		switch {
-		case err == nil:
-		case errors.As(err, &exit) && exit.ExitCode() == 1:
-			exposed = append(exposed, path+"/")
-		default:
-			return check.Result{
-				Status:  check.StatusWarn,
-				Message: "Git ignore rules could not be checked",
-			}
-		}
-	}
-	if len(exposed) > 0 {
+	path := s.relative(s.dir)
+	// A path inside the directory matches directory patterns whether or not it exists.
+	// #nosec G204 -- Git and its options are fixed; the path follows -- and no shell is used.
+	cmd := exec.CommandContext(ctx, "git", "-C", s.root, "check-ignore", "-q", "--no-index", "--", path+"/probe")
+	err := cmd.Run()
+	var exit *exec.ExitError
+	switch {
+	case err == nil:
+	case errors.As(err, &exit) && exit.ExitCode() == 1:
 		return check.Result{
 			Status:      check.StatusFail,
-			Message:     "Journal or build directory is not ignored by Git, so its files could be committed or indexed",
-			Remediation: "go42x agentenv generate, or add these directories to .gitignore",
-			Evidence:    exposed,
+			Message:     "Journal is not ignored by Git, so its files could be committed or indexed",
+			Remediation: "go42x agentenv generate, or add the journal directory to .gitignore",
+			Evidence:    []string{path + "/"},
+		}
+	default:
+		return check.Result{
+			Status:  check.StatusWarn,
+			Message: "Git ignore rules could not be checked",
 		}
 	}
 
 	return check.Result{
 		Status:   check.StatusPass,
-		Message:  "Journal and build directories are ignored by Git and the knowledge base",
-		Evidence: paths,
+		Message:  "Journal is ignored by Git and the knowledge base",
+		Evidence: []string{path},
 	}
 }
 
@@ -148,38 +139,6 @@ func (s store) checkEntries(ctx context.Context) check.Result {
 	}
 }
 
-func (s store) checkStale(ctx context.Context) check.Result {
-	now := time.Now()
-	current, err := s.scan(ctx)
-	if err != nil {
-		return check.Result{
-			Status:  check.StatusFail,
-			Message: "Journal cannot be read",
-		}
-	}
-
-	var evidence []string
-	for _, entry := range current.entries {
-		if entry.Status == StatusOpen && now.Sub(entry.UpdatedAt) > StaleAfter {
-			evidence = append(evidence, fmt.Sprintf("%s: updated %s", entry.ID, entry.UpdatedAt.Format(time.DateOnly)))
-		}
-	}
-	if len(evidence) > 0 {
-		return check.Result{
-			Status: check.StatusWarn,
-			Message: fmt.Sprintf("%d open journal entries were not updated for more than %d days",
-				len(evidence), int(StaleAfter.Hours()/24)),
-			Remediation: "Continue the entries, or finish them with go42x agentenv journal done <id> --abandoned",
-			Evidence:    limitEvidence(evidence),
-		}
-	}
-
-	return check.Result{
-		Status:  check.StatusPass,
-		Message: "No stale open journal entries",
-	}
-}
-
 func (s store) checkGC(ctx context.Context) check.Result {
 	now := time.Now()
 	current, err := s.scan(ctx)
@@ -193,7 +152,7 @@ func (s store) checkGC(ctx context.Context) check.Result {
 	var size int64
 	var evidence []string
 	for _, entry := range current.entries {
-		if expired(entry, now) {
+		if entry.Expired(now, s.retention) {
 			size += treeSize(s.entryDir(entry.ID))
 			evidence = append(evidence, entry.ID)
 		}
@@ -221,19 +180,11 @@ func (s store) checkStray(ctx context.Context) check.Result {
 			Message: "Journal cannot be read",
 		}
 	}
-	build, err := s.strayBuild(ctx)
-	if err != nil {
-		return check.Result{
-			Status:  check.StatusFail,
-			Message: "Build directory cannot be read",
-		}
-	}
-
-	items := append(current.stray, build...)
+	items := current.stray
 	if len(items) == 0 {
 		return check.Result{
 			Status:  check.StatusPass,
-			Message: "Journal and build directories hold no content without a record",
+			Message: "Journal holds no content without a record",
 		}
 	}
 
@@ -245,7 +196,7 @@ func (s store) checkStray(ctx context.Context) check.Result {
 	}
 	return check.Result{
 		Status: check.StatusWarn,
-		Message: fmt.Sprintf("%d items in the journal or build directory have no journal record (%s)",
+		Message: fmt.Sprintf("%d items in the journal have no journal record (%s)",
 			len(items), FormatSize(size)),
 		Remediation: "Review them with go42x agentenv journal list --stray and delete what is no longer needed; " +
 			"agents ask the user first",

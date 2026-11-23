@@ -15,7 +15,12 @@ import (
 	"testing"
 	"testing/synctest"
 	"time"
+
+	"github.com/go42-dev/go42x/internal/config"
 )
+
+// retention is the default time an entry may go without an update before gc removes it.
+const retention = config.DefaultJournalRetentionDays * 24 * time.Hour
 
 var human = Actor{Runtime: RuntimeHuman}
 
@@ -42,7 +47,7 @@ func writeTestFile(t *testing.T, path, content string) {
 
 func readEvents(t *testing.T, root, id string) []Event {
 	t.Helper()
-	events, err := newStore(root).events(id)
+	events, err := newStore(root, config.Journal{}.WithDefaults()).events(id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,9 +78,8 @@ func TestEntryLifecycle(t *testing.T) {
 			t.Fatal(err)
 		}
 		id := created.Entry.ID
-		if created.Path != ".go42x/journal/"+id || created.Entry.Status != StatusOpen ||
-			created.Entry.ExpiresAt != nil || created.Entry.Refs.Issue != "42" ||
-			!slices.Equal(created.Entry.Tags, []string{"refactor", "agentenv"}) {
+		if created.Path != ".go42x/journal/"+id || created.Entry.Keep || created.Entry.Version != 2 ||
+			created.Entry.Refs.Issue != "42" || !slices.Equal(created.Entry.Tags, []string{"refactor", "agentenv"}) {
 			t.Fatalf("new entry = %+v", created)
 		}
 		notes, err := os.ReadFile(filepath.Join(root, created.Path, notesFile))
@@ -87,45 +91,28 @@ func TestEntryLifecycle(t *testing.T) {
 		time.Sleep(time.Hour)
 		noted, err := service.Note(t.Context(), codex, NoteOptions{ID: id, Summary: "Moved the files"})
 		if err != nil || noted.Entry.Runtime != "codex" || noted.Entry.Session != "s-2" ||
-			noted.Entry.Refs.Issue != "42" {
+			noted.Entry.Refs.Issue != "42" || !noted.Entry.UpdatedAt.Equal(time.Now()) {
 			t.Fatalf("note = %+v, %v", noted, err)
 		}
 
-		finished, err := service.Done(t.Context(), human, DoneOptions{ID: id, Summary: "Merged"})
-		if err != nil {
-			t.Fatal(err)
+		kept, err := service.Note(t.Context(), human, NoteOptions{ID: id, Tags: []string{}, Keep: new(true)})
+		if err != nil || !kept.Entry.Keep || len(kept.Entry.Tags) != 0 {
+			t.Fatalf("keep = %+v, %v", kept, err)
 		}
-		wantExpiry := time.Now().Add(DoneRetention)
-		if finished.Entry.Status != StatusDone || finished.Entry.ExpiresAt == nil ||
-			!finished.Entry.ExpiresAt.Equal(wantExpiry) ||
-			!finished.Entry.UpdatedAt.Equal(time.Now()) {
-			t.Fatalf("done = %+v", finished)
+		merged, err := service.Note(t.Context(), human, NoteOptions{ID: id, Summary: "Merged", PR: "57"})
+		if err != nil || !merged.Entry.Keep || merged.Entry.Refs.PR != "57" || merged.Entry.Refs.Issue != "42" {
+			t.Fatalf("note without keep = %+v, %v", merged, err)
 		}
-		if _, err := service.Done(t.Context(), human, DoneOptions{ID: id}); err == nil {
-			t.Fatal("finished entry finished again")
-		}
-
-		reopened, err := service.Note(t.Context(), human, NoteOptions{ID: id, Tags: []string{}})
-		if err != nil || reopened.Entry.Status != StatusOpen || reopened.Entry.ExpiresAt != nil ||
-			len(reopened.Entry.Tags) != 0 {
-			t.Fatalf("reopen = %+v, %v", reopened, err)
-		}
-		abandoned, err := service.Done(t.Context(), human, DoneOptions{ID: id, Abandoned: true})
-		if err != nil || abandoned.Entry.Status != StatusAbandoned ||
-			!abandoned.Entry.ExpiresAt.Equal(time.Now().Add(AbandonedRetention)) {
-			t.Fatalf("abandon = %+v, %v", abandoned, err)
+		released, err := service.Note(t.Context(), human, NoteOptions{ID: id, Keep: new(false)})
+		if err != nil || released.Entry.Keep {
+			t.Fatalf("keep=false = %+v, %v", released, err)
 		}
 
 		shown, err := service.Show(t.Context(), ShowOptions{ID: id})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := eventNames(
-			shown.Events,
-		); !slices.Equal(
-			got,
-			[]string{"created", "note", "done", "reopened", "abandoned"},
-		) {
+		if got := eventNames(shown.Events); !slices.Equal(got, []string{"created", "note", "note", "note", "note"}) {
 			t.Errorf("events = %q", got)
 		}
 		if shown.Events[1].Runtime != "codex" || shown.Events[1].Summary != "Moved the files" {
@@ -142,60 +129,52 @@ func TestEntryLifecycle(t *testing.T) {
 	})
 }
 
-func TestGCRemovesOnlyExpiredFinishedEntries(t *testing.T) {
+func TestGCRemovesEntriesIdleForTheRetention(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		root := t.TempDir()
 		service := newTestService(t, root)
-		create := func(title string) string {
+		create := func(title string, keep bool) string {
 			t.Helper()
-			result, err := service.New(t.Context(), human, NewOptions{Title: title})
+			result, err := service.New(t.Context(), human, NewOptions{Title: title, Keep: keep})
 			if err != nil {
 				t.Fatal(err)
 			}
 			return result.Entry.ID
 		}
-		open, done, abandoned, kept := create("Open"), create("Done"), create("Abandoned"), create("Kept")
-		for _, options := range map[string]DoneOptions{
-			done:      {ID: done},
-			abandoned: {ID: abandoned, Abandoned: true},
-			kept:      {ID: kept, Keep: true},
-		} {
-			if _, err := service.Done(t.Context(), human, options); err != nil {
-				t.Fatal(err)
-			}
-		}
+		idle, kept, active := create("Idle", false), create("Kept", true), create("Active", false)
 		writeTestFile(t, filepath.Join(root, ".go42x/journal/no-record/file.txt"), "stray")
 		ids := func(result *GCResult) []string {
 			var ids []string
 			for _, item := range result.Entries {
 				ids = append(ids, item.ID)
 			}
-			slices.Sort(ids)
 			return ids
 		}
 
-		time.Sleep(AbandonedRetention)
+		time.Sleep(retention - time.Hour)
+		if _, err := service.Note(t.Context(), human, NoteOptions{ID: active}); err != nil {
+			t.Fatal(err)
+		}
 		report, err := service.GC(t.Context(), GCOptions{})
-		if err != nil || !slices.Equal(ids(report), []string{abandoned}) {
-			t.Fatalf("gc after abandoned retention = %+v, %v", report, err)
+		if err != nil || len(report.Entries) != 0 {
+			t.Fatalf("gc before the retention passed = %+v, %v", report, err)
 		}
 
-		time.Sleep(DoneRetention)
+		time.Sleep(time.Hour)
 		report, err = service.GC(t.Context(), GCOptions{})
-		if err != nil || report.Applied ||
-			!slices.Equal(ids(report), slices.Sorted(slices.Values([]string{abandoned, done}))) {
+		if err != nil || report.Applied || !slices.Equal(ids(report), []string{idle}) {
 			t.Fatalf("gc report = %+v, %v", report, err)
 		}
-		if _, err := os.Stat(filepath.Join(root, ".go42x/journal", done)); err != nil {
+		if _, err := os.Stat(filepath.Join(root, ".go42x/journal", idle)); err != nil {
 			t.Fatalf("dry run removed an entry: %v", err)
 		}
 
 		removed, err := service.GC(t.Context(), GCOptions{Apply: true})
-		if err != nil || !removed.Applied || len(removed.Entries) != 2 {
+		if err != nil || !removed.Applied || !slices.Equal(ids(removed), []string{idle}) {
 			t.Fatalf("gc apply = %+v, %v", removed, err)
 		}
-		for id, exists := range map[string]bool{open: true, kept: true, done: false, abandoned: false, "no-record": true} {
+		for id, exists := range map[string]bool{idle: false, kept: true, active: true, "no-record": true} {
 			if _, err := os.Stat(filepath.Join(root, ".go42x/journal", id)); (err == nil) != exists {
 				t.Errorf("%s exists = %v, want %v", id, err == nil, exists)
 			}
@@ -212,12 +191,43 @@ func TestGCRemovesOnlyExpiredFinishedEntries(t *testing.T) {
 	})
 }
 
+func TestConfiguredJournal(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		root := t.TempDir()
+		writeTestFile(t, filepath.Join(root, ".go42x/go42x.yaml"), `version: "1.0"
+project: {name: example}
+context: {template: agents.tpl.md}
+journal: {path: state/journal, retention-days: 7}
+providers: {claude: {}}
+`)
+		service := newTestService(t, root)
+		created, err := service.New(t.Context(), human, NewOptions{Title: "Configured"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if created.Path != ".go42x/state/journal/"+created.Entry.ID {
+			t.Fatalf("path = %s, want it in .go42x/state/journal", created.Path)
+		}
+
+		time.Sleep(7 * 24 * time.Hour)
+		report, err := service.GC(t.Context(), GCOptions{})
+		if err != nil || len(report.Entries) != 1 || report.Entries[0].ID != created.Entry.ID {
+			t.Fatalf("gc after the configured retention = %+v, %v", report, err)
+		}
+	})
+}
+
 func TestListFiltersAndStrayContent(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		root := t.TempDir()
 		service := newTestService(t, root)
-		first, err := service.New(t.Context(), human, NewOptions{Title: "First", Tags: []string{"fix", "kwb"}})
+		first, err := service.New(t.Context(), human, NewOptions{
+			Title: "First",
+			Tags:  []string{"fix", "kwb"},
+			Issue: "https://github.com/go42-dev/go42x/issues/42",
+		})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -225,22 +235,20 @@ func TestListFiltersAndStrayContent(t *testing.T) {
 		second, err := service.New(
 			t.Context(),
 			Actor{Runtime: "codex"},
-			NewOptions{Title: "Second", Tags: []string{"fix"}},
+			NewOptions{Title: "Second", Tags: []string{"fix"}, PR: "#57"},
 		)
 		if err != nil {
 			t.Fatal(err)
 		}
 		time.Sleep(time.Minute)
 		finished := time.Now()
-		if _, err := service.Done(t.Context(), human, DoneOptions{ID: first.Entry.ID, Keep: true}); err != nil {
+		if _, err := service.Note(t.Context(), human, NoteOptions{ID: first.Entry.ID, Keep: new(true)}); err != nil {
 			t.Fatal(err)
 		}
 		writeTestFile(t, filepath.Join(root, ".go42x/journal/20261110-broken-0000/entry.json"), "{")
 		writeTestFile(t, filepath.Join(root, ".go42x/journal/stray.txt"), "stray")
-		writeTestFile(t, filepath.Join(root, ".build/old-task/report.md"), "old")
-		writeTestFile(t, filepath.Join(root, ".build/coverage.out"), "old")
-		writeTestFile(t, filepath.Join(root, ".build/reports/coverage.out"), "current")
-		writeTestFile(t, filepath.Join(root, ".build/tmp/vendoring/x"), "current")
+		// A hidden directory is neither listed nor stray.
+		writeTestFile(t, filepath.Join(root, ".go42x/journal/.hidden/20261110-other-0000/entry.json"), "{}")
 		// Interrupted writes and failed gc deletions leave hidden content behind.
 		leftovers := []string{
 			".go42x/journal/.index.json.tmp-123",
@@ -255,11 +263,14 @@ func TestListFiltersAndStrayContent(t *testing.T) {
 			options ListOptions
 			want    []string
 		}{
-			"all":       {ListOptions{}, []string{first.Entry.ID, second.Entry.ID}},
-			"open":      {ListOptions{Status: StatusOpen}, []string{second.Entry.ID}},
-			"every tag": {ListOptions{Tags: []string{"fix", "kwb"}}, []string{first.Entry.ID}},
-			"since":     {ListOptions{Since: finished}, []string{first.Entry.ID}},
-			"kept":      {ListOptions{Kept: true}, []string{first.Entry.ID}},
+			"all":          {ListOptions{}, []string{first.Entry.ID, second.Entry.ID}},
+			"every tag":    {ListOptions{Tags: []string{"fix", "kwb"}}, []string{first.Entry.ID}},
+			"since":        {ListOptions{Since: finished}, []string{first.Entry.ID}},
+			"kept":         {ListOptions{Kept: true}, []string{first.Entry.ID}},
+			"issue URL":    {ListOptions{Issue: "https://github.com/go42-dev/go42x/issues/42"}, []string{first.Entry.ID}},
+			"issue number": {ListOptions{Issue: "#42"}, []string{first.Entry.ID}},
+			"issue suffix": {ListOptions{Issue: "2"}, nil},
+			"pr number":    {ListOptions{PR: "57"}, []string{second.Entry.ID}},
 			"kept and changed later": {
 				ListOptions{Kept: true, Since: finished.Add(time.Second)},
 				nil,
@@ -291,12 +302,12 @@ func TestListFiltersAndStrayContent(t *testing.T) {
 			paths = append(paths, item.Path)
 		}
 		slices.Sort(paths)
-		want := append([]string{".build/coverage.out", ".build/old-task", ".go42x/journal/stray.txt"}, leftovers...)
+		want := append([]string{".go42x/journal/stray.txt"}, leftovers...)
 		slices.Sort(want)
 		if !slices.Equal(paths, want) {
 			t.Errorf("stray = %q, want %q", paths, want)
 		}
-		if _, err := service.List(t.Context(), ListOptions{Stray: true, Status: StatusOpen}); err == nil {
+		if _, err := service.List(t.Context(), ListOptions{Stray: true, Issue: "42"}); err == nil {
 			t.Error("stray listing accepted entry filters")
 		}
 	})
@@ -328,13 +339,6 @@ func TestGCContinuesAfterFailedDeletion(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := service.Done(
-				t.Context(),
-				human,
-				DoneOptions{ID: created.Entry.ID, Abandoned: true},
-			); err != nil {
-				t.Fatal(err)
-			}
 			ids = append(ids, created.Entry.ID)
 		}
 		locked, free := ids[0], ids[1]
@@ -348,7 +352,7 @@ func TestGCContinuesAfterFailedDeletion(t *testing.T) {
 			_ = os.Chmod(filepath.Join(root, trash, "cache"), 0700)
 		})
 
-		time.Sleep(AbandonedRetention)
+		time.Sleep(retention)
 		result, err := service.GC(t.Context(), GCOptions{Apply: true})
 		if err == nil || !strings.Contains(err.Error(), trash) {
 			t.Fatalf("gc error = %v, want the remains in %s", err, trash)
@@ -549,12 +553,12 @@ func TestRejectsInvalidInput(t *testing.T) {
 			_, err := service.New(t.Context(), human, NewOptions{Title: "Task", Tags: []string{"Not a tag"}})
 			return err
 		},
-		"unknown status filter": func() error {
-			_, err := service.List(t.Context(), ListOptions{Status: "paused"})
+		"stray listing kept": func() error {
+			_, err := service.List(t.Context(), ListOptions{Stray: true, Kept: true})
 			return err
 		},
-		"kept open entries": func() error {
-			_, err := service.List(t.Context(), ListOptions{Status: StatusOpen, Kept: true})
+		"control character in a reference filter": func() error {
+			_, err := service.List(t.Context(), ListOptions{PR: "57\n"})
 			return err
 		},
 		"stray listing since": func() error {
@@ -733,5 +737,29 @@ func TestRefsRecordTheCheckout(t *testing.T) {
 
 	if entry.Entry.Refs.Branch != "main" || !commitPattern.MatchString(entry.Entry.Refs.Commit) {
 		t.Errorf("refs = %+v", entry.Entry.Refs)
+	}
+}
+
+func TestEventsInTimeOrder(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	service := newTestService(t, root)
+	created, err := service.New(t.Context(), human, NewOptions{Title: "Merged log"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A union merge of two runs' logs appends the other run's earlier event.
+	file, err := os.OpenFile(filepath.Join(root, created.Path, logFile), os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, writeErr := file.WriteString(`{"at":"2001-01-01T00:00:00Z","event":"note","runtime":"codex"}` + "\n")
+	if err := errors.Join(writeErr, file.Close()); err != nil {
+		t.Fatal(err)
+	}
+
+	events := readEvents(t, root, created.Entry.ID)
+	if got := eventNames(events); !slices.Equal(got, []string{"note", "created"}) || events[0].Runtime != "codex" {
+		t.Errorf("events = %+v, want the earlier note first", events)
 	}
 }

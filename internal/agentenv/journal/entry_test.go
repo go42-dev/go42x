@@ -131,7 +131,6 @@ func TestLimitsCountCharacters(t *testing.T) {
 		Version:   entryVersion,
 		ID:        "20261110-entry-0000",
 		Title:     title,
-		Status:    StatusOpen,
 		Tags:      []string{},
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
@@ -191,7 +190,6 @@ func TestDecodeEntryRejectsInvalidRecords(t *testing.T) {
 		Version:   entryVersion,
 		ID:        "20261110-entry-0000",
 		Title:     "Entry",
-		Status:    StatusOpen,
 		Tags:      []string{},
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -207,9 +205,9 @@ func TestDecodeEntryRejectsInvalidRecords(t *testing.T) {
 
 	for name, edit := range map[string]func(map[string]any){
 		"unknown field":      func(m map[string]any) { m["kind"] = "task" },
-		"missing expiry":     func(m map[string]any) { delete(m, "expires_at") },
-		"other version":      func(m map[string]any) { m["version"] = 2 },
-		"unknown status":     func(m map[string]any) { m["status"] = "paused" },
+		"missing keep":       func(m map[string]any) { delete(m, "keep") },
+		"other version":      func(m map[string]any) { m["version"] = 1 },
+		"status of v1":       func(m map[string]any) { m["status"] = "open" },
 		"unknown runtime":    func(m map[string]any) { m["runtime"] = "robot" },
 		"invalid tag":        func(m map[string]any) { m["tags"] = []string{"Bad Tag"} },
 		"directory mismatch": func(m map[string]any) { m["id"] = "20261110-other-0000" },

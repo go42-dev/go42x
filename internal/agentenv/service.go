@@ -2,6 +2,7 @@ package agentenv
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -94,14 +95,22 @@ func (s *Service) Init(ctx context.Context) (*InitResult, error) {
 	}
 
 	// Init keeps an existing configuration without validating it. When that configuration
-	// cannot be read, the project .gitignore block keeps its build directory.
-	buildDir, err := config.ProjectBuildDir(".")
-	if err != nil {
-		s.logger.WarnContext(ctx, "Configuration cannot be read; the project .gitignore block was not refreshed",
+	// cannot be read, the .go42x/.gitignore block ignores the default directories.
+	var settings config.Config
+	cfg, err := config.LoadProjectConfig(filepath.Join(config.Directory, config.FileProject), nil)
+	switch {
+	case err == nil:
+		settings = *cfg
+	case !errors.Is(err, os.ErrNotExist):
+		s.logger.WarnContext(ctx, "Configuration cannot be read; .go42x/.gitignore ignores the default directories",
 			slog.Any("error", err))
-		buildDir = ""
 	}
-	if err := updateGitIgnore(".", buildDir); err != nil {
+
+	data, err := templateContext(ctx, &settings, ".")
+	if err != nil {
+		return nil, err
+	}
+	if err := updateGitIgnore(".", data); err != nil {
 		return nil, fmt.Errorf("failed to update .gitignore: %w", err)
 	}
 
@@ -162,7 +171,12 @@ func (s *Service) reinstall(ctx context.Context) (*InitResult, error) {
 	if err := prepareBundleSource(plan, dir, s.source); err != nil {
 		return nil, fmt.Errorf("prepare bundle record: %w", err)
 	}
-	if err := prepareGitIgnore(plan, root, cfg.Context.WithDefaults().BuildDir); err != nil {
+
+	data, err := templateContext(ctx, cfg, root)
+	if err != nil {
+		return nil, err
+	}
+	if err := prepareGitIgnore(plan, root, data); err != nil {
 		return nil, fmt.Errorf("prepare .gitignore: %w", err)
 	}
 
@@ -212,7 +226,7 @@ func loadUpdatedConfig(plan *fspatch.Plan, root string, updatedConfig []byte) (*
 // resources, schemas, skills, and upstream files are replaced, the vendoring lock is
 // rebuilt from the merged manifest, and the record names this binary's bundle afterward.
 // Conflicts change no project files and save candidates under
-// <build-dir>/tmp/agentenv-update-*/merged. Originals are backed up before application.
+// <tmp-dir>/agentenv-update-*/merged. Originals are backed up before application.
 // Local configuration and additional sources are kept.
 func (s *Service) Update(ctx context.Context) (*UpdateResult, error) {
 	root, err := os.Getwd()
@@ -250,7 +264,11 @@ func (s *Service) Update(ctx context.Context) (*UpdateResult, error) {
 		return nil, err
 	}
 
-	if err := prepareGitIgnore(plan, root, cfg.Context.WithDefaults().BuildDir); err != nil {
+	data, err := templateContext(ctx, cfg, root)
+	if err != nil {
+		return nil, err
+	}
+	if err := prepareGitIgnore(plan, root, data); err != nil {
 		return nil, fmt.Errorf("prepare .gitignore: %w", err)
 	}
 
@@ -299,7 +317,7 @@ func (s *Service) Generate(ctx context.Context) (*GenerateResult, error) {
 		cfg, templateDir, workingDir,
 	)
 
-	plan, err := prepareGeneration(ctx, gen, cfg, workingDir, s.settings.Clean)
+	plan, err := prepareGeneration(ctx, gen, workingDir, s.settings.Clean)
 	if err != nil {
 		return nil, fmt.Errorf("generation failed: %w", err)
 	}
@@ -311,12 +329,11 @@ func (s *Service) Generate(ctx context.Context) (*GenerateResult, error) {
 	return &GenerateResult{Changes: plan.Changes()}, nil
 }
 
-// prepareGeneration prepares the generated outputs and the managed .gitignore blocks,
-// which follow the configured build directory.
+// prepareGeneration prepares the generated outputs and the managed .gitignore blocks, all
+// rendered with the generator's template context.
 func prepareGeneration(
 	ctx context.Context,
 	gen *generator.Generator,
-	cfg *config.Config,
 	root string,
 	clean bool,
 ) (*fspatch.Plan, error) {
@@ -324,7 +341,11 @@ func prepareGeneration(
 	if err != nil {
 		return nil, err
 	}
-	if err := prepareGitIgnore(plan, root, cfg.Context.WithDefaults().BuildDir); err != nil {
+	data, err := gen.TemplateContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := prepareGitIgnore(plan, root, data); err != nil {
 		return nil, fmt.Errorf("prepare .gitignore: %w", err)
 	}
 

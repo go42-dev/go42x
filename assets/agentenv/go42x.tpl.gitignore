@@ -2,5 +2,6 @@
 /go42x.local.yaml
 /kwb/
 /backups/
-/journal/
+/{{ gitignore .journal.Path }}/
+/{{ gitignore .context.TmpDir }}/
 # go42x -- END

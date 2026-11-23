@@ -44,7 +44,7 @@ func assertVendorSchema(t *testing.T, compiled *jsonschema.Schema, data string, 
 
 func TestSchemaDefaultManifest(t *testing.T) {
 	dir := t.TempDir()
-	if _, err := Touch(t.Context(), dir); err != nil {
+	if _, err := Touch(t.Context(), dir, nil); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(filepath.Join(dir, ManifestFile))

@@ -211,7 +211,7 @@ func workflowInstructionTargets(root string) ([]instructionTarget, error) {
 		}
 
 		path := filepath.Join(dirWorkflows, entry.Name())
-		if path == filepath.FromSlash(ghaw.MCPFile) {
+		if managedWorkflowImport(path) {
 			continue
 		}
 		settings, err := readWorkflowInstructions(root, path)
@@ -248,6 +248,12 @@ func workflowInstructionTargets(root string) ([]instructionTarget, error) {
 		})
 	}
 	return targets, nil
+}
+
+// managedWorkflowImport reports whether path is a workflow import that generation writes. The
+// imports select no engine and may not exist until generation finishes.
+func managedWorkflowImport(path string) bool {
+	return path == filepath.FromSlash(ghaw.MCPFile) || path == filepath.FromSlash(ghaw.JournalFile)
 }
 
 func readWorkflowInstructions(root, path string) (*workflowInstructions, error) {
@@ -308,8 +314,7 @@ func resolveWorkflowEngine(root, path string, visiting map[string]bool) (workflo
 		if !filepath.IsLocal(importPath) {
 			return resolved, fmt.Errorf("workflow import must stay inside the project: %s", importPath)
 		}
-		if importPath == filepath.FromSlash(ghaw.MCPFile) {
-			// The managed fragment contains only MCP declarations and may not exist until generation finishes.
+		if managedWorkflowImport(importPath) {
 			continue
 		}
 

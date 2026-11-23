@@ -16,9 +16,10 @@ func newNoteCommand(f *cmdutil.Factory) *cobra.Command {
 		Use:   "note ID",
 		Short: "Record an update to a journal entry",
 		Long: `Record that the entry's notes.md changed, with an optional summary for its log.
-A finished entry opens again.`,
-		Example: `  go42x agentenv journal note 20261110-move-schemas-into-the-bundle-3f2a --summary "Moved the schemas"`,
-		Args:    cobra.ExactArgs(1),
+--keep keeps the entry, so journal gc never deletes it; --keep=false lets gc delete it again.`,
+		Example: `  go42x agentenv journal note 20261110-move-schemas-into-the-bundle-3f2a --summary "Moved the schemas"
+  go42x agentenv journal note 20261110-move-schemas-into-the-bundle-3f2a --keep`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			settings := newSettings(f, true)
 			options := journal.NoteOptions{
@@ -26,6 +27,9 @@ A finished entry opens again.`,
 				Summary: viper.GetString(flagSummary),
 				PR:      viper.GetString(flagPR),
 				Issue:   viper.GetString(flagIssue),
+			}
+			if cmdutil.ExplicitFlag(cmd, flagKeep) {
+				options.Keep = new(viper.GetBool(flagKeep))
 			}
 			if cmdutil.ExplicitFlag(cmd, flagTag) {
 				options.Tags = viper.GetStringSlice(flagTag)
@@ -55,6 +59,9 @@ A finished entry opens again.`,
 	cmd.Flags().String(
 		flagIssue, "",
 		"issue number or URL")
+	cmd.Flags().Bool(
+		flagKeep, false,
+		"keep the entry, so journal gc never deletes it; --keep=false lets gc delete it again")
 	addActorFlags(cmd)
 	return cmd
 }

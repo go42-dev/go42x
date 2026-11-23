@@ -371,9 +371,9 @@ func mergeSourceSnapshot(t *testing.T, p *project) map[string]fileState {
 	t.Helper()
 	files := p.snapshot(t)
 	maps.DeleteFunc(files, func(path string, _ fileState) bool {
-		// A failed update leaves only its candidates, in the build directory's tool workspace.
+		// A failed update leaves only its candidates, in go42x's temporary directory.
 		path = filepath.ToSlash(path)
-		return path == ".build/tmp" || strings.HasPrefix(path, ".build/tmp/agentenv-update-")
+		return path == ".go42x/tmp" || strings.HasPrefix(path, ".go42x/tmp/agentenv-update-")
 	})
 	return files
 }
@@ -617,7 +617,9 @@ func TestAgentEnvUpdateMergeConflictsPreserveSources(t *testing.T) {
 				t.Fatal("failed merge changed project sources or backups")
 			}
 			if conflict == "content" || conflict == "add-add" {
-				candidates, err := filepath.Glob(filepath.Join(p.root, ".build/tmp/agentenv-update-*/merged", path))
+				candidates, err := filepath.Glob(
+					filepath.Join(p.root, ".go42x/tmp/agentenv-update-*/merged", path),
+				)
 				if err != nil || len(candidates) != 1 {
 					t.Fatalf("missing conflict candidate: %v, %v", candidates, err)
 				}
@@ -630,15 +632,15 @@ func TestAgentEnvUpdateMergeConflictsPreserveSources(t *testing.T) {
 	}
 }
 
-func TestAgentEnvUpdateSavesConflictsInTheBuildDirectory(t *testing.T) {
+func TestAgentEnvUpdateSavesConflictsInTheTmpDirectory(t *testing.T) {
 	t.Parallel()
 	for name, tt := range map[string]struct {
 		local string
 		want  string
 	}{
-		"configured": {"context: {build-dir: out}\n", "out/tmp"},
+		"configured": {"context: {tmp-dir: scratch}\n", ".go42x/scratch"},
 		// Update repairs configurations that this release rejects, so it uses the default.
-		"rejected configuration": {"context: {build-dir: out, retired-setting: true}\n", ".build/tmp"},
+		"rejected configuration": {"context: {tmp-dir: scratch, retired-setting: true}\n", ".go42x/tmp"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -750,10 +752,12 @@ func TestAgentEnvBundledDocuments(t *testing.T) {
 		t.Fatal("init did not install the bundled upstream lock")
 	}
 	p.run(t, 0, "vendor", "touch", ".build/schema-reference")
-	schemaHeader, _, _ := strings.Cut(p.read(t, ".build/schema-reference/"+vendoring.ManifestFile), "\n")
+	touched := p.read(t, ".build/schema-reference/"+vendoring.ManifestFile)
+	_, schemaHeader, _ := strings.Cut(touched, "# yaml-language-server: ")
+	schemaHeader, _, _ = strings.Cut(schemaHeader, "\n")
 	manifest := p.read(t, ".go42x/"+vendoring.ManifestFile)
 
-	if !strings.Contains(manifest, schemaHeader+"\n") {
+	if len(schemaHeader) == 0 || !strings.Contains(manifest, "# yaml-language-server: "+schemaHeader+"\n") {
 		t.Fatalf("bundled manifest schema differs from this binary's schema reference: %s", manifest)
 	}
 	p.run(t, 0, "vendor", "check", "--manifest", ".go42x/"+vendoring.ManifestFile)
@@ -1241,10 +1245,11 @@ func TestAgentEnvInitForce(t *testing.T) {
 
 	if !strings.HasPrefix(gitignore, "before\n# go42x -- START\n") ||
 		!strings.HasSuffix(gitignore, "# go42x -- END\nafter\n") ||
-		strings.Contains(gitignore, "obsolete") || !strings.Contains(gitignore, "\n/.build/\n") {
+		strings.Contains(gitignore, "obsolete") || strings.Contains(gitignore, "build/") {
 		t.Fatalf("reinstall did not replace the managed gitignore block: %s", gitignore)
 	}
-	if gitignore := p.read(t, ".go42x/.gitignore"); !strings.Contains(gitignore, "\n/backups/\n") {
+	if gitignore := p.read(t, ".go42x/.gitignore"); !strings.Contains(gitignore, "\n/backups/\n") ||
+		!strings.Contains(gitignore, "\n/tmp/\n") {
 		t.Fatalf("reinstall did not keep the managed .go42x/.gitignore block: %s", gitignore)
 	}
 	for path, want := range preserved {
@@ -1258,7 +1263,7 @@ func TestAgentEnvInitForce(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(p.root, "CLAUDE.md")); !os.IsNotExist(err) {
 		t.Fatalf("reinstall generated obsolete Claude wrapper: %v", err)
 	}
-	for _, path := range []string{".build", ".mcp.json", ".codex"} {
+	for _, path := range []string{".go42x/tmp", ".mcp.json", ".codex"} {
 		if _, err := os.Stat(filepath.Join(p.root, path)); !os.IsNotExist(err) {
 			t.Errorf("reinstall created %s: %v", path, err)
 		}
@@ -1332,14 +1337,14 @@ func TestAgentEnvInitForceDoesNotReadProviderSettingsOrTemplates(t *testing.T) {
 	t.Parallel()
 	p := newProject(t)
 	p.configure(t)
-	p.write(t, ".build", "not a directory")
+	p.write(t, ".go42x/tmp", "not a directory")
 	p.write(t, ".go42x/go42x.local.yaml",
 		"providers: {claude: {enabled: true}}\n"+
 			"context: {template: ../missing.tpl.md, chunks-dir: ../missing-chunks}\n")
 	preserved := map[string]string{
 		".claude/settings.local.json":     "{",
 		".go42x/chunks/900-custom.tpl.md": "{{ if }}",
-		".build":                          "not a directory",
+		".go42x/tmp":                      "not a directory",
 	}
 	for path, content := range preserved {
 		p.write(t, path, content)

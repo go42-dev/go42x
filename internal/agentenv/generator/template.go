@@ -9,6 +9,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/go42-dev/go42x/assets"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/antigravity"
 	"github.com/go42-dev/go42x/internal/agentenv/generator/provider/claude"
@@ -33,16 +34,13 @@ type renderedTemplate struct {
 	sources *templateSources
 }
 
+// defaultTemplateOps returns the functions of the bundled asset templates and the MCP
+// helpers of the instruction templates.
 func defaultTemplateOps() template.FuncMap {
-	return template.FuncMap{
-		"hasMCPTool": hasMCPTool,
-		"yamlValue":  yamlValue,
-		"mcpTool":    mcpToolName,
-		"lower":      strings.ToLower,
-		"upper":      strings.ToUpper,
-		"trim":       strings.TrimSpace,
-		"join":       strings.Join,
-	}
+	functions := assets.TemplateFuncs()
+	functions["hasMCPTool"] = hasMCPTool
+	functions["mcpTool"] = mcpToolName
+	return functions
 }
 
 func hasMCPTool(servers map[string]provider.MCPServer, server, tool string) bool {
@@ -85,6 +83,10 @@ func (e *templateEngine) Render(cfg config.Context, ctxData map[string]any) (*re
 
 	if err := tmpl.Execute(&output, ctxData); err != nil {
 		return nil, fmt.Errorf("failed to execute template: %w", err)
+	}
+	if index := strings.Index(output.String(), assets.MissingValue); index >= 0 {
+		source := sources.sourceAt(index)
+		return nil, fmt.Errorf("%s:%d: prints a key that the template context lacks", source.path, source.line)
 	}
 
 	return &renderedTemplate{
@@ -151,6 +153,9 @@ func (e *templateEngine) Process(content string, ctxData map[string]any) (string
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, ctxData); err != nil {
 		return "", fmt.Errorf("failed to execute template: %w", err)
+	}
+	if err := assets.CheckMissingValue(buf.String()); err != nil {
+		return "", err
 	}
 
 	return buf.String(), nil

@@ -34,6 +34,8 @@ type Generator struct {
 	templateDir string
 	outputDir   string
 	providers   map[string]providerAccessor
+	// templateContext is the data of the last Prepare or TemplateContext call.
+	templateContext *Context
 }
 
 func NewGenerator(logger *slog.Logger, cfg *config.Config, templateDir, outputDir string) *Generator {
@@ -94,6 +96,7 @@ func (g *Generator) Prepare(ctx context.Context, clean bool) (*fspatch.Plan, err
 	if err != nil {
 		return nil, fmt.Errorf("failed to build context: %w", err)
 	}
+	g.templateContext = tplCtx
 
 	plan := fspatch.NewPlan(g.logger, g.outputDir, filepath.Join(g.outputDir, config.Directory, "backups"))
 	if err := g.prepareInstructions(ctx, plan, tplCtx.ToMap(), clean); err != nil {
@@ -132,6 +135,31 @@ func (g *Generator) Prepare(ctx context.Context, clean bool) (*fspatch.Plan, err
 	}
 
 	return plan, nil
+}
+
+// TemplateContext returns the data that templates render with: the context of the last
+// Prepare, or a new one when Prepare has not run.
+func (g *Generator) TemplateContext(ctx context.Context) (map[string]any, error) {
+	if g.templateContext == nil {
+		tplCtx, err := g.buildTemplateContext(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to build context: %w", err)
+		}
+		g.templateContext = tplCtx
+	}
+	return g.templateContext.ToMap(), nil
+}
+
+// ProjectContext returns the template context of the project at root, as generation
+// builds it. A project without a usable configuration gets the context of an empty
+// configuration, whose settings take their defaults.
+func ProjectContext(ctx context.Context, logger *slog.Logger, root string) (map[string]any, error) {
+	templateDir := filepath.Join(root, config.Directory)
+	cfg, err := config.LoadProjectConfig(filepath.Join(templateDir, config.FileProject), nil)
+	if err != nil {
+		cfg = &config.Config{}
+	}
+	return NewGenerator(logger, cfg, templateDir, root).TemplateContext(ctx)
 }
 
 func (g *Generator) buildTemplateContext(ctx context.Context) (*Context, error) {
@@ -186,6 +214,8 @@ func (g *Generator) buildTemplateContext(ctx context.Context) (*Context, error) 
 	tplCtx.Set("skills", g.skillContext())
 
 	tplCtx.Set("context", g.config.Context.WithDefaults())
+
+	tplCtx.Set("journal", g.config.Journal.WithDefaults())
 
 	return tplCtx, nil
 }

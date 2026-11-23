@@ -20,8 +20,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/go42-dev/go42x/internal/config"
 )
 
 type releaseArtifact struct {
@@ -76,7 +74,14 @@ func runReleaseTests(m *testing.M, dist string) int {
 			return 1
 		}
 	}
-	tmpDir := filepath.Join(root, config.DefaultBuildDir, config.DefaultBuildTmpDir)
+	// Tasks export BUILD_TMP_DIR; other runs use the system temporary directory.
+	tmpDir := os.TempDir()
+	if dir := os.Getenv("BUILD_TMP_DIR"); len(dir) > 0 {
+		tmpDir = dir
+		if !filepath.IsAbs(tmpDir) {
+			tmpDir = filepath.Join(root, tmpDir)
+		}
+	}
 	if err := os.MkdirAll(tmpDir, 0700); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

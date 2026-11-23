@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -236,9 +237,10 @@ func validateCollisions(paths []string) error {
 	return nil
 }
 
-// Touch atomically creates a missing manifest
-// Existing manifests are preserved.
-func Touch(ctx context.Context, directory string) (*Result, error) {
+// Touch atomically creates a missing manifest from the bundled template, rendered with the
+// template context data and the manifest schema as .vendoring. Existing manifests are
+// preserved.
+func Touch(ctx context.Context, directory string, data map[string]any) (*Result, error) {
 	result := newResult(OperationTouch)
 	if err := ctx.Err(); err != nil {
 		return result, err
@@ -279,10 +281,18 @@ func Touch(ctx context.Context, directory string) (*Result, error) {
 		return result, nil
 	}
 
-	manifest := strings.NewReplacer(
-		"{{.SchemaURL}}", buildinfo.SourceURL("assets/schemas/vendor.schema.yaml"),
-		"{{.SchemaVersion}}", SchemaVersion,
-	).Replace(assets.VendorManifestTemplate())
+	data = maps.Clone(data)
+	if data == nil {
+		data = make(map[string]any)
+	}
+	data["vendoring"] = struct{ SchemaURL, SchemaVersion string }{
+		SchemaURL:     buildinfo.SourceURL("assets/schemas/vendor.schema.yaml"),
+		SchemaVersion: SchemaVersion,
+	}
+	manifest, err := assets.Render(assets.VendorManifest, data)
+	if err != nil {
+		return result, err
+	}
 	changed, err := writeTouchFile(ctx, directory, manifestPath, []byte(manifest))
 	if err != nil {
 		return result, fmt.Errorf("write %s: %w", manifestPath, err)

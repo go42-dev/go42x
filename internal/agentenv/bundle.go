@@ -168,12 +168,11 @@ func prepareMergedBundle(
 	}
 
 	// Update must run on configurations that this release rejects, because its merge
-	// repairs them; the merge workspace then uses the default build directory.
-	buildDir, err := config.ProjectBuildDir(root)
+	// repairs them; the merge workspace then uses the default temporary directory.
+	parent, err := config.ProjectTmpDir(root)
 	if err != nil {
-		buildDir = filepath.Join(root, config.DefaultBuildDir)
+		parent = filepath.Join(root, filepath.FromSlash(config.Context{}.TmpPath()))
 	}
-	parent := filepath.Join(buildDir, config.DefaultBuildTmpDir)
 	if err := os.MkdirAll(parent, 0700); err != nil {
 		return nil, nil, fmt.Errorf("create merge parent: %w", err)
 	}

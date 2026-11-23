@@ -40,15 +40,20 @@ type NewOptions struct {
 	Tags  []string
 	PR    string
 	Issue string
+	// Keep exempts the entry from gc.
+	Keep bool
 }
 
 type ListOptions struct {
-	Status Status
-	Tags   []string
+	Tags []string
 	// Since leaves out entries last updated before it when not zero.
 	Since time.Time
-	// Kept lists only finished entries without an expiry.
+	// Kept lists only entries that gc never deletes.
 	Kept bool
+	// PR and Issue list only entries with a matching reference when not empty. A number,
+	// with or without "#", also matches a URL that ends with it.
+	PR    string
+	Issue string
 	// Stray lists content without an entry record instead of entries.
 	Stray bool
 }
@@ -91,14 +96,8 @@ type NoteOptions struct {
 	Tags  []string
 	PR    string
 	Issue string
-}
-
-type DoneOptions struct {
-	ID        string
-	Summary   string
-	Abandoned bool
-	// Keep finishes the entry without an expiry, so gc never deletes it.
-	Keep bool
+	// Keep exempts the entry from gc, or no longer does, when not nil.
+	Keep *bool
 }
 
 type SearchOptions struct {
@@ -132,12 +131,11 @@ type GCResult struct {
 	Size    int64    `json:"size"`
 }
 
-// GCItem is a finished entry whose expiry has passed.
+// GCItem is an entry that went without an update for the retention period.
 type GCItem struct {
 	ID        string    `json:"id"`
 	Title     string    `json:"title"`
-	Status    Status    `json:"status"`
-	ExpiresAt time.Time `json:"expires_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 	Path      string    `json:"path"`
 	Size      int64     `json:"size"`
 }
@@ -153,19 +151,13 @@ func (o NewOptions) Validate() error {
 }
 
 func (o ListOptions) Validate() error {
-	switch o.Status {
-	case "", StatusOpen, StatusDone, StatusAbandoned:
-	default:
-		return fmt.Errorf("status must be open, done, or abandoned")
-	}
-	if o.Stray && (len(o.Status) > 0 || len(o.Tags) > 0 || !o.Since.IsZero() || o.Kept) {
+	if o.Stray && (len(o.Tags) > 0 || !o.Since.IsZero() || o.Kept || len(o.PR) > 0 || len(o.Issue) > 0) {
 		return fmt.Errorf("stray listing does not take entry filters")
 	}
-	if o.Kept && o.Status == StatusOpen {
-		return fmt.Errorf("kept entries are finished, so they never have status open")
+	if _, err := NormalizeTags(o.Tags); err != nil {
+		return err
 	}
-	_, err := NormalizeTags(o.Tags)
-	return err
+	return validateReferences(o.PR, o.Issue)
 }
 
 func (o ShowOptions) Validate() error {
@@ -198,13 +190,6 @@ func (o NoteOptions) Validate() error {
 		return err
 	}
 	return validateReferences(o.PR, o.Issue)
-}
-
-func (o DoneOptions) Validate() error {
-	if err := ValidateID(o.ID); err != nil {
-		return err
-	}
-	return validateSummary(o.Summary)
 }
 
 func (o SearchOptions) Validate() error {
@@ -271,10 +256,14 @@ func NewService(settings *Settings, opts ...Option) (*Service, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolve project root: %w", err)
 	}
+	store, err := loadStore(root)
+	if err != nil {
+		return nil, err
+	}
 
 	svc := &Service{
 		settings: settings,
-		store:    newStore(root),
+		store:    store,
 	}
 	for _, opt := range opts {
 		opt(svc)
@@ -286,8 +275,8 @@ func NewService(settings *Settings, opts ...Option) (*Service, error) {
 	return svc, nil
 }
 
-// New creates an open entry with an empty notes template. When a step fails, the entry
-// directory is removed again.
+// New creates an entry with an empty notes template. When a step fails, the entry directory
+// is removed again.
 func (s *Service) New(ctx context.Context, actor Actor, options NewOptions) (_ *EntryResult, retErr error) {
 	if err := actor.Validate(); err != nil {
 		return nil, err
@@ -317,8 +306,8 @@ func (s *Service) New(ctx context.Context, actor Actor, options NewOptions) (_ *
 		Schema:    schemaLink(),
 		Version:   entryVersion,
 		Title:     title,
-		Status:    StatusOpen,
 		Tags:      tags,
+		Keep:      options.Keep,
 		CreatedAt: now,
 		UpdatedAt: now,
 		Runtime:   actor.Runtime,
@@ -375,22 +364,19 @@ func (s *Service) List(ctx context.Context, options ListOptions) (*ListResult, e
 		return nil, err
 	}
 	if options.Stray {
-		build, err := s.store.strayBuild(ctx)
-		if err != nil {
-			return nil, err
-		}
 		return &ListResult{
 			Entries: []*Entry{},
 			Invalid: current.invalid,
-			Stray:   append(current.stray, build...),
+			Stray:   current.stray,
 		}, nil
 	}
 
 	entries := []*Entry{}
 	for _, entry := range current.entries {
-		if (len(options.Status) > 0 && entry.Status != options.Status) ||
-			entry.UpdatedAt.Before(options.Since) ||
-			(options.Kept && !kept(entry)) ||
+		if entry.UpdatedAt.Before(options.Since) ||
+			(options.Kept && !entry.Keep) ||
+			!matchReference(entry.Refs.PR, options.PR) ||
+			!matchReference(entry.Refs.Issue, options.Issue) ||
 			slices.ContainsFunc(tags, func(tag string) bool { return !slices.Contains(entry.Tags, tag) }) {
 			continue
 		}
@@ -491,7 +477,7 @@ func (s *Service) Attach(ctx context.Context, options AttachOptions) (*EntryFile
 	}, nil
 }
 
-// Note records an update to an entry's notes. A finished entry opens again.
+// Note records an update to an entry's notes.
 func (s *Service) Note(ctx context.Context, actor Actor, options NoteOptions) (*EntryResult, error) {
 	if err := actor.Validate(); err != nil {
 		return nil, err
@@ -520,61 +506,14 @@ func (s *Service) Note(ctx context.Context, actor Actor, options NoteOptions) (*
 		return nil, err
 	}
 
-	event := "note"
-	if entry.Status != StatusOpen {
-		event = "reopened"
-		entry.Status = StatusOpen
-		entry.ExpiresAt = nil
-	}
 	if tags != nil {
 		entry.Tags = tags
 	}
+	if options.Keep != nil {
+		entry.Keep = *options.Keep
+	}
 	entry.Refs = s.currentRefs(ctx, mergeRefs(entry.Refs, Refs{PR: options.PR, Issue: options.Issue}))
-	if err := s.record(ctx, entry, timestamp(), event, actor, options.Summary); err != nil {
-		return nil, err
-	}
-	return s.entryResult(entry), nil
-}
-
-// Done finishes an open entry, as done or abandoned.
-func (s *Service) Done(ctx context.Context, actor Actor, options DoneOptions) (*EntryResult, error) {
-	if err := actor.Validate(); err != nil {
-		return nil, err
-	}
-	if err := options.Validate(); err != nil {
-		return nil, err
-	}
-
-	unlock, err := s.store.lock(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer unlock() //nolint:errcheck
-
-	entry, err := s.store.read(options.ID)
-	if err != nil {
-		return nil, err
-	}
-	if entry.Status != StatusOpen {
-		return nil, fmt.Errorf("journal entry %s is already %s; run journal note to reopen it", entry.ID, entry.Status)
-	}
-
-	event := "done"
-	entry.Status = StatusDone
-	retention := DoneRetention
-	if options.Abandoned {
-		event = "abandoned"
-		entry.Status = StatusAbandoned
-		retention = AbandonedRetention
-	}
-	now := timestamp()
-	entry.ExpiresAt = nil
-	if !options.Keep {
-		expires := now.Add(retention)
-		entry.ExpiresAt = &expires
-	}
-	entry.Refs = s.currentRefs(ctx, entry.Refs)
-	if err := s.record(ctx, entry, now, event, actor, options.Summary); err != nil {
+	if err := s.record(ctx, entry, timestamp(), "note", actor, options.Summary); err != nil {
 		return nil, err
 	}
 	return s.entryResult(entry), nil
@@ -647,9 +586,9 @@ func (s *Service) Index(ctx context.Context) (*IndexResult, error) {
 	}, nil
 }
 
-// GC reports finished entries whose expiry has passed and, with Apply, deletes them.
-// Open entries, entries without an expiry, and content without a record are never deleted.
-// A failed deletion does not stop the others; the index is rebuilt either way.
+// GC reports entries that went without an update for the retention period and, with Apply,
+// deletes them. Kept entries and content without a record are never deleted. A failed
+// deletion does not stop the others; the index is rebuilt either way.
 func (s *Service) GC(ctx context.Context, options GCOptions) (*GCResult, error) {
 	unlock, err := s.store.lock(ctx)
 	if err != nil {
@@ -669,7 +608,7 @@ func (s *Service) GC(ctx context.Context, options GCOptions) (*GCResult, error) 
 	now := time.Now()
 	var errs []error
 	for _, entry := range current.entries {
-		if !expired(entry, now) {
+		if !entry.Expired(now, s.store.retention) {
 			continue
 		}
 
@@ -677,8 +616,7 @@ func (s *Service) GC(ctx context.Context, options GCOptions) (*GCResult, error) 
 		item := GCItem{
 			ID:        entry.ID,
 			Title:     entry.Title,
-			Status:    entry.Status,
-			ExpiresAt: *entry.ExpiresAt,
+			UpdatedAt: entry.UpdatedAt,
 			Path:      s.store.relative(dir),
 			Size:      treeSize(dir),
 		}
@@ -742,13 +680,19 @@ func timestamp() time.Time {
 	return time.Now().UTC().Truncate(time.Second)
 }
 
-func expired(entry *Entry, now time.Time) bool {
-	return entry.Status != StatusOpen && entry.ExpiresAt != nil && !entry.ExpiresAt.After(now)
-}
-
-// kept reports whether an entry is finished without an expiry, so gc never deletes it.
-func kept(entry *Entry) bool {
-	return entry.Status != StatusOpen && entry.ExpiresAt == nil
+// matchReference reports whether a recorded pull request or issue reference matches a list
+// filter. An empty filter matches every reference. A number, with or without "#", also
+// matches a reference that ends with "/" and the number, such as an issue URL.
+func matchReference(recorded, filter string) bool {
+	filter = strings.TrimSpace(filter)
+	if len(filter) == 0 || recorded == filter {
+		return true
+	}
+	number := strings.TrimPrefix(filter, "#")
+	if len(number) == 0 || strings.ContainsFunc(number, func(r rune) bool { return r < '0' || r > '9' }) {
+		return false
+	}
+	return recorded == number || recorded == "#"+number || strings.HasSuffix(recorded, "/"+number)
 }
 
 func mergeRefs(recorded, update Refs) Refs {

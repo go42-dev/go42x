@@ -99,7 +99,11 @@ func (m *indexManager) ensureSourceIgnore(ctx context.Context, root string) (str
 		return "", err
 	}
 
-	if err := plan.WriteManagedBlock(path, assets.KWBIgnore(), fspatch.KindSources); err != nil {
+	block, err := assets.Render(assets.KWBIgnore, m.settings.TemplateData)
+	if err != nil {
+		return "", err
+	}
+	if err := plan.WriteManagedBlock(path, block, fspatch.KindSources); err != nil {
 		return "", err
 	}
 

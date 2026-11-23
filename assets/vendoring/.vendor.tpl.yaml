@@ -1,0 +1,5 @@
+---
+
+# yaml-language-server: $schema={{ .vendoring.SchemaURL }}
+version: "{{ .vendoring.SchemaVersion }}"
+dependencies: {}

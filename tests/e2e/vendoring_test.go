@@ -53,7 +53,10 @@ func TestVendorTouch(t *testing.T) {
 	data := p.read(t, manifestPath)
 	m, err := vendoring.ParseManifest([]byte(data))
 	if err != nil || len(m.Dependencies) != 0 ||
-		!strings.HasPrefix(data, "# yaml-language-server: $schema=https://raw.githubusercontent.com/go42-dev/go42x/") ||
+		!strings.HasPrefix(
+			data,
+			"---\n\n# yaml-language-server: $schema=https://raw.githubusercontent.com/go42-dev/go42x/",
+		) ||
 		!strings.Contains(data, "/assets/schemas/vendor.schema.yaml\n") {
 		t.Fatalf("initial manifest: %s %v", data, err)
 	}
@@ -312,7 +315,7 @@ func TestVendorLifecycleAndJSON(t *testing.T) {
 	p.assertUnchanged(t, before)
 }
 
-func TestVendorNestedManifestAndBuildConfiguration(t *testing.T) {
+func TestVendorNestedManifestAndTmpConfiguration(t *testing.T) {
 	t.Parallel()
 	server := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -323,63 +326,53 @@ func TestVendorNestedManifestAndBuildConfiguration(t *testing.T) {
 
 	for _, tc := range []struct {
 		name   string
-		build  string
+		tmp    string
 		local  string
 		want   string
 		config bool
 	}{
 		{
 			name: "missing configuration",
-			want: ".build",
+			want: ".go42x/tmp",
 		},
 		{
-			name:   "omitted build directory",
+			name:   "omitted temporary directory",
 			config: true,
-			want:   ".build",
+			want:   ".go42x/tmp",
 		},
 		{
-			name:   "empty build directory",
-			build:  `""`,
+			name:   "empty temporary directory",
+			tmp:    `""`,
 			config: true,
-			want:   ".build",
+			want:   ".go42x/tmp",
 		},
 		{
-			name:   "relative build directory",
-			build:  ".scratch",
+			name:   "relative temporary directory",
+			tmp:    "scratch",
 			config: true,
-			want:   ".scratch",
+			want:   ".go42x/scratch",
 		},
 		{
 			name:   "local override",
-			build:  ".base",
-			local:  ".local-scratch",
+			tmp:    "base",
+			local:  "local-scratch",
 			config: true,
-			want:   ".local-scratch",
-		},
-		{
-			name:   "absolute build directory",
-			build:  "absolute",
-			config: true,
+			want:   ".go42x/local-scratch",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p := newProject(t)
-			build, want := tc.build, filepath.Join(p.root, tc.want)
-
-			if build == "absolute" {
-				want = filepath.Dir(p.root)
-				build = fmt.Sprintf("%q", want)
-			}
+			want := filepath.Join(p.root, tc.want)
 			if tc.config {
 				cfg := "version: \"1.0\"\nproject:\n  name: example\nproviders:\n  codex: {}\ncontext:\n  template: agents.tpl.md\n"
 
-				if len(build) > 0 {
-					cfg += "  build-dir: " + build + "\n"
+				if len(tc.tmp) > 0 {
+					cfg += "  tmp-dir: " + tc.tmp + "\n"
 				}
 				p.write(t, ".go42x/go42x.yaml", cfg)
 			}
 			if len(tc.local) > 0 {
-				p.write(t, ".go42x/go42x.local.yaml", "context:\n  build-dir: "+tc.local+"\n")
+				p.write(t, ".go42x/go42x.local.yaml", "context:\n  tmp-dir: "+tc.local+"\n")
 			}
 			p.write(t, "third_party/"+vendoring.ManifestFile, vendorManifest(server.URL))
 			caller := newProject(t)
@@ -397,13 +390,13 @@ func TestVendorNestedManifestAndBuildConfiguration(t *testing.T) {
 			if !strings.Contains(p.read(t, "third_party/"+vendoring.LockFile), "manifest: "+vendoring.ManifestFile) {
 				t.Fatal("lock is not beside the selected manifest")
 			}
-			entries, err := os.ReadDir(filepath.Join(want, "tmp", "vendoring"))
+			entries, err := os.ReadDir(filepath.Join(want, "vendoring"))
 			if err != nil || len(entries) != 0 {
 				t.Fatalf("temporary workspace not used or not cleaned: %v %v", entries, err)
 			}
-			if tc.want != ".build" {
-				if _, err := os.Stat(filepath.Join(p.root, ".build")); !os.IsNotExist(err) {
-					t.Fatal("ignored configured build directory")
+			if tc.want != ".go42x/tmp" {
+				if _, err := os.Stat(filepath.Join(p.root, ".go42x/tmp")); !os.IsNotExist(err) {
+					t.Fatal("ignored configured temporary directory")
 				}
 			}
 			before := p.snapshot(t)

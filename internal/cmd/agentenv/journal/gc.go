@@ -14,9 +14,9 @@ import (
 func newGCCommand(f *cmdutil.Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "gc",
-		Short: "Delete finished journal entries whose expiry has passed",
-		Long: `Report finished entries whose expiry has passed; --apply deletes them. Open entries,
-entries finished with --keep, and content without a journal record are never deleted.`,
+		Short: "Delete journal entries that went without an update for the retention period",
+		Long: `Report entries that went without an update for journal.retention-days, 30 by default;
+--apply deletes them. Kept entries and content without a journal record are never deleted.`,
 		Example: `  go42x agentenv journal gc
   go42x agentenv journal gc --apply`,
 		Args: cobra.NoArgs,

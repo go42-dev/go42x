@@ -15,10 +15,12 @@ func newListCommand(f *cmdutil.Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List journal entries, most recently updated first",
-		Long: `List journal entries that match every filter. With --stray, list journal and build
-directory content that no entry describes. go42x never deletes it; review it and delete
-what is no longer needed. Agents ask the user first.`,
-		Example: `  go42x agentenv journal list --status open
+		Long: `List journal entries that match every filter. --issue and --pr match the recorded
+reference; a number, with or without "#", also matches a URL that ends with it. With --stray,
+list journal content that no entry describes. go42x never deletes it;
+review it and delete what is no longer needed. Agents ask the user first.`,
+		Example: `  go42x agentenv journal list --tag refactor
+  go42x agentenv journal list --issue https://github.com/go42-dev/go42x/issues/42
   go42x agentenv journal list --since 2026-11-10T09:00:00Z
   go42x agentenv journal list --stray`,
 		Args: cobra.NoArgs,
@@ -29,11 +31,12 @@ what is no longer needed. Agents ask the user first.`,
 				return cmdutil.UsageError(err)
 			}
 			options := journal.ListOptions{
-				Status: journal.Status(viper.GetString(flagStatus)),
-				Tags:   viper.GetStringSlice(flagTag),
-				Since:  since,
-				Kept:   viper.GetBool(flagKept),
-				Stray:  viper.GetBool(flagStray),
+				Tags:  viper.GetStringSlice(flagTag),
+				Since: since,
+				Kept:  viper.GetBool(flagKept),
+				PR:    viper.GetString(flagPR),
+				Issue: viper.GetString(flagIssue),
+				Stray: viper.GetBool(flagStray),
 			}
 			if err := settings.Validate(); err != nil {
 				return cmdutil.UsageError(err)
@@ -45,9 +48,6 @@ what is no longer needed. Agents ask the user first.`,
 		},
 	}
 
-	cmd.Flags().String(
-		flagStatus, "",
-		"only entries with this status: open, done, or abandoned")
 	cmd.Flags().StringSlice(
 		flagTag, nil,
 		"only entries with every listed tag")
@@ -56,7 +56,13 @@ what is no longer needed. Agents ask the user first.`,
 		"only entries updated at or after this RFC 3339 time")
 	cmd.Flags().Bool(
 		flagKept, false,
-		"only finished entries without an expiry")
+		"only kept entries, which journal gc never deletes")
+	cmd.Flags().String(
+		flagPR, "",
+		"only entries for this pull request number or URL")
+	cmd.Flags().String(
+		flagIssue, "",
+		"only entries for this issue number or URL")
 	cmd.Flags().Bool(
 		flagStray, false,
 		"list content without a journal record instead of entries")

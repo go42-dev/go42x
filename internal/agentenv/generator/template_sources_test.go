@@ -88,3 +88,39 @@ func writeInstructionTemplates(t *testing.T, dir, main string, chunks []string) 
 		}
 	}
 }
+
+func TestTemplateRejectsMissingKeys(t *testing.T) {
+	t.Parallel()
+	data := map[string]any{"project": map[string]any{"name": "example"}, "mcp": map[string]any{}}
+	for _, tt := range []struct {
+		name, chunk, want string
+	}{
+		{"typo", "### Project\n\n{{ .project.nme }}\n", "chunks/00.tpl.md:3: prints a key"},
+		{"missing section", "### Project\n\nLine\n{{ .projct.name }}\n", "chunks/00.tpl.md:4: prints a key"},
+		{"optional key", "### Project\n\n{{ if .mcp.gopls }}gopls{{ end }}{{ .project.name }}\n", ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			writeInstructionTemplates(t, dir, "# Title\n\n## Rules\n\n{{ .chunks }}", []string{tt.chunk})
+			engine := newTemplateEngine(dir)
+
+			rendered, err := engine.Render(config.Context{Template: "main.tpl.md", ChunksDir: "chunks"}, data)
+
+			if len(tt.want) == 0 {
+				if err != nil || !strings.Contains(rendered.content, "example") {
+					t.Fatalf("Render() = %v, %v", rendered, err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("Render() error = %v, want %q", err, tt.want)
+			}
+		})
+	}
+
+	if _, err := newTemplateEngine("").Process("name: {{ .project.nme }}\n", data); err == nil ||
+		!strings.Contains(err.Error(), "output line 1 prints a key") {
+		t.Errorf("Process() error = %v, want the missing key", err)
+	}
+}

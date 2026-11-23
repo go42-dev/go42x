@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -32,20 +33,26 @@ const (
 	FileLocal   = "go42x.local.yaml"
 )
 
-// Default paths. The build subdirectories are relative to the build directory and
-// owned by tasks and tools.
+// Default paths. The temporary directory is relative to Directory, and the documentation
+// entrypoint to the project root.
 const (
-	DefaultBuildDir                = ".build"
-	DefaultBuildBinDir             = "bin"
-	DefaultBuildDistDir            = "dist"
-	DefaultBuildReportsDir         = "reports"
-	DefaultBuildCacheDir           = "cache"
-	DefaultBuildTmpDir             = "tmp"
+	DefaultTmpDir                  = "tmp"
 	DefaultDocumentationEntrypoint = "docs/README.md"
 )
 
-// JournalDir holds agent journal entries, relative to the project root.
-const JournalDir = Directory + "/journal"
+// Journal defaults. The journal path is relative to Directory.
+const (
+	DefaultJournalPath          = "journal"
+	DefaultJournalRetentionDays = 30
+	DefaultJournalDir           = Directory + "/" + DefaultJournalPath
+)
+
+// reservedPaths name the content of Directory that the temporary directory and the
+// journal must not use.
+var reservedPaths = []string{
+	"backups", "chunks", "kwb", "resources", "schemas", "skills", "upstream",
+	FileProject, FileLocal, "agents.tpl.md", "kwb.ignore",
+}
 
 var (
 	goEnvNamePattern      = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
@@ -59,6 +66,7 @@ type Config struct {
 	Project   Project                       `yaml:"project"`
 	EnvVars   []string                      `yaml:"env"`
 	Context   Context                       `yaml:"context"`
+	Journal   Journal                       `yaml:"journal,omitempty"`
 	Providers map[string]Provider           `yaml:"providers"`
 	MCP       map[string]provider.MCPServer `yaml:"mcp"`
 }
@@ -87,21 +95,87 @@ type Context struct {
 	Template  string   `yaml:"template"`
 	ChunksDir string   `yaml:"chunks-dir"`
 	SkillsDir string   `yaml:"skills-dir,omitempty"`
-	BuildDir  string   `yaml:"build-dir,omitempty"`
+	TmpDir    string   `yaml:"tmp-dir,omitempty"`
 	GoEnv     []string `yaml:"go-env,omitempty"`
 }
 
 // WithDefaults returns a copy with defaults applied to unset context settings.
 func (c Context) WithDefaults() Context {
-	if len(c.BuildDir) == 0 {
-		c.BuildDir = DefaultBuildDir
+	if len(c.TmpDir) == 0 {
+		c.TmpDir = DefaultTmpDir
 	}
+	c.TmpDir = path.Clean(c.TmpDir)
 	return c
 }
 
-// JournalDir returns the agent journal directory, relative to the project root.
-func (c Context) JournalDir() string {
-	return JournalDir
+// TmpPath returns the directory for the temporary files of go42x and agents, relative to the
+// project root.
+func (c Context) TmpPath() string {
+	return path.Join(Directory, c.WithDefaults().TmpDir)
+}
+
+// Journal configures the agent journal.
+type Journal struct {
+	// Path is the journal directory, relative to Directory.
+	Path string `yaml:"path,omitempty"`
+	// RetentionDays is how long an entry may go without an update before gc removes it.
+	RetentionDays *int `yaml:"retention-days,omitempty"`
+}
+
+// WithDefaults returns a copy with defaults applied to unset journal settings.
+func (j Journal) WithDefaults() Journal {
+	if len(j.Path) == 0 {
+		j.Path = DefaultJournalPath
+	}
+	j.Path = path.Clean(j.Path)
+	if j.RetentionDays == nil {
+		j.RetentionDays = new(DefaultJournalRetentionDays)
+	}
+	return j
+}
+
+// Dir returns the journal directory, relative to the project root.
+func (j Journal) Dir() string {
+	return path.Join(Directory, j.WithDefaults().Path)
+}
+
+// Retention returns how long an entry may go without an update before gc removes it.
+func (j Journal) Retention() time.Duration {
+	return time.Duration(*j.WithDefaults().RetentionDays) * 24 * time.Hour
+}
+
+func (j Journal) validate() error {
+	if len(j.Path) > 0 {
+		if err := validateDirectoryPath("journal.path", j.Path); err != nil {
+			return err
+		}
+	}
+	if j.RetentionDays != nil && *j.RetentionDays < 1 {
+		return fmt.Errorf("journal.retention-days must be at least 1")
+	}
+	return nil
+}
+
+// validateDirectoryPath checks a directory that a setting names relative to Directory. It
+// must stay inside Directory, and its first part must neither be hidden nor content that
+// go42x keeps there.
+func validateDirectoryPath(setting, value string) error {
+	cleaned := path.Clean(value)
+	first, _, _ := strings.Cut(cleaned, "/")
+	if len(strings.TrimSpace(value)) == 0 || strings.ContainsAny(value, "\\\x00:\r\n") ||
+		path.IsAbs(value) || cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, "../") ||
+		len(value) > 4096 {
+		return fmt.Errorf("%s must be a directory inside %s", setting, Directory)
+	}
+	if strings.HasPrefix(first, ".") || slices.Contains(reservedPaths, first) {
+		return fmt.Errorf("%s must not use %s/%s, which go42x keeps", setting, Directory, first)
+	}
+	return nil
+}
+
+// overlaps reports whether one of two clean slash paths contains the other.
+func overlaps(a, b string) bool {
+	return a == b || strings.HasPrefix(a, b+"/") || strings.HasPrefix(b, a+"/")
 }
 
 type Provider struct {
@@ -216,15 +290,23 @@ func (c *Config) Validate() error {
 	if len(strings.TrimSpace(c.Context.Template)) == 0 {
 		return fmt.Errorf("context.template is required; move shared instructions from providers into context")
 	}
-	if len(c.Context.BuildDir) > 0 &&
-		(len(strings.TrimSpace(c.Context.BuildDir)) == 0 || strings.ContainsRune(c.Context.BuildDir, '\x00')) {
-		return fmt.Errorf("context.build-dir must be a nonblank path without NUL characters")
+	if len(c.Context.TmpDir) > 0 {
+		if err := validateDirectoryPath("context.tmp-dir", c.Context.TmpDir); err != nil {
+			return err
+		}
 	}
 
 	for _, name := range c.Context.GoEnv {
 		if !goEnvNamePattern.MatchString(name) {
 			return fmt.Errorf("context.go-env: invalid Go environment variable name %q", name)
 		}
+	}
+
+	if err := c.Journal.validate(); err != nil {
+		return err
+	}
+	if overlaps(c.Context.TmpPath(), c.Journal.Dir()) {
+		return fmt.Errorf("context.tmp-dir and journal.path must name separate directories")
 	}
 
 	providers := slices.Sorted(maps.Keys(c.Providers))

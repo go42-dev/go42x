@@ -219,11 +219,12 @@ func TestWorkflowInstructionEngines(t *testing.T) {
 		".github/workflows/910-codex.md",
 		"---\non: issues\nengine:\n  id: codex\n  config: |\n    project_doc_max_bytes = 65536\n---\n",
 	)
+	// Generation writes the managed imports, so they may not exist yet.
 	writeInstructionFixture(
 		t,
 		root,
 		".github/workflows/920-imported.md",
-		"---\non: issues\nimports: [shared.md]\n---\n",
+		"---\non: issues\nimports: [900-aw-mcp.md, 901-aw-journal.md, shared.md]\n---\n",
 	)
 	writeInstructionFixture(t, root, ".github/workflows/shared.md", "---\nengine: claude\n---\n")
 	writeInstructionFixture(t, root, ".github/workflows/930-default.md", "---\non: issues\n---\n")

@@ -29,6 +29,8 @@ type Settings struct {
 	JSON                bool
 	SearchTimeout       time.Duration
 	SearchLimit         int
+	// TemplateData is the template context that a build renders .go42x/kwb.ignore with.
+	TemplateData map[string]any
 }
 
 func NewSettings() *Settings {

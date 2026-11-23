@@ -25,6 +25,7 @@ type compiledWorkflow struct {
 }
 
 type compiledJob struct {
+	If          string            `yaml:"if"`
 	Permissions map[string]string `yaml:"permissions"`
 	Steps       []compiledStep    `yaml:"steps"`
 }
@@ -92,7 +93,7 @@ func TestCompiledWorkflowBoundaries(t *testing.T) {
 				t.Fatalf("runtime order = %v", order)
 			}
 			foundApp := false
-			for _, job := range workflow.Jobs {
+			for jobName, job := range workflow.Jobs {
 				for _, step := range job.Steps {
 					if !strings.HasPrefix(step.Uses, "actions/create-github-app-token@") {
 						continue
@@ -100,10 +101,24 @@ func TestCompiledWorkflowBoundaries(t *testing.T) {
 
 					foundApp = true
 
+					// The journal save job writes only the journal repository, after threat detection.
+					repository := "${{ github.event.repository.name }}"
+					if jobName == "save-journal" {
+						repository = "${{ steps.repository.outputs.name }}"
+						if step.With["permission-contents"] != "write" ||
+							!strings.Contains(job.If, "needs.detection.outputs.detection_success == 'true'") {
+							t.Fatalf("journal token = %v, job condition %q", step.With, job.If)
+						}
+						for key := range step.With {
+							if strings.HasPrefix(key, "permission-") && key != "permission-contents" {
+								t.Fatalf("journal token requests %s", key)
+							}
+						}
+					}
 					if step.With["client-id"] != "${{ vars.AI_APP_CLIENT_ID }}" ||
 						step.With["private-key"] != "${{ secrets.AI_APP_PRIVATE_KEY }}" ||
-						step.With["repositories"] != "${{ github.event.repository.name }}" {
-						t.Fatalf("App token is not configured and scoped to this repository: %v", step.With)
+						step.With["repositories"] != repository {
+						t.Fatalf("App token is not configured and scoped to %s: %v", repository, step.With)
 					}
 					if _, exists := step.With["permission-administration"]; exists {
 						t.Fatal("App token requests an unconfigured administration permission")
@@ -278,7 +293,7 @@ func TestRepositoryMCPFragment(t *testing.T) {
 	}
 	output := t.TempDir()
 	logger := slog.New(slog.DiscardHandler)
-	plan := fspatch.NewPlan(logger, output, filepath.Join(output, ".build/backups"))
+	plan := fspatch.NewPlan(logger, output, filepath.Join(output, ".go42x/backups"))
 	generator := ghaw.New(
 		logger,
 		nil,
@@ -289,21 +304,23 @@ func TestRepositoryMCPFragment(t *testing.T) {
 		},
 		"",
 	)
-	if err := generator.Prepare(plan, nil); err != nil {
+	if err := generator.Prepare(plan, map[string]any{"journal": cfg.Journal.WithDefaults()}); err != nil {
 		t.Fatal(err)
 	}
 	if err := plan.Apply(); err != nil {
 		t.Fatal(err)
 	}
-	generated, err := os.ReadFile(filepath.Join(output, ghaw.MCPFile))
-	if err != nil {
-		t.Fatal(err)
-	}
-	committed, err := os.ReadFile(filepath.Join(root, ghaw.MCPFile))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(generated, committed) {
-		t.Fatal("shared MCP fragment is stale; regenerate it with the current implementation")
+	for _, file := range []string{ghaw.MCPFile, ghaw.JournalFile} {
+		generated, err := os.ReadFile(filepath.Join(output, file))
+		if err != nil {
+			t.Fatal(err)
+		}
+		committed, err := os.ReadFile(filepath.Join(root, file))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(generated, committed) {
+			t.Fatalf("%s is stale; regenerate it with the current implementation", file)
+		}
 	}
 }

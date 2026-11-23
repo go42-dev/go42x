@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go42-dev/go42x/assets"
 	"github.com/go42-dev/go42x/internal/vendoring"
 )
 
@@ -95,7 +94,7 @@ func TestAuthoredCoverageAndProjectExclusions(t *testing.T) {
 	if !slices.Equal(paths, want) {
 		t.Fatalf("coverage: %v, want %v", paths, want)
 	}
-	writeFixture(t, root, sourceIgnorePath, assets.KWBIgnore()+"static/*.js\n")
+	writeFixture(t, root, sourceIgnorePath, bundledIgnore(t)+"static/*.js\n")
 	before, err := service.CheckFreshness(t.Context())
 	if err != nil || !before.Complete || before.Excluded.Count != 2 || before.Changed.Count != 1 {
 		t.Fatalf("policy changes: %+v %v", before, err)

@@ -22,6 +22,9 @@ import (
 	"github.com/go42-dev/go42x/internal/fspatch"
 )
 
+// templateContext holds the template data that provider outputs read.
+var templateContext = map[string]any{"journal": config.Journal{}.WithDefaults()}
+
 type testProvider interface {
 	Prepare(*fspatch.Plan, map[string]any) error
 }
@@ -174,7 +177,7 @@ func TestProviderMCPLifecycle(t *testing.T) {
 			logger := slog.New(slog.DiscardHandler)
 			p := makeProvider(t, tt.name, cfg, nil, root, root)
 			plan := fspatch.NewPlan(logger, root, filepath.Join(root, ".build/backups"))
-			if err := p.Prepare(plan, nil); err != nil {
+			if err := p.Prepare(plan, templateContext); err != nil {
 				t.Fatal(err)
 			}
 			entries, err := os.ReadDir(root)
@@ -204,7 +207,7 @@ func TestProviderMCPLifecycle(t *testing.T) {
 			}
 
 			plan = fspatch.NewPlan(logger, root, filepath.Join(root, ".build/backups"))
-			if err := p.Prepare(plan, nil); err != nil || len(plan.Changes()) != 0 {
+			if err := p.Prepare(plan, templateContext); err != nil || len(plan.Changes()) != 0 {
 				t.Fatalf("unchanged generation scheduled writes: %v, %v", plan.Changes(), err)
 			}
 
@@ -212,7 +215,7 @@ func TestProviderMCPLifecycle(t *testing.T) {
 			server.Enabled = false
 			cfg.MCP["enabled-server"] = server
 			plan = fspatch.NewPlan(logger, root, filepath.Join(root, ".build/backups"))
-			if err := p.Prepare(plan, nil); err != nil {
+			if err := p.Prepare(plan, templateContext); err != nil {
 				t.Fatal(err)
 			}
 			if err := plan.Apply(); err != nil {
@@ -242,7 +245,7 @@ func TestProviderGenerationErrors(t *testing.T) {
 			p := makeProvider(t, name, &config.Config{}, nil, dir, out)
 			if err := p.Prepare(
 				fspatch.NewPlan(slog.New(slog.DiscardHandler), out, filepath.Join(out, ".go42x", "backups")),
-				nil,
+				templateContext,
 			); err == nil ||
 				!strings.Contains(err.Error(), "failed to prepare config files") {
 				t.Fatalf("Prepare() = %v, want configuration error", err)

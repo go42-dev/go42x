@@ -14,8 +14,18 @@ import (
 	"github.com/go42-dev/go42x/internal/config"
 )
 
+// bundledIgnore renders the bundled .go42x/kwb.ignore block without template data.
+func bundledIgnore(t testing.TB) string {
+	t.Helper()
+	block, err := assets.Render(assets.KWBIgnore, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return block
+}
+
 func TestEnsureSourceIgnore(t *testing.T) {
-	block := assets.KWBIgnore()[strings.Index(assets.KWBIgnore(), "# go42x -- START"):]
+	block := bundledIgnore(t)[strings.Index(bundledIgnore(t), "# go42x -- START"):]
 	for _, tt := range []struct {
 		name     string
 		exists   bool
@@ -24,12 +34,12 @@ func TestEnsureSourceIgnore(t *testing.T) {
 	}{
 		{
 			name: "missing file",
-			want: assets.KWBIgnore(),
+			want: bundledIgnore(t),
 		},
 		{
 			name:   "empty file",
 			exists: true,
-			want:   assets.KWBIgnore(),
+			want:   bundledIgnore(t),
 		},
 		{
 			name:     "custom rules",
@@ -113,7 +123,7 @@ func TestSourceExclusionsUsesBundledDefaultsAndCustomExceptions(t *testing.T) {
 		t.Fatal("bundled defaults excluded authored workflows or action pins")
 	}
 
-	writeFixture(t, root, sourceIgnorePath, assets.KWBIgnore()+"!.github/workflows/agent.lock.yml\n")
+	writeFixture(t, root, sourceIgnorePath, bundledIgnore(t)+"!.github/workflows/agent.lock.yml\n")
 	matcher, err = manager.sourceExclusions(t.Context(), root)
 	if err != nil {
 		t.Fatal(err)
@@ -131,7 +141,7 @@ func TestSourceExclusionsCanIncludeAgentFiles(t *testing.T) {
 		".go42x/backups/keep.md":  "Retained reference",
 		".go42x/backups/skip.md":  "Backup",
 		".go42x/private.md":       "Private reference",
-		sourceIgnorePath: assets.KWBIgnore() + "!.go42x/backups/keep.md\n" +
+		sourceIgnorePath: bundledIgnore(t) + "!.go42x/backups/keep.md\n" +
 			"!.go42x/go42x.local.yaml\n!.go42x/private.md\n",
 	}
 	for path, content := range fixtures {

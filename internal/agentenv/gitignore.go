@@ -1,94 +1,59 @@
 package agentenv
 
 import (
-	"fmt"
+	"context"
 	"log/slog"
 	"path/filepath"
-	"strings"
-	"text/template"
 
 	"github.com/go42-dev/go42x/assets"
+	"github.com/go42-dev/go42x/internal/agentenv/generator"
 	"github.com/go42-dev/go42x/internal/config"
 	"github.com/go42-dev/go42x/internal/fspatch"
 )
 
-// gitIgnoreEscaper quotes the characters that gitignore patterns treat as wildcards.
-var gitIgnoreEscaper = strings.NewReplacer(`\`, `\\`, `*`, `\*`, `?`, `\?`, `[`, `\[`)
+// gitIgnoreBlocks pairs each managed .gitignore, relative to the project root, with the
+// template of its block.
+var gitIgnoreBlocks = []struct{ path, template string }{
+	{".gitignore", assets.ProjectGitIgnore},
+	{config.Directory + "/.gitignore", assets.DirGitIgnore},
+}
 
-// updateGitIgnore refreshes the managed .gitignore blocks. buildDir is the configured
-// build directory; when it is empty, the project block, which needs it, stays unchanged.
-func updateGitIgnore(root, buildDir string) error {
+// updateGitIgnore refreshes the managed .gitignore blocks, rendered with the template
+// context data.
+func updateGitIgnore(root string, data map[string]any) error {
 	plan := fspatch.NewPlan(slog.New(slog.DiscardHandler), root, filepath.Join(root, config.Directory, "backups"))
-	var err error
-	if len(buildDir) == 0 {
-		err = prepareDirGitIgnore(plan, root)
-	} else {
-		err = prepareGitIgnore(plan, root, buildDir)
-	}
-	if err != nil {
+	if err := prepareGitIgnore(plan, root, data); err != nil {
 		return err
 	}
 
 	return plan.Apply()
 }
 
-// prepareGitIgnore refreshes the managed blocks of the project .gitignore and of
-// .go42x/.gitignore. buildDir is the configured build directory; a relative path uses
-// root.
-func prepareGitIgnore(plan *fspatch.Plan, root, buildDir string) error {
-	block, err := projectGitIgnore(root, buildDir)
-	if err != nil {
-		return err
+// prepareGitIgnore refreshes the managed blocks of the project .gitignore, which ignores
+// generated agent files, and of .go42x/.gitignore, which ignores the state directories
+// inside .go42x. Their templates render with the template context data.
+func prepareGitIgnore(plan *fspatch.Plan, root string, data map[string]any) error {
+	for _, block := range gitIgnoreBlocks {
+		content, err := assets.Render(block.template, data)
+		if err != nil {
+			return err
+		}
+		path := filepath.Join(root, filepath.FromSlash(block.path))
+		if err := plan.WriteManagedBlock(path, content, fspatch.KindSources); err != nil {
+			return err
+		}
 	}
 
-	err = plan.WriteManagedBlock(filepath.Join(root, ".gitignore"), block, fspatch.KindSources)
-	if err != nil {
-		return err
-	}
-
-	return prepareDirGitIgnore(plan, root)
+	return nil
 }
 
-// prepareDirGitIgnore refreshes the managed block of .go42x/.gitignore, which ignores
-// the state directories inside .go42x.
-func prepareDirGitIgnore(plan *fspatch.Plan, root string) error {
-	return plan.WriteManagedBlock(filepath.Join(root, config.Directory, ".gitignore"),
-		assets.AgentEnvDirGitIgnore(), fspatch.KindSources)
-}
-
-// projectGitIgnore renders the managed block of the project .gitignore. It ignores the
-// build directory only when the directory lies inside the project.
-func projectGitIgnore(root, buildDir string) (string, error) {
-	tmpl, err := template.New(".gitignore").Option("missingkey=error").Parse(assets.AgentEnvGitIgnore())
-	if err != nil {
-		return "", fmt.Errorf("parse .gitignore template: %w", err)
-	}
-
-	var block strings.Builder
-	err = tmpl.Execute(&block, struct{ BuildDir string }{BuildDir: gitIgnoreBuildDir(root, buildDir)})
-	if err != nil {
-		return "", fmt.Errorf("render .gitignore template: %w", err)
-	}
-
-	return block.String(), nil
-}
-
-// gitIgnoreBuildDir returns the escaped root-relative path of a build directory inside
-// the project, or an empty string for the project root, a directory outside it, or a
-// path that a gitignore line cannot hold.
-func gitIgnoreBuildDir(root, buildDir string) string {
-	root, err := filepath.Abs(root)
-	if err != nil {
-		return ""
-	}
-	if !filepath.IsAbs(buildDir) {
-		buildDir = filepath.Join(root, buildDir)
-	}
-
-	rel, err := filepath.Rel(root, buildDir)
-	if err != nil || rel == "." || !filepath.IsLocal(rel) || strings.ContainsAny(rel, "\r\n") {
-		return ""
-	}
-
-	return gitIgnoreEscaper.Replace(filepath.ToSlash(rel))
+// templateContext returns the template context of cfg for the project at root, without
+// logging collector failures; generation reports those.
+func templateContext(ctx context.Context, cfg *config.Config, root string) (map[string]any, error) {
+	return generator.NewGenerator(
+		slog.New(slog.DiscardHandler),
+		cfg,
+		filepath.Join(root, config.Directory),
+		root,
+	).TemplateContext(ctx)
 }

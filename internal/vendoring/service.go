@@ -250,14 +250,14 @@ func (s *Service) controlDirectories() []string {
 	return []string{
 		filepath.Join(s.settings.RootPath, ".git"),
 		filepath.Join(s.settings.RootPath, config.Directory, "backups"),
-		filepath.Join(s.settings.RootPath, filepath.FromSlash(config.JournalDir)),
-		filepath.Join(s.settings.BuildDir, config.DefaultBuildTmpDir),
+		s.settings.JournalDir,
+		s.settings.TmpDir,
 	}
 }
 
-// workspaceRoot holds operation workspaces in the build directory's tool workspace.
+// workspaceRoot holds operation workspaces in go42x's temporary directory.
 func (s *Service) workspaceRoot() string {
-	return filepath.Join(s.settings.BuildDir, config.DefaultBuildTmpDir, "vendoring")
+	return filepath.Join(s.settings.TmpDir, "vendoring")
 }
 
 func (s *Service) skipDirectory(filename string) bool {
@@ -340,7 +340,7 @@ func (s *Service) run(ctx context.Context, operation string) (*Result, error) {
 	result := newResult(operation)
 	result.DryRun = s.settings.DryRun
 	// Lock the existing root directory: one writer per project, independent of
-	// manifest and build-dir choices, with no new state files during a dry-run.
+	// manifest and tmp-dir choices, with no new state files during a dry-run.
 	writer := flock.New(s.settings.RootPath, flock.SetFlag(os.O_RDONLY))
 	defer func() {
 		_ = writer.Close()

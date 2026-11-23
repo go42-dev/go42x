@@ -15,8 +15,8 @@ func newNewCommand(f *cmdutil.Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "new",
 		Short: "Create a journal entry for a task",
-		Long: `Create an open entry with an entry.json record and a notes.md template for handoff notes.
-Before creating one, list open entries and continue the entry that matches the task.`,
+		Long: `Create an entry with an entry.json record and a notes.md template for handoff notes.
+Before creating one, list entries and continue the one that matches the task.`,
 		Example: `  go42x agentenv journal new --title "Move schemas into the bundle" --tag refactor --tag agentenv`,
 		Args:    cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
@@ -26,6 +26,7 @@ Before creating one, list open entries and continue the entry that matches the t
 				Tags:  viper.GetStringSlice(flagTag),
 				PR:    viper.GetString(flagPR),
 				Issue: viper.GetString(flagIssue),
+				Keep:  viper.GetBool(flagKeep),
 			}
 			if err := settings.Validate(); err != nil {
 				return cmdutil.UsageError(err)
@@ -49,6 +50,9 @@ Before creating one, list open entries and continue the entry that matches the t
 	cmd.Flags().String(
 		flagIssue, "",
 		"issue number or URL")
+	cmd.Flags().Bool(
+		flagKeep, false,
+		"keep the entry, so journal gc never deletes it")
 	addActorFlags(cmd)
 	return cmd
 }

@@ -15,18 +15,22 @@ type Settings struct {
 	RootPath     string
 	ManifestPath string
 	LockPath     string
-	BuildDir     string
-	Timeout      time.Duration
-	DryRun       bool
-	Force        bool
-	JSON         bool
+	// TmpDir is go42x's temporary directory, which holds vendoring workspaces.
+	TmpDir string
+	// JournalDir is the agent journal directory, which vendoring never writes.
+	JournalDir string
+	Timeout    time.Duration
+	DryRun     bool
+	Force      bool
+	JSON       bool
 }
 
 func NewSettings() *Settings {
 	return &Settings{
 		RootPath:     ".",
 		ManifestPath: ManifestFile,
-		BuildDir:     config.DefaultBuildDir,
+		TmpDir:       config.Context{}.TmpPath(),
+		JournalDir:   config.DefaultJournalDir,
 		Timeout:      2 * time.Minute,
 	}
 }
@@ -36,9 +40,9 @@ func (s *Settings) Validate() error {
 		return fmt.Errorf("settings are required")
 	}
 	if len(strings.TrimSpace(s.RootPath)) == 0 || len(strings.TrimSpace(s.ManifestPath)) == 0 ||
-		len(strings.TrimSpace(s.BuildDir)) == 0 ||
+		len(strings.TrimSpace(s.TmpDir)) == 0 || len(strings.TrimSpace(s.JournalDir)) == 0 ||
 		s.Timeout <= 0 {
-		return fmt.Errorf("root, manifest, build directory and positive timeout are required")
+		return fmt.Errorf("root, manifest, temporary directory, journal directory and positive timeout are required")
 	}
 
 	return nil
@@ -60,7 +64,8 @@ func (s *Settings) LoadProject() error {
 		return err
 	}
 
-	s.BuildDir = cfg.Context.WithDefaults().BuildDir
+	s.TmpDir = cfg.Context.TmpPath()
+	s.JournalDir = cfg.Journal.Dir()
 	return nil
 }
 
@@ -94,12 +99,16 @@ func (s *Settings) Resolve() error {
 	if !filepath.IsAbs(s.LockPath) {
 		s.LockPath = filepath.Join(root, s.LockPath)
 	}
-	if !filepath.IsAbs(s.BuildDir) {
-		s.BuildDir = filepath.Join(root, s.BuildDir)
+	if !filepath.IsAbs(s.TmpDir) {
+		s.TmpDir = filepath.Join(root, filepath.FromSlash(s.TmpDir))
+	}
+	if !filepath.IsAbs(s.JournalDir) {
+		s.JournalDir = filepath.Join(root, filepath.FromSlash(s.JournalDir))
 	}
 	s.ManifestPath = filepath.Clean(s.ManifestPath)
 	s.LockPath = filepath.Clean(s.LockPath)
-	s.BuildDir = filepath.Clean(s.BuildDir)
+	s.TmpDir = filepath.Clean(s.TmpDir)
+	s.JournalDir = filepath.Clean(s.JournalDir)
 	if strings.EqualFold(s.ManifestPath, s.LockPath) {
 		return fmt.Errorf("manifest and lock paths must differ")
 	}

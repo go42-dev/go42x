@@ -22,7 +22,6 @@ func testEntry() *journal.Entry {
 	return &journal.Entry{
 		ID:        "20261110-task-0000",
 		Title:     "Task",
-		Status:    journal.StatusOpen,
 		Tags:      []string{"fix", "kwb"},
 		CreatedAt: updated,
 		UpdatedAt: updated,
@@ -43,7 +42,15 @@ func TestReportList(t *testing.T) {
 				Invalid: []journal.Problem{{Path: ".go42x/journal/20261110-broken-0000", Error: "parse entry.json"}},
 			},
 			want: "Invalid entry .go42x/journal/20261110-broken-0000: parse entry.json\n" +
-				"20261110-task-0000  open       2026-11-10 12:30:00  Task  [fix, kwb]\n",
+				"20261110-task-0000  2026-11-10 12:30:00  Task  [fix, kwb]\n",
+		},
+		"kept entry": {
+			result: &journal.ListResult{Entries: []*journal.Entry{func() *journal.Entry {
+				entry := testEntry()
+				entry.Keep = true
+				return entry
+			}()}},
+			want: "20261110-task-0000  2026-11-10 12:30:00  Task  [fix, kwb]  (kept)\n",
 		},
 		"no entries": {
 			result: &journal.ListResult{},
@@ -51,10 +58,10 @@ func TestReportList(t *testing.T) {
 		},
 		"stray": {
 			result: &journal.ListResult{
-				Stray: []journal.StrayItem{{Path: ".build/old-task", Size: 2048, ModifiedAt: updated}},
+				Stray: []journal.StrayItem{{Path: ".go42x/journal/old-task", Size: 2048, ModifiedAt: updated}},
 			},
 			stray: true,
-			want: ".build/old-task  2.0 KiB  2026-11-10\n" +
+			want: ".go42x/journal/old-task  2.0 KiB  2026-11-10\n" +
 				"1 items without a journal record (2.0 KiB); review them and delete what is no longer needed. " +
 				"Agents ask the user first.\n",
 		},
@@ -96,7 +103,7 @@ func TestReportShowKeepsTheLatestEvents(t *testing.T) {
 	}
 	text := output.String()
 	for _, want := range []string{
-		"Expires: never\n",
+		"Kept:    no; journal gc deletes it after the retention period without an update\n",
 		"Refs:    branch main, pr 12\n",
 		"  .go42x/journal/20261110-task-0000/notes.md  7 B\n",
 		"Notes:\n# Task\n",
@@ -147,24 +154,20 @@ func TestReportAttach(t *testing.T) {
 	}
 }
 
-func TestReportDone(t *testing.T) {
+func TestReportNote(t *testing.T) {
 	t.Parallel()
 	kept := testEntry()
-	kept.Status = journal.StatusDone
-	expiring := testEntry()
-	expiring.Status = journal.StatusAbandoned
-	expires := updated.Add(journal.AbandonedRetention)
-	expiring.ExpiresAt = &expires
+	kept.Keep = true
 	for entry, want := range map[*journal.Entry]string{
-		kept:     "Marked journal entry 20261110-task-0000 done; it is kept until deleted.\n",
-		expiring: "Marked journal entry 20261110-task-0000 abandoned; journal gc may delete it after 2026-11-17.\n",
+		testEntry(): "Recorded the update of journal entry 20261110-task-0000.\n",
+		kept:        "Recorded the update of journal entry 20261110-task-0000; it is kept.\n",
 	} {
 		var output bytes.Buffer
-		if err := ReportDone(&output, textSettings, &journal.EntryResult{Entry: entry}, nil); err != nil {
+		if err := ReportNote(&output, textSettings, &journal.EntryResult{Entry: entry}, nil); err != nil {
 			t.Fatal(err)
 		}
 		if output.String() != want {
-			t.Errorf("done = %q, want %q", output.String(), want)
+			t.Errorf("note = %q, want %q", output.String(), want)
 		}
 	}
 }
@@ -174,11 +177,10 @@ func TestReportGC(t *testing.T) {
 	item := journal.GCItem{
 		ID:        "20261110-task-0000",
 		Title:     "Task",
-		Status:    journal.StatusDone,
-		ExpiresAt: updated,
+		UpdatedAt: updated,
 		Size:      1024,
 	}
-	line := "20261110-task-0000  done       expired 2026-11-10  1.0 KiB  Task\n"
+	line := "20261110-task-0000  updated 2026-11-10  1.0 KiB  Task\n"
 	failure := errors.New("remove journal entry")
 	for name, tt := range map[string]struct {
 		result *journal.GCResult

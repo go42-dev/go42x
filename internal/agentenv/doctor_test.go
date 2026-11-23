@@ -137,17 +137,25 @@ func TestGenerateRefreshesGitIgnoreAndDoctorReportsDrift(t *testing.T) {
 	root := t.TempDir()
 	service := testService(t, root, false)
 	writeFile(t, filepath.Join(root, ".go42x/go42x.yaml"),
-		"version: '1.0'\nproject: {name: test}\ncontext: {template: agents.tpl.md, build-dir: out}\n"+
+		"version: '1.0'\nproject: {name: test}\ncontext: {template: agents.tpl.md, tmp-dir: scratch}\n"+
 			"providers:\n  codex: {enabled: false}\n")
 	writeFile(t, filepath.Join(root, ".go42x/agents.tpl.md"), "# Test\n")
 	if _, err := service.Generate(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if got := string(readFile(t, filepath.Join(root, ".gitignore"))); !strings.Contains(got, "\n/out/\n") {
-		t.Fatalf("generate did not ignore the configured build directory: %q", got)
+	if got := string(
+		readFile(t, filepath.Join(root, ".gitignore")),
+	); got != renderAsset(
+		t,
+		assets.ProjectGitIgnore,
+		nil,
+	) {
+		t.Fatalf("generate did not write the project .gitignore block: %q", got)
 	}
-	if got := string(readFile(t, filepath.Join(root, ".go42x/.gitignore"))); got != assets.AgentEnvDirGitIgnore() {
-		t.Fatalf("generate did not write .go42x/.gitignore: %q", got)
+	want := renderAsset(t, assets.DirGitIgnore, gitIgnoreContext("scratch", ""))
+	if got := string(readFile(t, filepath.Join(root, ".go42x/.gitignore"))); got != want ||
+		!strings.Contains(got, "\n/scratch/\n") {
+		t.Fatalf("generate did not ignore the configured temporary directory in .go42x/.gitignore: %q", got)
 	}
 
 	writeFile(t, filepath.Join(root, ".gitignore"), "# go42x -- START\n/.build/\n# go42x -- END\n")

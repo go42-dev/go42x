@@ -1,5 +1,5 @@
-// Package journal keeps a record of each agent task in .go42x/journal, so any runtime
-// can find, continue, and clean up the task's material.
+// Package journal keeps a record of each agent task in the project's journal directory, so
+// any runtime can find, continue, and clean up the task's material.
 package journal
 
 import (
@@ -23,30 +23,14 @@ import (
 	"github.com/go42-dev/go42x/internal/config"
 )
 
-// Status reports whether the task of an entry is still in progress.
-type Status string
-
-const (
-	StatusOpen      Status = "open"
-	StatusDone      Status = "done"
-	StatusAbandoned Status = "abandoned"
-)
-
 // Runtimes that are not agent providers.
 const (
 	RuntimeHuman   = "human"
 	RuntimeUnknown = "unknown"
 )
 
-// Retention periods and the age after which an open entry counts as stale.
 const (
-	DoneRetention      = 30 * 24 * time.Hour
-	AbandonedRetention = 7 * 24 * time.Hour
-	StaleAfter         = 14 * 24 * time.Hour
-)
-
-const (
-	entryVersion   = 1
+	entryVersion   = 2
 	entryFile      = "entry.json"
 	notesFile      = "notes.md"
 	logFile        = "log.jsonl"
@@ -70,18 +54,23 @@ var (
 
 // Entry is the record of one task in entry.json.
 type Entry struct {
-	Schema    string     `json:"$schema,omitempty"`
-	Version   int        `json:"version"`
-	ID        string     `json:"id"`
-	Title     string     `json:"title"`
-	Status    Status     `json:"status"`
-	Tags      []string   `json:"tags"`
-	CreatedAt time.Time  `json:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at"`
-	ExpiresAt *time.Time `json:"expires_at"`
-	Runtime   string     `json:"runtime"`
-	Session   string     `json:"session,omitempty"`
-	Refs      Refs       `json:"refs"`
+	Schema    string    `json:"$schema,omitempty"`
+	Version   int       `json:"version"`
+	ID        string    `json:"id"`
+	Title     string    `json:"title"`
+	Tags      []string  `json:"tags"`
+	Keep      bool      `json:"keep"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Runtime   string    `json:"runtime"`
+	Session   string    `json:"session,omitempty"`
+	Refs      Refs      `json:"refs"`
+}
+
+// Expired reports whether gc deletes the entry at now: it is not kept and went without an
+// update for the retention period.
+func (e *Entry) Expired(now time.Time, retention time.Duration) bool {
+	return !e.Keep && !e.UpdatedAt.Add(retention).After(now)
 }
 
 // Refs names the work an entry belongs to, as recorded at its last write.

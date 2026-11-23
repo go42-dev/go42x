@@ -38,14 +38,9 @@ func (s *Adapter) Tools() []server.ServerTool {
 			Tool: mcp.NewTool(
 				"journal_list",
 				mcp.WithDescription(
-					"List journal entries in .go42x/journal, most recently updated first. Check open entries before starting a task and continue the one that matches it.",
+					"List journal entries, most recently updated first. Check them before starting a task and continue the one that matches it.",
 				),
 				mcp.WithReadOnlyHintAnnotation(true),
-				mcp.WithString(
-					"status",
-					mcp.Enum(string(journal.StatusOpen), string(journal.StatusDone), string(journal.StatusAbandoned)),
-					mcp.Description("Only entries with this status"),
-				),
 				mcp.WithArray("tags", mcp.WithStringItems(), mcp.Description("Only entries with every listed tag")),
 				mcp.WithString(
 					"since",
@@ -53,7 +48,19 @@ func (s *Adapter) Tools() []server.ServerTool {
 						"Only entries updated at or after this RFC 3339 time, such as 2026-11-10T09:00:00Z",
 					),
 				),
-				mcp.WithBoolean("kept", mcp.Description("Only finished entries without an expiry")),
+				mcp.WithBoolean("kept", mcp.Description("Only kept entries, which gc never deletes")),
+				mcp.WithString(
+					"pr",
+					mcp.Description(
+						"Only entries for this pull request number or URL; a number also matches a URL that ends with it",
+					),
+				),
+				mcp.WithString(
+					"issue",
+					mcp.Description(
+						"Only entries for this issue number or URL; a number also matches a URL that ends with it",
+					),
+				),
 				mcp.WithOutputSchema[journal.ListResult](),
 			),
 			Handler: s.list,
@@ -104,7 +111,7 @@ func (s *Adapter) Tools() []server.ServerTool {
 			Tool: mcp.NewTool(
 				"journal_new",
 				mcp.WithDescription(
-					"Create an open journal entry for a task, with an entry.json record and a notes.md template. Keep the task's working files in the returned directory and handoff notes in its notes.md.",
+					"Create a journal entry for a task, with an entry.json record and a notes.md template. Keep the task's working files in the returned directory and handoff notes in its notes.md. Entries that go without an update for the retention period are deleted by gc unless kept.",
 				),
 				mcp.WithString(
 					"title",
@@ -120,6 +127,7 @@ func (s *Adapter) Tools() []server.ServerTool {
 				),
 				mcp.WithString("pr", mcp.Description("Pull request number or URL")),
 				mcp.WithString("issue", mcp.Description("Issue number or URL")),
+				mcp.WithBoolean("keep", mcp.Description("Keep the entry, so gc never deletes it")),
 				session,
 				mcp.WithOutputSchema[journal.EntryResult](),
 			),
@@ -129,32 +137,21 @@ func (s *Adapter) Tools() []server.ServerTool {
 			Tool: mcp.NewTool(
 				"journal_note",
 				mcp.WithDescription(
-					"Record an update after editing an entry's notes.md, with a summary for its log. A finished entry opens again.",
+					"Record an update after editing an entry's notes.md, with a summary for its log.",
 				),
 				mcp.WithString("id", mcp.Required(), mcp.Description("Entry ID")),
 				mcp.WithString("summary", mcp.MaxLength(1000), mcp.Description("What changed")),
 				mcp.WithArray("tags", mcp.WithStringItems(), mcp.Description("Replacement tags")),
 				mcp.WithString("pr", mcp.Description("Pull request number or URL")),
 				mcp.WithString("issue", mcp.Description("Issue number or URL")),
+				mcp.WithBoolean(
+					"keep",
+					mcp.Description("true keeps the entry, so gc never deletes it; false lets gc delete it again"),
+				),
 				session,
 				mcp.WithOutputSchema[journal.EntryResult](),
 			),
 			Handler: s.note,
-		},
-		{
-			Tool: mcp.NewTool(
-				"journal_done",
-				mcp.WithDescription(
-					"Finish an open journal entry. Finished entries expire after 30 days, abandoned ones after 7, and kept ones never.",
-				),
-				mcp.WithString("id", mcp.Required(), mcp.Description("Entry ID")),
-				mcp.WithString("summary", mcp.MaxLength(1000), mcp.Description("Outcome")),
-				mcp.WithBoolean("abandoned", mcp.Description("The task was dropped without finishing it")),
-				mcp.WithBoolean("keep", mcp.Description("Finish without an expiry")),
-				session,
-				mcp.WithOutputSchema[journal.EntryResult](),
-			),
-			Handler: s.done,
 		},
 		{
 			Tool: mcp.NewTool(
@@ -185,10 +182,11 @@ func (s *Adapter) list(ctx context.Context, request mcp.CallToolRequest) (*mcp.C
 		return toolResult(nil, err)
 	}
 	return toolResult(s.service.List(ctx, journal.ListOptions{
-		Status: journal.Status(request.GetString("status", "")),
-		Tags:   tags,
-		Since:  since,
-		Kept:   request.GetBool("kept", false),
+		Tags:  tags,
+		Since: since,
+		Kept:  request.GetBool("kept", false),
+		PR:    request.GetString("pr", ""),
+		Issue: request.GetString("issue", ""),
 	}))
 }
 
@@ -222,6 +220,7 @@ func (s *Adapter) create(ctx context.Context, request mcp.CallToolRequest) (*mcp
 		Tags:  tags,
 		PR:    request.GetString("pr", ""),
 		Issue: request.GetString("issue", ""),
+		Keep:  request.GetBool("keep", false),
 	}))
 }
 
@@ -230,22 +229,17 @@ func (s *Adapter) note(ctx context.Context, request mcp.CallToolRequest) (*mcp.C
 	if err != nil {
 		return toolResult(nil, err)
 	}
-	return toolResult(s.service.Note(ctx, s.actor(ctx, request), journal.NoteOptions{
+	options := journal.NoteOptions{
 		ID:      request.GetString("id", ""),
 		Summary: request.GetString("summary", ""),
 		Tags:    tags,
 		PR:      request.GetString("pr", ""),
 		Issue:   request.GetString("issue", ""),
-	}))
-}
-
-func (s *Adapter) done(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	return toolResult(s.service.Done(ctx, s.actor(ctx, request), journal.DoneOptions{
-		ID:        request.GetString("id", ""),
-		Summary:   request.GetString("summary", ""),
-		Abandoned: request.GetBool("abandoned", false),
-		Keep:      request.GetBool("keep", false),
-	}))
+	}
+	if keep, ok := request.GetArguments()["keep"].(bool); ok {
+		options.Keep = &keep
+	}
+	return toolResult(s.service.Note(ctx, s.actor(ctx, request), options))
 }
 
 func (s *Adapter) search(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {

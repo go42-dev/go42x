@@ -109,29 +109,40 @@ func ParseProjectConfig(baseData, localData []byte, providers []string, variable
 	return cfg, nil
 }
 
-// ProjectBuildDir returns the absolute build directory of the project at root, as its
-// configuration and local overrides set it. A project without a configuration uses
-// DefaultBuildDir.
-func ProjectBuildDir(root string) (string, error) {
+// ProjectTmpDir returns the absolute directory for go42x's temporary files in the project
+// at root, as its configuration and local overrides set it. A project without a
+// configuration uses DefaultTmpDir in Directory.
+func ProjectTmpDir(root string) (string, error) {
 	root, err := filepath.Abs(root)
 	if err != nil {
 		return "", err
 	}
 
+	var settings Context
 	cfg, err := LoadProjectConfig(filepath.Join(root, Directory, FileProject), nil)
-	if errors.Is(err, os.ErrNotExist) {
-		return filepath.Join(root, DefaultBuildDir), nil
-	}
-	if err != nil {
+	switch {
+	case err == nil:
+		settings = cfg.Context
+	case !errors.Is(err, os.ErrNotExist):
 		return "", err
 	}
 
-	dir := cfg.Context.WithDefaults().BuildDir
-	if !filepath.IsAbs(dir) {
-		dir = filepath.Join(root, dir)
+	return filepath.Join(root, filepath.FromSlash(settings.TmpPath())), nil
+}
+
+// ProjectJournal returns the journal settings of the project at root, with defaults applied,
+// as its configuration and local overrides set them. A project without a configuration uses
+// the defaults.
+func ProjectJournal(root string) (Journal, error) {
+	cfg, err := LoadProjectConfig(filepath.Join(root, Directory, FileProject), nil)
+	if errors.Is(err, os.ErrNotExist) {
+		return Journal{}.WithDefaults(), nil
+	}
+	if err != nil {
+		return Journal{}, err
 	}
 
-	return filepath.Clean(dir), nil
+	return cfg.Journal.WithDefaults(), nil
 }
 
 func decodeConfigMap(data []byte) (map[string]any, error) {

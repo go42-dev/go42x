@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -728,46 +729,29 @@ func TestValidateGoEnv(t *testing.T) {
 	}
 }
 
-func TestLoadConfigBuildDirectoryValidation(t *testing.T) {
+func TestLoadConfigTmpDirectoryValidation(t *testing.T) {
 	for _, tt := range []struct {
 		name  string
 		path  string
 		valid bool
 	}{
-		{
-			"empty",
-			"",
-			true,
-		},
-		{
-			"default",
-			".build",
-			true,
-		},
-		{
-			"relative",
-			"tmp/agent outputs",
-			true,
-		},
-		{
-			"absolute",
-			"/tmp/agent-output",
-			true,
-		},
-		{
-			"blank",
-			" \t ",
-			false,
-		},
-		{
-			"NUL",
-			"tmp\x00outputs",
-			false,
-		},
+		{"empty", "", true},
+		{"default", "tmp", true},
+		{"trailing slash", "tmp/", true},
+		{"nested", "state/go42x tmp", true},
+		{"absolute", "/tmp/go42x", false},
+		{"blank", " \t ", false},
+		{"NUL", "tmp\x00files", false},
+		{"parent", "../tmp", false},
+		{"directory itself", ".", false},
+		{"hidden", ".tmp", false},
+		{"kept directory", "kwb/tmp", false},
+		{"journal", "journal", false},
+		{"inside the journal", "journal/tmp", false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			data := fmt.Appendf(nil, "version: '1.0'\nproject: {name: example}\n"+
-				"context: {template: agents.tpl.md, build-dir: %q}\nproviders: {codex: {}}\n", tt.path)
+				"context: {template: agents.tpl.md, tmp-dir: %q}\nproviders: {codex: {}}\n", tt.path)
 			path := filepath.Join(t.TempDir(), "go42x.yaml")
 			if err := os.WriteFile(path, data, 0600); err != nil {
 				t.Fatal(err)
@@ -776,6 +760,82 @@ func TestLoadConfigBuildDirectoryValidation(t *testing.T) {
 				t.Errorf("LoadConfig() = %v, want valid %v", err, tt.valid)
 			}
 		})
+	}
+
+	// The journal must not contain the temporary directory either.
+	data := []byte(
+		"version: '1.0'\nproject: {name: example}\ncontext: {template: agents.tpl.md, tmp-dir: state/tmp}\n" +
+			"journal: {path: state}\nproviders: {codex: {}}\n",
+	)
+	path := filepath.Join(t.TempDir(), "go42x.yaml")
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadConfig(path); err == nil {
+		t.Error("LoadConfig() accepted a temporary directory inside the journal")
+	}
+}
+
+func TestContextTmpPath(t *testing.T) {
+	t.Parallel()
+	for tmp, want := range map[string]string{
+		"":          ".go42x/tmp",
+		"tmp/":      ".go42x/tmp",
+		"state/tmp": ".go42x/state/tmp",
+	} {
+		if got := (Context{TmpDir: tmp}).TmpPath(); got != want {
+			t.Errorf("TmpPath(%q) = %q, want %q", tmp, got, want)
+		}
+	}
+}
+
+func TestLoadConfigJournalValidation(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		journal string
+		valid   bool
+	}{
+		{"omitted", "{}", true},
+		{"default", "{path: journal, retention-days: 30}", true},
+		{"nested path", "{path: state/journal}", true},
+		{"one day", "{retention-days: 1}", true},
+		{"zero days", "{retention-days: 0}", false},
+		{"negative days", "{retention-days: -1}", false},
+		{"absolute path", "{path: /tmp/journal}", false},
+		{"parent path", "{path: ../journal}", false},
+		{"escaping path", "{path: state/../../journal}", false},
+		{"directory itself", "{path: .}", false},
+		{"hidden path", "{path: .journal}", false},
+		{"blank path", "{path: ' '}", false},
+		{"backslash", "{path: 'state\\\\journal'}", false},
+		{"kept directory", "{path: skills/journal}", false},
+		{"kept file", "{path: go42x.yaml}", false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			data := fmt.Appendf(nil, "version: '1.0'\nproject: {name: example}\n"+
+				"context: {template: agents.tpl.md}\njournal: %s\nproviders: {codex: {}}\n", tt.journal)
+			path := filepath.Join(t.TempDir(), "go42x.yaml")
+			if err := os.WriteFile(path, data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := LoadConfig(path); (err == nil) != tt.valid {
+				t.Errorf("LoadConfig() = %v, want valid %v", err, tt.valid)
+			}
+		})
+	}
+}
+
+func TestJournalWithDefaults(t *testing.T) {
+	t.Parallel()
+	defaults := Journal{}.WithDefaults()
+	if defaults.Path != DefaultJournalPath || *defaults.RetentionDays != DefaultJournalRetentionDays ||
+		defaults.Dir() != DefaultJournalDir || defaults.Retention() != 30*24*time.Hour {
+		t.Errorf("defaults = %+v, dir %s, retention %s", defaults, defaults.Dir(), defaults.Retention())
+	}
+
+	configured := Journal{Path: "state/journal/", RetentionDays: new(7)}
+	if configured.Dir() != ".go42x/state/journal" || configured.Retention() != 7*24*time.Hour {
+		t.Errorf("configured dir %s, retention %s", configured.Dir(), configured.Retention())
 	}
 }
 

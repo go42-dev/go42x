@@ -5,7 +5,7 @@
 version: "1.0"
 
 # Variable substitution is supported in configuration string values.
-# Example: build-dir: '${GO42X_PROJECT_ROOT}/.build'
+# Example: IJ_MCP_SERVER_PROJECT_PATH: '${GO42X_PROJECT_ROOT}' in mcp.jetbrains.headers.
 #
 # Supported substitutions:
 # - ${GO42X_PROJECT_ROOT}: absolute path to the project directory.
@@ -25,10 +25,11 @@ project:
 env: []
 
 # Shared instructions for every enabled provider, rendered once to AGENTS.md.
-# The chunk directory is relative to .go42x; immediate *.tpl.md files load in filename order.
-# Name project chunks 999-<name>.tpl.md: they load after the bundled chunks, which never use 999.
 context:
   template: agents.tpl.md
+  # Instruction chunks, relative to .go42x: immediate *.tpl.md files load in filename order.
+  # Name project chunks 999-{name}.tpl.md: they load after the bundled chunks, which never
+  # use 999. Omit to include no chunks.
   chunks-dir: 'chunks/'
   # Agent skills, relative to .go42x: one subdirectory per skill with a SKILL.md, or with
   # a SKILL.tpl.md to render the skill's *.tpl.md files as templates with chunk data.
@@ -36,13 +37,20 @@ context:
   # for Claude, .agents/skills for Codex, Antigravity, and Copilot, and both for gh-aw,
   # whose workflows may run any engine. Omit to install no skills.
   skills-dir: 'skills/'
-  # Build directory for task and tool outputs; relative paths use the project root.
-  # Omitted or empty defaults to .build. Templates use .context.BuildDir.
-  build-dir: '.build'
+  # Temporary files of go42x and agents, relative to .go42x. Omitted or empty defaults to
+  # tmp. Templates use .context.TmpPath.
+  tmp-dir: 'tmp/'
   # Extra go env variables, e.g. [GOFLAGS, GOPRIVATE]. Values appear in shared context.
   # Defaults: GOVERSION, GOTOOLCHAIN, GOROOT, GOPATH, GOBIN, GOCACHE, GOMODCACHE,
   # GOMOD, GOWORK, GOOS, GOARCH, CGO_ENABLED. Empty values are omitted.
   go-env: []
+
+# Agent task journal. Templates use .journal.Dir for the journal directory.
+journal:
+  # Journal directory, relative to .go42x.
+  path: 'journal/'
+  # Days an entry may go without an update before journal gc removes it, unless kept.
+  retention-days: 30
 
 # Generation makes all tools from enabled MCP servers available and updates tool approvals.
 # auto-approve-tools configures native tool approvals for Claude and Crush.
@@ -204,7 +212,6 @@ mcp:
       - journal_show
       - journal_new
       - journal_note
-      - journal_done
       - journal_search
 
   mise:

@@ -2,7 +2,6 @@ package generator
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -11,17 +10,6 @@ import (
 
 	"gopkg.in/yaml.v3"
 )
-
-// yamlValue emits one inline value using JSON syntax, which is also valid YAML.
-// Quoting strings here prevents values from changing types or introducing keys.
-func yamlValue(value any) (string, error) {
-	data, err := json.Marshal(value)
-	if err != nil {
-		return "", fmt.Errorf("encode YAML value: %w", err)
-	}
-	// JSON permits a literal NEL character; YAML would normalize it as a newline.
-	return strings.ReplaceAll(string(data), "\u0085", `\u0085`), nil
-}
 
 // yamlBlockFunc binds yamlBlock to this execution's named templates. A separate
 // closure per Process call keeps reusable engines safe for concurrent renders.

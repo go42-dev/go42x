@@ -18,7 +18,7 @@ const AgentsFile = "AGENTS.md"
 // SharedSkillsDir is the project skill directory that Codex, Antigravity, and Copilot read.
 // @see https://developers.openai.com/codex/skills
 // @see https://antigravity.google/docs/skills
-// @see https://docs.github.com/en/copilot/how-tos/use-copilot-agents/cloud-agent/create-skills
+// @see https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-skills
 const SharedSkillsDir = ".agents/skills"
 
 const (

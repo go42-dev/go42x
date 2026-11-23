@@ -115,6 +115,7 @@ func TestJournalTools(t *testing.T) {
 	created := call[journal.EntryResult](t, ctx, tools, "journal_new", map[string]any{
 		"title":   "Tool task",
 		"tags":    []any{"feature", "MCP"},
+		"issue":   "https://github.com/go42-dev/go42x/issues/42",
 		"session": "s-1",
 	})
 	if created.Entry.Runtime != "claude" || created.Entry.Session != "s-1" || len(created.Entry.Tags) != 2 {
@@ -138,7 +139,7 @@ func TestJournalTools(t *testing.T) {
 		ctx,
 		tools,
 		"journal_list",
-		map[string]any{"status": "open", "tags": []any{"mcp"}},
+		map[string]any{"issue": "42", "tags": []any{"mcp"}},
 	)
 	if len(listed.Entries) != 1 || listed.Entries[0].ID != id {
 		t.Errorf("listed = %+v", listed)
@@ -156,12 +157,16 @@ func TestJournalTools(t *testing.T) {
 		t.Errorf("attached = %+v", attached)
 	}
 
-	finished := call[journal.EntryResult](t, ctx, tools, "journal_done", map[string]any{"id": id, "keep": true})
-	if finished.Entry.Status != journal.StatusDone || finished.Entry.ExpiresAt != nil {
-		t.Errorf("done = %+v", finished.Entry)
+	finished := call[journal.EntryResult](t, ctx, tools, "journal_note", map[string]any{"id": id, "keep": true})
+	if !finished.Entry.Keep {
+		t.Errorf("keep = %+v", finished.Entry)
+	}
+	untouched := call[journal.EntryResult](t, ctx, tools, "journal_note", map[string]any{"id": id})
+	if !untouched.Entry.Keep {
+		t.Errorf("note without keep changed it: %+v", untouched.Entry)
 	}
 	shown := call[journal.ShowResult](t, ctx, tools, "journal_show", map[string]any{"id": id})
-	if len(shown.Events) != 3 || shown.Events[2].Event != "done" || len(shown.Notes) == 0 {
+	if len(shown.Events) != 4 || shown.Events[3].Event != "note" || len(shown.Notes) == 0 {
 		t.Errorf("show = %+v", shown)
 	}
 	// Events share the second they are recorded in, so only a later time leaves them all out.
@@ -171,7 +176,7 @@ func TestJournalTools(t *testing.T) {
 		"sections": true,
 	})
 	if len(recent.Events) != 0 || len(recent.Notes) != 0 || len(recent.Sections) != 0 {
-		t.Errorf("show after done = %+v", recent)
+		t.Errorf("show after the last note = %+v", recent)
 	}
 	kept := call[journal.ListResult](t, ctx, tools, "journal_list", map[string]any{
 		"kept":  true,
@@ -184,7 +189,7 @@ func TestJournalTools(t *testing.T) {
 	for name, arguments := range map[string]map[string]any{
 		"journal_show":   {"id": "../outside"},
 		"journal_new":    {"title": "Bad tags", "tags": "not-a-list"},
-		"journal_done":   {"id": id},
+		"journal_note":   {"id": "../outside"},
 		"journal_list":   {"since": "yesterday"},
 		"journal_attach": {"id": id, "path": "review.md", "name": "review-1.md"},
 	} {

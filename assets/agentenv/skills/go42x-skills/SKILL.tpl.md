@@ -59,7 +59,7 @@ example:
 
 ```markdown
 {{ `Run the checks for {{ .project.name }} from {{ .git.root }}.
-Keep task notes in {{ .context.JournalDir }}.
+Keep task notes in {{ .journal.Dir }}.
 {{ if .mcp.gopls }}Use the gopls MCP tools to navigate Go code.{{ end }}
 {{ range .skills.targets }}{{ .dir }} is read by {{ join .providers ", " }}.{{ end }}` }}
 ```

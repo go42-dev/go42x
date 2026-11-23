@@ -55,8 +55,14 @@ func ReportList(
 				return err
 			}
 			for _, entry := range result.Entries {
-				if _, err := fmt.Fprintf(w, "%s  %-9s  %s  %s%s\n",
-					entry.ID, entry.Status, entry.UpdatedAt.Format(time.DateTime), entry.Title, formatTags(entry.Tags),
+				if _, err := fmt.Fprintf(
+					w,
+					"%s  %s  %s%s%s\n",
+					entry.ID,
+					entry.UpdatedAt.Format(time.DateTime),
+					entry.Title,
+					formatTags(entry.Tags),
+					formatKeep(entry),
 				); err != nil {
 					return err
 				}
@@ -99,21 +105,20 @@ func ReportShow(output io.Writer, settings *journal.Settings, result *journal.Sh
 			}
 
 			entry := result.Entry
-			expires := "never"
-			if entry.ExpiresAt != nil {
-				expires = entry.ExpiresAt.Format(time.DateTime)
+			keep := "no; journal gc deletes it after the retention period without an update"
+			if entry.Keep {
+				keep = "yes; journal gc never deletes it"
 			}
 			if _, err := fmt.Fprintf(
 				w,
-				"Entry:   %s\nTitle:   %s\nStatus:  %s\nTags:    %s\nCreated: %s\nUpdated: %s by %s\nExpires: %s\nPath:    %s\n",
+				"Entry:   %s\nTitle:   %s\nTags:    %s\nCreated: %s\nUpdated: %s by %s\nKept:    %s\nPath:    %s\n",
 				entry.ID,
 				entry.Title,
-				entry.Status,
 				strings.Join(entry.Tags, ", "),
 				entry.CreatedAt.Format(time.DateTime),
 				entry.UpdatedAt.Format(time.DateTime),
 				entry.Runtime,
-				expires,
+				keep,
 				result.Path,
 			); err != nil {
 				return err
@@ -204,8 +209,11 @@ func ReportNote(output io.Writer, settings *journal.Settings, result *journal.En
 			if runErr != nil {
 				return nil
 			}
-			_, err := fmt.Fprintf(w, "Recorded the update of journal entry %s; it is %s.\n",
-				result.Entry.ID, result.Entry.Status)
+			kept := ""
+			if result.Entry.Keep {
+				kept = "; it is kept"
+			}
+			_, err := fmt.Fprintf(w, "Recorded the update of journal entry %s%s.\n", result.Entry.ID, kept)
 			return err
 		}
 	}
@@ -227,24 +235,6 @@ func ReportAttach(output io.Writer, settings *journal.Settings, result *journal.
 	return cmdutil.Report(output, result, runErr, text)
 }
 
-func ReportDone(output io.Writer, settings *journal.Settings, result *journal.EntryResult, runErr error) error {
-	var text func(io.Writer) error
-	if !settings.JSON {
-		text = func(w io.Writer) error {
-			if runErr != nil {
-				return nil
-			}
-			expiry := "it is kept until deleted"
-			if result.Entry.ExpiresAt != nil {
-				expiry = "journal gc may delete it after " + result.Entry.ExpiresAt.Format(time.DateOnly)
-			}
-			_, err := fmt.Fprintf(w, "Marked journal entry %s %s; %s.\n", result.Entry.ID, result.Entry.Status, expiry)
-			return err
-		}
-	}
-	return cmdutil.Report(output, result, runErr, text)
-}
-
 func ReportSearch(output io.Writer, settings *journal.Settings, result *journal.SearchResult, runErr error) error {
 	var text func(io.Writer) error
 	if !settings.JSON {
@@ -258,8 +248,8 @@ func ReportSearch(output io.Writer, settings *journal.Settings, result *journal.
 			}
 
 			for _, match := range result.Matches {
-				if _, err := fmt.Fprintf(w, "%s  %-9s  %s%s\n",
-					match.Entry.ID, match.Entry.Status, match.Entry.Title, formatTags(match.Entry.Tags),
+				if _, err := fmt.Fprintf(w, "%s  %s%s%s\n",
+					match.Entry.ID, match.Entry.Title, formatTags(match.Entry.Tags), formatKeep(match.Entry),
 				); err != nil {
 					return err
 				}
@@ -300,10 +290,9 @@ func ReportGC(output io.Writer, settings *journal.Settings, result *journal.GCRe
 			for _, item := range result.Entries {
 				if _, err := fmt.Fprintf(
 					w,
-					"%s  %-9s  expired %s  %s  %s\n",
+					"%s  updated %s  %s  %s\n",
 					item.ID,
-					item.Status,
-					item.ExpiresAt.Format(time.DateOnly),
+					item.UpdatedAt.Format(time.DateOnly),
 					journal.FormatSize(item.Size),
 					item.Title,
 				); err != nil {
@@ -334,6 +323,13 @@ func ReportGC(output io.Writer, settings *journal.Settings, result *journal.GCRe
 		}
 	}
 	return cmdutil.Report(output, result, runErr, text)
+}
+
+func formatKeep(entry *journal.Entry) string {
+	if !entry.Keep {
+		return ""
+	}
+	return "  (kept)"
 }
 
 func formatTags(tags []string) string {

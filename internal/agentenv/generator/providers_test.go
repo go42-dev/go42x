@@ -159,6 +159,9 @@ func TestGenerateProviderToggles(t *testing.T) {
 			if name == claude.Name {
 				want = append(want, ".mcp.json")
 			}
+			if name == ghaw.Name {
+				want = append(want, ghaw.JournalFile)
+			}
 			if name == antigravity.Name {
 				want = append(want, ".agents/plugins/project-tools/plugin.json")
 				settings := readJSON[map[string]any](t, out, settingsFiles[name])

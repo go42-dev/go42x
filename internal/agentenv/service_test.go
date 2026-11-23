@@ -142,14 +142,17 @@ func TestInitExtractsTemplatesAndPreservesCustomFiles(t *testing.T) {
 	if !bytes.HasPrefix(before, []byte("existing-entry\n")) {
 		t.Fatal("existing gitignore changed")
 	}
-	block, err := projectGitIgnore(dir, config.DefaultBuildDir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	block := renderAsset(t, assets.ProjectGitIgnore, nil)
 	if strings.Count(string(before), block) != 1 {
 		t.Fatal("bundled gitignore block missing or duplicated")
 	}
-	if string(readFile(t, filepath.Join(dir, ".go42x/.gitignore"))) != assets.AgentEnvDirGitIgnore() {
+	if string(
+		readFile(t, filepath.Join(dir, ".go42x/.gitignore")),
+	) != renderAsset(
+		t,
+		assets.DirGitIgnore,
+		gitIgnoreContext("", ""),
+	) {
 		t.Fatal("init did not ignore the state directories in .go42x")
 	}
 	kwbIgnorePath := filepath.Join(dir, ".go42x/kwb.ignore")
@@ -446,10 +449,7 @@ func TestInitForceReplacesOnlyBundledSources(t *testing.T) {
 	if result.Sources != wantSources || result.Applied != result.Sources {
 		t.Fatalf("reinstall result = %+v, want %d sources", result, wantSources)
 	}
-	block, err := projectGitIgnore(dir, config.DefaultBuildDir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	block := renderAsset(t, assets.ProjectGitIgnore, nil)
 	if got := string(readFile(t, filepath.Join(dir, ".gitignore"))); got != "before\n"+block+"after\n" {
 		t.Fatalf("managed gitignore block was not refreshed: %s", got)
 	}
@@ -494,27 +494,27 @@ func TestInitForceReplacesOnlyBundledSources(t *testing.T) {
 	) {
 		t.Fatal("repeated update did not back up unchanged bundled configuration")
 	}
-	if _, err := os.Stat(filepath.Join(dir, ".build")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(dir, config.Context{}.TmpPath())); !os.IsNotExist(err) {
 		t.Fatalf("temporary staging artifacts remain: %v", err)
 	}
 }
 
-func TestInitForceDoesNotReadTemplatesOrUseBuildDirectory(t *testing.T) {
+func TestInitForceDoesNotReadTemplatesOrUseTmpDirectory(t *testing.T) {
 	dir := t.TempDir()
 	service := testService(t, dir, false)
 	if _, err := service.Init(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	service.settings.Force = true
-	writeFile(t, filepath.Join(dir, ".build"), "not a directory")
+	writeFile(t, filepath.Join(dir, config.Context{}.TmpPath()), "not a directory")
 	writeFile(t, filepath.Join(dir, ".go42x/go42x.local.yaml"),
 		"context:\n  template: ../missing/main.tpl.md\n  chunks-dir: ../missing/chunks\n"+
 			"providers:\n  claude:\n    enabled: true\n    agents: [../missing/reviewer.tpl.md]\n")
 	if _, err := service.Init(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if got := string(readFile(t, filepath.Join(dir, ".build"))); got != "not a directory" {
-		t.Fatalf("reinstall changed .build: %s", got)
+	if got := string(readFile(t, filepath.Join(dir, config.Context{}.TmpPath()))); got != "not a directory" {
+		t.Fatalf("reinstall changed the temporary directory: %s", got)
 	}
 	for _, path := range []string{"AGENTS.md", ".claude", ".mcp.json"} {
 		if _, err := os.Stat(filepath.Join(dir, path)); !os.IsNotExist(err) {

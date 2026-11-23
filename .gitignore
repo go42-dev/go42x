@@ -1,11 +1,11 @@
 .DS_Store
-.idea/
-.vscode/
-.tools/
-.task/
+/.idea/
+/.vscode/
+/.tools/
+/.task/
+/.build/
 
 # go42x -- START
-/.build/
 .mcp.json
 .claude/
 .codex/

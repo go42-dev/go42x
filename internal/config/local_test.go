@@ -428,10 +428,9 @@ func TestProjectConfigMissingAndInvalidFiles(t *testing.T) {
 	}
 }
 
-func TestProjectBuildDir(t *testing.T) {
+func TestProjectTmpDir(t *testing.T) {
 	const project = "version: '1.0'\nproject: {name: example}\nproviders: {codex: {}}\n" +
-		"context: {template: agents.tpl.md, build-dir: %s}\n"
-	outside := t.TempDir()
+		"context: {template: agents.tpl.md, tmp-dir: %s}\n"
 	for _, tt := range []struct {
 		name    string
 		project string
@@ -440,33 +439,27 @@ func TestProjectBuildDir(t *testing.T) {
 	}{
 		{
 			name: "no configuration",
-			want: ".build",
+			want: ".go42x/tmp",
 		},
 		{
 			name:    "empty setting",
 			project: fmt.Sprintf(project, "''"),
-			want:    ".build",
+			want:    ".go42x/tmp",
 		},
 		{
 			name:    "project setting",
-			project: fmt.Sprintf(project, "out/build"),
-			want:    "out/build",
+			project: fmt.Sprintf(project, "state/tmp"),
+			want:    ".go42x/state/tmp",
 		},
 		{
 			name:    "local override",
-			project: fmt.Sprintf(project, "out"),
-			local:   "context: {build-dir: local-out}\n",
-			want:    "local-out",
+			project: fmt.Sprintf(project, "state"),
+			local:   "context: {tmp-dir: local-tmp}\n",
+			want:    ".go42x/local-tmp",
 		},
 		{
-			name:    "project root variable",
-			project: fmt.Sprintf(project, "'${GO42X_PROJECT_ROOT}/var'"),
-			want:    "var",
-		},
-		{
-			name:    "absolute path outside the project",
-			project: fmt.Sprintf(project, outside),
-			want:    outside,
+			name:    "absolute path",
+			project: fmt.Sprintf(project, "'${GO42X_PROJECT_ROOT}/tmp'"),
 		},
 		{
 			name:    "invalid configuration",
@@ -487,20 +480,83 @@ func TestProjectBuildDir(t *testing.T) {
 				}
 			}
 
-			got, err := ProjectBuildDir(root)
+			got, err := ProjectTmpDir(root)
 			if len(tt.want) == 0 {
 				if err == nil {
-					t.Fatalf("ProjectBuildDir() = %q, want an error", got)
+					t.Fatalf("ProjectTmpDir() = %q, want an error", got)
 				}
 				return
 			}
 
-			want := tt.want
-			if !filepath.IsAbs(want) {
-				want = filepath.Join(root, want)
+			if want := filepath.Join(root, tt.want); err != nil || got != want {
+				t.Errorf("ProjectTmpDir() = %q, %v; want %q", got, err, want)
 			}
-			if err != nil || got != want {
-				t.Errorf("ProjectBuildDir() = %q, %v; want %q", got, err, want)
+		})
+	}
+}
+
+func TestProjectJournal(t *testing.T) {
+	const project = "version: '1.0'\nproject: {name: example}\nproviders: {codex: {}}\n" +
+		"context: {template: agents.tpl.md}\n"
+	for _, tt := range []struct {
+		name    string
+		project string
+		local   string
+		dir     string
+		days    int
+	}{
+		{
+			name: "no configuration",
+			dir:  ".go42x/journal",
+			days: 30,
+		},
+		{
+			name:    "no journal section",
+			project: project,
+			dir:     ".go42x/journal",
+			days:    30,
+		},
+		{
+			name:    "project setting",
+			project: project + "journal: {path: state/journal, retention-days: 7}\n",
+			dir:     ".go42x/state/journal",
+			days:    7,
+		},
+		{
+			name:    "local override",
+			project: project + "journal: {path: state/journal, retention-days: 7}\n",
+			local:   "journal: {retention-days: 90}\n",
+			dir:     ".go42x/state/journal",
+			days:    90,
+		},
+		{
+			name:    "invalid configuration",
+			project: project + "journal: {retention-days: 0}\n",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			for name, content := range map[string]string{FileProject: tt.project, FileLocal: tt.local} {
+				if len(content) == 0 {
+					continue
+				}
+				if err := os.MkdirAll(filepath.Join(root, Directory), 0750); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(root, Directory, name), []byte(content), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			got, err := ProjectJournal(root)
+			if len(tt.dir) == 0 {
+				if err == nil {
+					t.Fatalf("ProjectJournal() = %+v, want an error", got)
+				}
+				return
+			}
+			if err != nil || got.Dir() != tt.dir || *got.RetentionDays != tt.days {
+				t.Errorf("ProjectJournal() = %+v, %v; want %s and %d days", got, err, tt.dir, tt.days)
 			}
 		})
 	}

@@ -63,6 +63,27 @@ context: {template: agents.tpl.md}
 		valid   bool
 	}{
 		{
+			name:    "journal settings",
+			content: "journal: {path: state/journal, retention-days: 7}\nproviders: {codex: {}}",
+			valid:   true,
+		},
+		{
+			name:    "journal retention below one day",
+			content: "journal: {retention-days: 0}\nproviders: {codex: {}}",
+		},
+		{
+			name:    "journal path outside .go42x",
+			content: "journal: {path: ../journal}\nproviders: {codex: {}}",
+		},
+		{
+			name:    "hidden journal path",
+			content: "journal: {path: .journal}\nproviders: {codex: {}}",
+		},
+		{
+			name:    "unknown journal setting",
+			content: "journal: {mode: remote}\nproviders: {codex: {}}",
+		},
+		{
 			name:    "Codex instruction budget",
 			content: "providers: {codex: {project-doc-max-bytes: 65536}}",
 			valid:   true,

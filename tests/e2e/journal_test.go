@@ -10,13 +10,12 @@ import (
 
 type journalEntry struct {
 	Entry struct {
-		ID        string   `json:"id"`
-		Status    string   `json:"status"`
-		Tags      []string `json:"tags"`
-		Runtime   string   `json:"runtime"`
-		Session   string   `json:"session"`
-		ExpiresAt *string  `json:"expires_at"`
-		Refs      struct {
+		ID      string   `json:"id"`
+		Tags    []string `json:"tags"`
+		Keep    bool     `json:"keep"`
+		Runtime string   `json:"runtime"`
+		Session string   `json:"session"`
+		Refs    struct {
 			PR    string `json:"pr"`
 			Issue string `json:"issue"`
 		} `json:"refs"`
@@ -43,7 +42,9 @@ func TestJournalCommands(t *testing.T) {
 		{"agentenv", "journal", "new", "--title", "Task", "--tag", "Not_A_Tag"},
 		{"agentenv", "journal", "new", "--title", "Task", "--runtime", "robot"},
 		{"agentenv", "journal", "show", "../outside"},
-		{"agentenv", "journal", "list", "--stray", "--status", "open"},
+		{"agentenv", "journal", "list", "--stray", "--kept"},
+		{"agentenv", "journal", "list", "--status", "open"},
+		{"agentenv", "journal", "done", "20261110-task-0000"},
 		{"agentenv", "journal", "list", "--runtime", "codex"},
 		{"agentenv", "journal", "search", " "},
 	} {
@@ -65,25 +66,25 @@ func TestJournalCommands(t *testing.T) {
 		"--json",
 	).stdout)
 	id := created.Entry.ID
-	if created.Entry.Status != "open" || created.Entry.Runtime != "human" || created.Path != ".go42x/journal/"+id ||
+	if created.Entry.Keep || created.Entry.Runtime != "human" || created.Path != ".go42x/journal/"+id ||
 		strings.Join(created.Entry.Tags, ",") != "test,journal" {
 		t.Fatalf("created = %+v", created)
 	}
 
-	listed := p.run(t, 0, "agentenv", "journal", "list", "--status", "open").stdout
-	if !strings.Contains(listed, id+"  open") || !strings.Contains(listed, "E2E task  [test, journal]") {
+	listed := p.run(t, 0, "agentenv", "journal", "list").stdout
+	if !strings.Contains(listed, id+"  ") || !strings.Contains(listed, "E2E task  [test, journal]\n") {
 		t.Errorf("list = %s", listed)
 	}
 
-	if shown := p.run(t, 0, "agentenv", "journal", "show", id).stdout; !strings.Contains(shown, "Status:  open") ||
+	if shown := p.run(t, 0, "agentenv", "journal", "show", id).stdout; !strings.Contains(shown, "Kept:    no") ||
 		!strings.Contains(shown, "Notes:\n# E2E task") {
 		t.Errorf("show = %s", shown)
 	}
 
-	finished := decodeJournal[journalEntry](t, p.run(t, 0,
-		"agentenv", "journal", "done", id, "--summary", "Finished", "--runtime", "codex", "--json").stdout)
-	if finished.Entry.Status != "done" || finished.Entry.ExpiresAt == nil || finished.Entry.Runtime != "codex" {
-		t.Fatalf("done = %+v", finished)
+	noted := decodeJournal[journalEntry](t, p.run(t, 0,
+		"agentenv", "journal", "note", id, "--summary", "Finished", "--runtime", "codex", "--json").stdout)
+	if noted.Entry.Keep || noted.Entry.Runtime != "codex" {
+		t.Fatalf("note = %+v", noted)
 	}
 
 	if found := p.run(t, 0, "agentenv", "journal", "search", "e2e").stdout; !strings.Contains(found, id) {
@@ -93,10 +94,10 @@ func TestJournalCommands(t *testing.T) {
 		t.Errorf("gc = %q", gc)
 	}
 
-	p.write(t, ".build/old-task/report.md", "Old report\n")
-	p.write(t, ".build/reports/coverage.out", "mode: atomic\n")
+	p.write(t, ".go42x/journal/old-task/report.md", "Old report\n")
+	p.write(t, ".build/old-task/report.md", "Build output\n")
 	stray := p.run(t, 0, "agentenv", "journal", "list", "--stray").stdout
-	if !strings.Contains(stray, ".build/old-task") || strings.Contains(stray, ".build/reports") {
+	if !strings.Contains(stray, ".go42x/journal/old-task") || strings.Contains(stray, ".build") {
 		t.Errorf("stray = %s", stray)
 	}
 	if index := p.run(
@@ -126,23 +127,28 @@ func TestJournalEntryFlags(t *testing.T) {
 	}
 
 	created := decodeJournal[journalEntry](t, p.run(t, 0, "agentenv", "journal", "new",
-		"--title", "Flags", "--tag", "fix", "--pr", "12", "--issue", "34", "--runtime", "human", "--json").stdout)
+		"--title", "Flags", "--tag", "fix", "--pr", "12", "--issue", "https://github.com/example/project/issues/34",
+		"--runtime", "human", "--json").stdout)
 	id := created.Entry.ID
-	if created.Entry.Refs.PR != "12" || created.Entry.Refs.Issue != "34" {
+	if created.Entry.Refs.PR != "12" || created.Entry.Refs.Issue != "https://github.com/example/project/issues/34" {
 		t.Fatalf("created = %+v", created.Entry)
 	}
 	noted := decodeJournal[journalEntry](t, p.run(t, 0, "agentenv", "journal", "note", id,
 		"--tag", "", "--pr", "56", "--summary", "Cleared the tags", "--runtime", "human", "--json").stdout)
-	if len(noted.Entry.Tags) != 0 || noted.Entry.Refs.PR != "56" || noted.Entry.Refs.Issue != "34" {
+	if len(noted.Entry.Tags) != 0 || noted.Entry.Refs.PR != "56" ||
+		noted.Entry.Refs.Issue != "https://github.com/example/project/issues/34" {
 		t.Errorf("noted = %+v", noted.Entry)
 	}
 
 	kept := decodeJournal[journalEntry](t, p.run(t, 0,
-		"agentenv", "journal", "done", id, "--keep", "--runtime", "human", "--json").stdout)
-	if kept.Entry.Status != "done" || kept.Entry.ExpiresAt != nil {
+		"agentenv", "journal", "note", id, "--keep", "--runtime", "human", "--json").stdout)
+	if !kept.Entry.Keep {
 		t.Errorf("kept = %+v", kept.Entry)
 	}
-	for args, want := range map[string]int{"--kept": 1, "--status=open": 0, "--since=2999-01-01T00:00:00Z": 0} {
+	for args, want := range map[string]int{
+		"--kept": 1, "--issue=34": 1, "--issue=#34": 1, "--issue=4": 0, "--pr=56": 1,
+		"--since=2999-01-01T00:00:00Z": 0,
+	} {
 		listed := decodeJournal[struct {
 			Entries []json.RawMessage `json:"entries"`
 		}](t, p.run(t, 0, "agentenv", "journal", "list", args, "--json").stdout)
@@ -150,7 +156,6 @@ func TestJournalEntryFlags(t *testing.T) {
 			t.Errorf("list %s found %d entries, want %d", args, len(listed.Entries), want)
 		}
 	}
-	p.run(t, 2, "agentenv", "journal", "list", "--kept", "--status", "open")
 	p.run(t, 2, "agentenv", "journal", "list", "--since", "yesterday")
 
 	p.write(t, ".go42x/journal/"+id+"/notes.md", "# Flags\n\n## Goal\n\n<!-- Guidance. -->\n\n## Next\n\nShip.\n")
@@ -175,11 +180,10 @@ func TestJournalEntryFlags(t *testing.T) {
 	}
 	p.run(t, 1, "agentenv", "journal", "attach", id, "review.md", "--name", "review-1.md")
 	p.run(t, 2, "agentenv", "journal", "attach", id, "review.md", "--name", "notes.md")
-	p.run(t, 0, "agentenv", "journal", "note", id, "--summary", "Reopened", "--runtime", "human")
-	abandoned := decodeJournal[journalEntry](t, p.run(t, 0,
-		"agentenv", "journal", "done", id, "--abandoned", "--runtime", "human", "--json").stdout)
-	if abandoned.Entry.Status != "abandoned" || abandoned.Entry.ExpiresAt == nil {
-		t.Errorf("abandoned = %+v", abandoned.Entry)
+	released := decodeJournal[journalEntry](t, p.run(t, 0,
+		"agentenv", "journal", "note", id, "--keep=false", "--runtime", "human", "--json").stdout)
+	if released.Entry.Keep {
+		t.Errorf("--keep=false = %+v", released.Entry)
 	}
 
 	p.run(t, 0, "agentenv", "journal", "new", "--title", "Flags again", "--runtime", "human")
@@ -223,21 +227,31 @@ func TestJournalActorDetection(t *testing.T) {
 	}
 }
 
-func TestAgentEnvInitIgnoresJournalAndBuildDirectories(t *testing.T) {
+func TestAgentEnvInitIgnoresJournalAndTmpDirectories(t *testing.T) {
 	t.Parallel()
 	p := newProject(t)
 
 	p.run(t, 0, "agentenv", "init")
 
-	if gitignore := p.read(t, ".gitignore"); !strings.Contains(gitignore, "\n/.build/\n") {
-		t.Errorf("gitignore does not ignore the build directory:\n%s", gitignore)
+	if gitignore := p.read(t, ".go42x/.gitignore"); !strings.Contains(gitignore, "\n/journal/\n") ||
+		!strings.Contains(gitignore, "\n/tmp/\n") {
+		t.Errorf(".go42x/.gitignore does not ignore the journal and temporary directories:\n%s", gitignore)
 	}
-	if gitignore := p.read(t, ".go42x/.gitignore"); !strings.Contains(gitignore, "\n/journal/\n") {
-		t.Errorf(".go42x/.gitignore does not ignore the journal directory:\n%s", gitignore)
-	}
+	// Indexing honors .go42x/.gitignore, which follows the configured journal path.
+	p.run(t, 0, "agentenv", "journal", "new", "--title", "Indexed notes", "--runtime", "human")
 	p.run(t, 0, "kwb", "build")
-	if kwbIgnore := p.read(t, ".go42x/kwb.ignore"); !strings.Contains(kwbIgnore, ".go42x/journal/**\n") {
-		t.Errorf("kwb.ignore does not exclude the journal:\n%s", kwbIgnore)
+	if found := p.run(
+		t,
+		0,
+		"kwb",
+		"search",
+		"Indexed notes",
+		"--json",
+	).stdout; strings.Contains(
+		found,
+		".go42x/journal",
+	) {
+		t.Errorf("knowledge base indexed the journal:\n%s", found)
 	}
 	for _, schema := range []string{"go42x.schema.yaml", "journal-entry.schema.json"} {
 		if _, err := os.Stat(filepath.Join(p.root, ".go42x/schemas", schema)); err != nil {
@@ -246,27 +260,46 @@ func TestAgentEnvInitIgnoresJournalAndBuildDirectories(t *testing.T) {
 	}
 }
 
-func TestAgentEnvIgnoresConfiguredBuildDirectory(t *testing.T) {
+func TestAgentEnvIgnoresConfiguredTmpDirectory(t *testing.T) {
 	t.Parallel()
 	p := newProject(t)
-	p.write(t, ".go42x/go42x.local.yaml", "context: {build-dir: out}\n")
+	p.write(t, ".go42x/go42x.local.yaml", "context: {tmp-dir: scratch}\n")
 
 	p.run(t, 0, "agentenv", "init")
 
-	if gitignore := p.read(t, ".gitignore"); !strings.Contains(gitignore, "\n/out/\n") ||
-		strings.Contains(gitignore, ".build/") {
-		t.Errorf("init did not ignore the configured build directory:\n%s", gitignore)
+	if gitignore := p.read(t, ".go42x/.gitignore"); !strings.Contains(gitignore, "\n/scratch/\n") ||
+		strings.Contains(gitignore, "\n/tmp/\n") {
+		t.Errorf("init did not ignore the configured temporary directory:\n%s", gitignore)
 	}
-	p.write(t, ".go42x/go42x.local.yaml", "context: {build-dir: out/build}\n")
-	p.run(t, 0, "agentenv", "init", "--force")
-	if gitignore := p.read(t, ".gitignore"); !strings.Contains(gitignore, "\n/out/build/\n") ||
-		strings.Contains(gitignore, "\n/out/\n") {
-		t.Errorf("reinstall did not ignore the changed build directory:\n%s", gitignore)
-	}
-	p.write(t, ".go42x/go42x.local.yaml", "context: {build-dir: dist}\n")
+	p.write(t, ".go42x/go42x.local.yaml", "context: {tmp-dir: state/tmp}\n")
 	p.run(t, 0, "agentenv", "generate", "--providers=")
-	if gitignore := p.read(t, ".gitignore"); !strings.Contains(gitignore, "\n/dist/\n") ||
-		strings.Contains(gitignore, "/out/build/") {
-		t.Errorf("generate did not ignore the changed build directory:\n%s", gitignore)
+	if gitignore := p.read(t, ".go42x/.gitignore"); !strings.Contains(gitignore, "\n/state/tmp/\n") ||
+		strings.Contains(gitignore, "\n/scratch/\n") {
+		t.Errorf("generate did not ignore the changed temporary directory:\n%s", gitignore)
 	}
+	for _, invalid := range []string{"../outside", "/tmp/go42x"} {
+		p.write(t, ".go42x/go42x.local.yaml", "context: {tmp-dir: "+invalid+"}\n")
+		p.run(t, 1, "agentenv", "generate", "--providers=")
+	}
+}
+
+func TestJournalConfiguredPath(t *testing.T) {
+	t.Parallel()
+	p := newProject(t)
+	p.write(t, ".go42x/go42x.local.yaml", "journal: {path: state/journal, retention-days: 7}\n")
+
+	p.run(t, 0, "agentenv", "init")
+
+	if gitignore := p.read(t, ".go42x/.gitignore"); !strings.Contains(gitignore, "\n/state/journal/\n") ||
+		strings.Contains(gitignore, "\n/journal/\n") {
+		t.Errorf(".go42x/.gitignore does not ignore the configured journal:\n%s", gitignore)
+	}
+	created := decodeJournal[journalEntry](t, p.run(t, 0,
+		"agentenv", "journal", "new", "--title", "Configured", "--runtime", "human", "--json").stdout)
+	if created.Path != ".go42x/state/journal/"+created.Entry.ID {
+		t.Errorf("created in %s, want .go42x/state/journal", created.Path)
+	}
+
+	p.write(t, ".go42x/go42x.local.yaml", "journal: {retention-days: 0}\n")
+	p.run(t, 1, "agentenv", "journal", "list")
 }

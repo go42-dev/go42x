@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -44,6 +45,7 @@ func NewService(settings *Settings, opts ...Option) (*Service, error) {
 	copy.ExcludeDirs = slices.Clone(settings.ExcludeDirs)
 	copy.ExcludeFiles = slices.Clone(settings.ExcludeFiles)
 	copy.ContextDocs = slices.Clone(settings.ContextDocs)
+	copy.TemplateData = maps.Clone(settings.TemplateData)
 	var err error
 	copy.RootPath, err = canonicalPath(copy.RootPath)
 	if err != nil {

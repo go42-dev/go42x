@@ -114,7 +114,7 @@ func TestFetchBundle(t *testing.T) {
 		"README.md":                              "Outside the bundle\n",
 		bundleSourceDir + "/go42x.yaml":          "version: previous\n",
 		bundleSourceDir + "/chunks/100.tpl.md":   "Previous chunk\n",
-		bundleSourceDir + "/.gitignore.tpl":      "# go42x -- START\n",
+		bundleSourceDir + "/go42x.tpl.gitignore": "# go42x -- START\n",
 		"assets/schemas/go42x.schema.yaml":       "{}\n",
 		bundleSourceDir + "/skills/x/SKILL.md":   "Previous skill\n",
 		bundleSourceDir + "/upstream/go/doc.md":  "Previous reference\n",

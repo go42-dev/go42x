@@ -5,7 +5,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
-	"strings"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -46,8 +45,7 @@ func TestDoctorChecksRegistration(t *testing.T) {
 	}
 
 	if !slices.Equal(ids, []string{
-		"journal.location", "journal.entries", "journal.stale", "journal.gc",
-		"journal.stray", "journal.index",
+		"journal.location", "journal.entries", "journal.gc", "journal.stray", "journal.index",
 	}) {
 		t.Errorf("checks = %q", ids)
 	}
@@ -69,7 +67,8 @@ func TestDoctorLocation(t *testing.T) {
 
 		result := runCheck(t, root, "journal.location")
 
-		if result.Status != check.StatusFail || !slices.Equal(result.Evidence, []string{".go42x/journal/", ".build/"}) {
+		if result.Status != check.StatusFail ||
+			!slices.Equal(result.Evidence, []string{".go42x/journal/"}) {
 			t.Errorf("location = %+v", result)
 		}
 	})
@@ -78,11 +77,45 @@ func TestDoctorLocation(t *testing.T) {
 		t.Parallel()
 		root := t.TempDir()
 		gitInit(t, root)
-		writeTestFile(t, filepath.Join(root, ".gitignore"), ".build/\n")
 		writeTestFile(t, filepath.Join(root, ".go42x/.gitignore"), "/journal/\n")
 
 		if result := runCheck(t, root, "journal.location"); result.Status != check.StatusPass {
 			t.Errorf("location = %+v", result)
+		}
+	})
+
+	t.Run("configured path", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		gitInit(t, root)
+		writeTestFile(t, filepath.Join(root, ".go42x/go42x.yaml"), `version: "1.0"
+project: {name: example}
+context: {template: agents.tpl.md}
+journal: {path: state/journal}
+providers: {claude: {}}
+`)
+		writeTestFile(t, filepath.Join(root, ".go42x/.gitignore"), "/journal/\n")
+
+		result := runCheck(t, root, "journal.location")
+		if result.Status != check.StatusFail || !slices.Equal(result.Evidence, []string{".go42x/state/journal/"}) {
+			t.Errorf("location = %+v", result)
+		}
+	})
+
+	t.Run("invalid configuration", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		writeTestFile(t, filepath.Join(root, ".go42x/go42x.yaml"), `version: "1.0"
+project: {name: example}
+context: {template: agents.tpl.md}
+journal: {retention-days: 0}
+providers: {claude: {}}
+`)
+
+		for _, diagnostic := range DoctorChecks(root) {
+			if result := diagnostic.Run(t.Context()); result.Status != check.StatusSkipped || len(result.Evidence) > 0 {
+				t.Errorf("%s with an invalid journal configuration = %+v", diagnostic.ID, result)
+			}
 		}
 	})
 }
@@ -102,55 +135,40 @@ func TestDoctorEntriesAndStrayContent(t *testing.T) {
 	}
 	writeTestFile(t, filepath.Join(root, entry.Path, ".env"), "TOKEN=x")
 	writeTestFile(t, filepath.Join(root, ".go42x/journal/20261110-broken-0000/entry.json"), "{}")
-	writeTestFile(t, filepath.Join(root, ".build/old-task/notes.md"), "old notes")
-	writeTestFile(t, filepath.Join(root, ".build/reports/coverage.out"), "report")
+	writeTestFile(t, filepath.Join(root, ".go42x/journal/old-task/notes.md"), "old notes")
+	// Build output belongs to the project's tasks, which the journal does not check.
+	writeTestFile(t, filepath.Join(root, ".build/old-task/notes.md"), "build output")
 
 	entries := runCheck(t, root, "journal.entries")
 	if entries.Status != check.StatusWarn || len(entries.Evidence) != 2 {
 		t.Errorf("entries = %+v", entries)
 	}
 	stray := runCheck(t, root, "journal.stray")
-	if stray.Status != check.StatusWarn || !slices.Equal(stray.Evidence, []string{".build/old-task"}) {
+	if stray.Status != check.StatusWarn || !slices.Equal(stray.Evidence, []string{".go42x/journal/old-task"}) {
 		t.Errorf("stray = %+v", stray)
 	}
 }
 
-func TestDoctorStaleAndExpiredEntries(t *testing.T) {
+func TestDoctorExpiredEntries(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		root := t.TempDir()
 		service := newTestService(t, root)
-		open, err := service.New(t.Context(), human, NewOptions{Title: "Open"})
+		idle, err := service.New(t.Context(), human, NewOptions{Title: "Idle"})
 		if err != nil {
 			t.Fatal(err)
 		}
-		finished, err := service.New(t.Context(), human, NewOptions{Title: "Finished"})
-		if err != nil {
+		if _, err := service.New(t.Context(), human, NewOptions{Title: "Kept", Keep: true}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := service.Done(t.Context(), human, DoneOptions{ID: finished.Entry.ID}); err != nil {
-			t.Fatal(err)
-		}
-		s := newStore(root)
 
-		if result := s.checkGC(t.Context()); result.Status != check.StatusPass {
-			t.Errorf("gc before expiry = %+v", result)
+		if result := runCheck(t, root, "journal.gc"); result.Status != check.StatusPass {
+			t.Errorf("gc before the retention passed = %+v", result)
 		}
 
-		time.Sleep(time.Hour)
-		if result := s.checkStale(t.Context()); result.Status != check.StatusPass {
-			t.Errorf("stale on a fresh entry = %+v", result)
-		}
-		time.Sleep(StaleAfter)
-		stale := s.checkStale(t.Context())
-		if stale.Status != check.StatusWarn || len(stale.Evidence) != 1 ||
-			!strings.HasPrefix(stale.Evidence[0], open.Entry.ID) {
-			t.Errorf("stale = %+v", stale)
-		}
-
-		time.Sleep(DoneRetention)
-		expired := s.checkGC(t.Context())
-		if expired.Status != check.StatusWarn || !slices.Equal(expired.Evidence, []string{finished.Entry.ID}) {
+		time.Sleep(retention)
+		expired := runCheck(t, root, "journal.gc")
+		if expired.Status != check.StatusWarn || !slices.Equal(expired.Evidence, []string{idle.Entry.ID}) {
 			t.Errorf("gc = %+v", expired)
 		}
 	})

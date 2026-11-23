@@ -11,6 +11,16 @@ import (
 	"github.com/go42-dev/go42x/internal/kwb"
 )
 
+// bundledIgnore renders the bundled .go42x/kwb.ignore block without template data.
+func bundledIgnore(t testing.TB) string {
+	t.Helper()
+	block, err := assets.Render(assets.KWBIgnore, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return block
+}
+
 func TestKnowledgeBaseBuildRefreshesExclusions(t *testing.T) {
 	t.Parallel()
 	p := newProject(t)
@@ -19,7 +29,7 @@ func TestKnowledgeBaseBuildRefreshesExclusions(t *testing.T) {
 	p.write(t, "target/docs/guide.md", "# Guide\nExample project.\n")
 	p.write(t, "target/.github/workflows/agent.lock.yml", "compiledonly: generated\n")
 	p.write(t, "target/.github/workflows/keep.lock.yml", "retainedonly: generated\n")
-	original := strings.Replace(assets.KWBIgnore(), ".github/workflows/*.lock.yml", "obsolete", 1) +
+	original := strings.Replace(bundledIgnore(t), ".github/workflows/*.lock.yml", "obsolete", 1) +
 		"custom/\n!.github/workflows/keep.lock.yml\n"
 	p.write(t, "target/.go42x/kwb.ignore", original)
 
@@ -36,7 +46,7 @@ func TestKnowledgeBaseBuildRefreshesExclusions(t *testing.T) {
 	if got := p.read(
 		t,
 		"target/.go42x/kwb.ignore",
-	); got != assets.KWBIgnore()+"custom/\n!.github/workflows/keep.lock.yml\n" {
+	); got != bundledIgnore(t)+"custom/\n!.github/workflows/keep.lock.yml\n" {
 		t.Fatalf("custom rules or header were changed: %q", got)
 	}
 	for path, want := range map[string]string{
@@ -74,26 +84,6 @@ func TestKnowledgeBaseBuildRefreshesExclusions(t *testing.T) {
 	p.assertUnchanged(t, before)
 }
 
-func TestKnowledgeBaseBuildExcludesTheBuildDirectory(t *testing.T) {
-	t.Parallel()
-	p := newProject(t)
-	p.write(t, ".go42x/go42x.yaml", "version: \"1.0\"\nproject:\n  name: example\nproviders:\n  codex: {}\n"+
-		"context:\n  template: agents.tpl.md\n  build-dir: out/build\n")
-	p.write(t, "guide.md", "# Guide\nindexedonly\n")
-	p.write(t, "out/build/report.md", "# Report\nbuildonly\n")
-
-	p.run(t, 0, "kwb", "build")
-	for query, total := range map[string]uint64{"indexedonly": 1, "buildonly": 0} {
-		output := p.run(t, 0, "kwb", "search", query, "--json")
-		var result kwb.SearchResponse
-		if err := json.Unmarshal([]byte(output.stdout), &result); err != nil || result.Total != total {
-			t.Errorf("search %s = %+v, %v", query, result, err)
-		}
-	}
-	// The index records the exclusion, so a check applies it too.
-	p.run(t, 0, "kwb", "check", "--json")
-}
-
 func TestKnowledgeBaseBuildRejectsInvalidExclusions(t *testing.T) {
 	t.Parallel()
 	for _, tt := range []struct {
@@ -109,7 +99,7 @@ func TestKnowledgeBaseBuildRejectsInvalidExclusions(t *testing.T) {
 		{
 			"duplicate blocks",
 			".go42x/kwb.ignore",
-			assets.KWBIgnore() + assets.KWBIgnore(),
+			bundledIgnore(t) + bundledIgnore(t),
 		},
 		{
 			"backup failure",
@@ -148,7 +138,7 @@ func TestKnowledgeBaseFailedBuildReportsExclusionsBackup(t *testing.T) {
 	p := newProject(t)
 	p.write(t, "guide.md", "# Guide\nOriginal project.\n")
 	p.run(t, 0, "kwb", "build")
-	original := strings.Replace(assets.KWBIgnore(), ".github/workflows/*.lock.yml", "obsolete", 1)
+	original := strings.Replace(bundledIgnore(t), ".github/workflows/*.lock.yml", "obsolete", 1)
 	p.write(t, ".go42x/kwb.ignore", original)
 	if err := os.MkdirAll(filepath.Join(p.root, "broken", ".gitignore"), 0755); err != nil {
 		t.Fatal(err)

@@ -62,7 +62,7 @@ func (s *Service) DoctorChecks(root string) []check.Check {
 				filepath.Join(root, config.Directory),
 				root,
 			)
-			plan, err := prepareGeneration(ctx, gen, s.config, root, false)
+			plan, err := prepareGeneration(ctx, gen, root, false)
 			if err != nil {
 				return check.Result{
 					Status:  check.StatusFail,

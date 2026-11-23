@@ -28,22 +28,13 @@ const (
 	tempInfix = ".tmp-"
 )
 
-// buildSubdirs are owned by tasks and tools; other content of the build directory is stray.
-var buildSubdirs = []string{
-	config.DefaultBuildBinDir,
-	config.DefaultBuildDistDir,
-	config.DefaultBuildReportsDir,
-	config.DefaultBuildCacheDir,
-	config.DefaultBuildTmpDir,
-}
-
 // Problem describes an entry directory whose record cannot be used.
 type Problem struct {
 	Path  string `json:"path"`
 	Error string `json:"error"`
 }
 
-// StrayItem is journal or build directory content that no entry describes.
+// StrayItem is journal content that no entry describes.
 type StrayItem struct {
 	Path       string    `json:"path"`
 	Directory  bool      `json:"directory"`
@@ -53,14 +44,13 @@ type StrayItem struct {
 
 // IndexEntry summarizes an entry in .index.json.
 type IndexEntry struct {
-	ID        string     `json:"id"`
-	Title     string     `json:"title"`
-	Status    Status     `json:"status"`
-	Tags      []string   `json:"tags"`
-	CreatedAt time.Time  `json:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at"`
-	ExpiresAt *time.Time `json:"expires_at"`
-	Runtime   string     `json:"runtime"`
+	ID        string    `json:"id"`
+	Title     string    `json:"title"`
+	Tags      []string  `json:"tags"`
+	Keep      bool      `json:"keep"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Runtime   string    `json:"runtime"`
 }
 
 type indexDocument struct {
@@ -72,6 +62,8 @@ type indexDocument struct {
 type store struct {
 	root string
 	dir  string
+	// retention is how long an entry may go without an update before gc deletes it.
+	retention time.Duration
 }
 
 // snapshot is the content of the journal directory at one point.
@@ -81,11 +73,23 @@ type snapshot struct {
 	stray   []StrayItem
 }
 
-func newStore(root string) store {
+// newStore returns the store of the journal that settings configure in the project at root.
+func newStore(root string, settings config.Journal) store {
 	return store{
-		root: root,
-		dir:  filepath.Join(root, filepath.FromSlash(config.JournalDir)),
+		root:      root,
+		dir:       filepath.Join(root, filepath.FromSlash(settings.Dir())),
+		retention: settings.Retention(),
 	}
+}
+
+// loadStore returns the store of the journal that the configuration of the project at root
+// sets up.
+func loadStore(root string) (store, error) {
+	settings, err := config.ProjectJournal(root)
+	if err != nil {
+		return store{}, fmt.Errorf("load journal settings: %w", err)
+	}
+	return newStore(root, settings), nil
 }
 
 func (s store) entryDir(id string) string {
@@ -208,8 +212,9 @@ func (s store) remove(id string) error {
 	return nil
 }
 
-// events reads the entry's log. Lines that do not parse are skipped, so a damaged
-// line does not hide the rest of the history.
+// events reads the entry's log, oldest first. Lines that do not parse are skipped, so a
+// damaged line does not hide the rest of the history. Sorting keeps a log in time order
+// after a merge, such as a union merge in Git, combined two logs.
 func (s store) events(id string) ([]Event, error) {
 	data, err := os.ReadFile(filepath.Join(s.entryDir(id), logFile))
 	if errors.Is(err, fs.ErrNotExist) {
@@ -228,6 +233,7 @@ func (s store) events(id string) ([]Event, error) {
 
 		events = append(events, event)
 	}
+	slices.SortStableFunc(events, func(a, b Event) int { return a.At.Compare(b.At) })
 	return events, nil
 }
 
@@ -319,35 +325,6 @@ func leftover(name string) bool {
 	return strings.HasPrefix(name, trashPrefix) || (strings.HasPrefix(name, ".") && strings.Contains(name, tempInfix))
 }
 
-// strayBuild lists top-level build directory content outside the standard subdirectories.
-func (s store) strayBuild(ctx context.Context) ([]StrayItem, error) {
-	buildDir, err := config.ProjectBuildDir(s.root)
-	if err != nil {
-		return nil, err
-	}
-	children, err := os.ReadDir(buildDir)
-	if errors.Is(err, fs.ErrNotExist) {
-		return []StrayItem{}, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("read build directory: %w", err)
-	}
-
-	items := []StrayItem{}
-	for _, child := range children {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		if strings.HasPrefix(child.Name(), ".") || (child.IsDir() && slices.Contains(buildSubdirs, child.Name())) {
-			continue
-		}
-
-		path := filepath.Join(buildDir, child.Name())
-		items = append(items, strayItem(path, s.relative(path)))
-	}
-	return items, nil
-}
-
 // renderIndex returns the .index.json content for the supplied entries.
 func renderIndex(entries []*Entry) ([]byte, error) {
 	document := indexDocument{
@@ -358,11 +335,10 @@ func renderIndex(entries []*Entry) ([]byte, error) {
 		document.Entries = append(document.Entries, IndexEntry{
 			ID:        entry.ID,
 			Title:     entry.Title,
-			Status:    entry.Status,
 			Tags:      entry.Tags,
+			Keep:      entry.Keep,
 			CreatedAt: entry.CreatedAt,
 			UpdatedAt: entry.UpdatedAt,
-			ExpiresAt: entry.ExpiresAt,
 			Runtime:   entry.Runtime,
 		})
 	}

@@ -50,8 +50,9 @@ func New(
 	return &Provider{settings: settings}
 }
 
-// SkillDirs lists the shared project skill directory. Copilot also reads .claude/skills,
-// so with Claude enabled it sees each skill twice.
+// SkillDirs lists the shared project skill directory. Copilot CLI also reads .claude/skills
+// and loads a skill name found in both directories once.
+// @see https://docs.github.com/en/copilot/reference/cli-plugin-reference
 func (p *Provider) SkillDirs() []string {
 	return []string{provider.SharedSkillsDir}
 }
