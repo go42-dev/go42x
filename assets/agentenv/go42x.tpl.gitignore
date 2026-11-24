@@ -1,7 +1,7 @@
 # go42x -- START
-/go42x.local.yaml
 /kwb/
 /backups/
 /{{ gitignore .journal.Path }}/
 /{{ gitignore .context.TmpDir }}/
+/go42x.local.yaml
 # go42x -- END

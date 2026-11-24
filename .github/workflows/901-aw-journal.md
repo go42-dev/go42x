@@ -142,6 +142,8 @@ jobs:
             exit 1
           fi
           folder="${folder:-.}"
+          # Artifacts drop empty directories: a run that ends without entries uploads none.
+          mkdir -p "$handoff/entries"
           base="$(cat "$handoff/base")"
           if ! [[ "$base" =~ ^[0-9a-f]{40}([0-9a-f]{24})?$ ]]; then
             echo "::error::The agent journal handoff names no valid base commit."
