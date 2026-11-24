@@ -43,7 +43,6 @@ Download the latest binary from the [releases page](https://github.com/go42-dev/
 | ------------------------ | -------------- | ---------------------------------------------------------------------------------- |
 | Claude Code              | Local          | Instructions, MCP servers, skills, tool permissions, subagents                     |
 | Codex                    | Local          | Instructions with size budget, MCP servers, skills                                 |
-| Copilot CLI              | Local          | Instructions, MCP servers, skills                                                  |
 | Crush                    | Local          | Instructions, MCP servers                                                          |
 | Antigravity              | Local          | Instructions, MCP servers through a workspace plugin, skills                       |
 | GitHub Agentic Workflows | GitHub Actions | Instructions, MCP servers, skills; `copilot`, `claude`, `codex`, and `agy` engines |
@@ -69,8 +68,6 @@ mindmap
       .mcp.json
     Codex
       .codex/config.toml
-    Copilot CLI
-      .mcp.json
     Crush
       .crush.json
     Antigravity
@@ -79,15 +76,15 @@ mindmap
       .github/workflows/
 ```
 
-| Feature                           | What it gives                                                                                                                                                                                   | How to use                                                                       |
-| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| Agent environment generation      | One config and template produce instructions, settings, skills, and MCP for Claude Code, Codex, Copilot, Crush, Antigravity, and GitHub Agentic Workflows                                       | `go42x agentenv init`, then `generate`; personal overrides in `go42x.local.yaml` |
-| Environment context               | Project, Git, Go toolchain, and CI details in agent instructions, so agents know the real Go version, OS, and paths                                                                             | Automatic in `go42x agentenv generate`                                           |
-| Modular instructions              | `AGENTS.md` assembled from chunks (definitions, operation, journal, reporting, search, code style); override or add one chunk at a time                                                         | `.go42x/chunks/`                                                                 |
-| Bundled guidance and safe updates | Code style, vendored Go and Google style guides, skills, and MCP configuration (gopls, go42x, mise, Context7, GitHub, GitLab, Jira, JetBrains); updates merge with local edits and keep backups | `go42x agentenv update`                                                          |
-| Knowledge base search             | Incremental index of docs and source with stale-result detection                                                                                                                                | `go42x kwb build`, `search`, `check`                                             |
-| MCP server                        | Search, file reads, project context, documentation lookup, and the journal for agents                                                                                                           | `go42x mcp`                                                                      |
-| Task journal                      | Per-task notes and working files, so any session can continue the task                                                                                                                          | `go42x agentenv journal new`, `list`, `note`, `gc`                               |
-| Upstream file vendoring           | Pinned files from Git, HTTP, npm, or Confluence, locked with checksums                                                                                                                          | `go42x vendor update`, `sync`, `check`; `--dry-run` previews                     |
-| Doctor                            | Checks configuration, generated files, MCP setup, and index freshness                                                                                                                           | `go42x doctor`; `--probe-mcp` tests servers                                      |
-| Scriptable output                 | Machine-readable results for CI and scripts                                                                                                                                                     | `--json` on most commands                                                        |
+| Feature                           | What it gives                                                                                            | How to use                                                                       |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Agent environment generation      | Generates every agent runtime's files from one project configuration, so all agents share the same setup | `go42x agentenv init`, then `generate`; personal overrides in `go42x.local.yaml` |
+| Environment context               | Puts the project's real environment into agent instructions, so agents don't guess versions or paths     | Automatic in `go42x agentenv generate`                                           |
+| Modular instructions              | Builds `AGENTS.md` from small parts that you override or extend one at a time                            | `.go42x/chunks/`                                                                 |
+| Bundled guidance and safe updates | Ready-made agent guidance and configuration that update without losing your local edits                  | `go42x agentenv update`                                                          |
+| Knowledge base search             | A local search index over the project that knows when its results are out of date                        | `go42x kwb build`, `search`, `check`                                             |
+| MCP server                        | Gives agents project search, documentation, and the journal as tools                                     | `go42x mcp`                                                                      |
+| Task journal                      | A record of each task's notes and working files, so any session can continue it                          | `go42x agentenv journal new`, `list`, `note`, `gc`                               |
+| Upstream file vendoring           | Keeps copies of external files in the project, pinned and verified                                       | `go42x vendor update`, `sync`, `check`; `--dry-run` previews                     |
+| Doctor                            | Checks that the go42x setup is complete and current                                                      | `go42x doctor`; `--probe-mcp` tests servers                                      |
+| Scriptable output                 | Machine-readable results for CI and scripts                                                              | `--json` on most commands                                                        |
